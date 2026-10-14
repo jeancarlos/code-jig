@@ -15,7 +15,7 @@ None. This is a rule, not a measurement.
 One gitignored file, `data.local.js`. A value missing from both files renders as a visible "fill in `<key>`" badge, so the gaps are obvious.
 
 ## Kind
-Rule, enforced by review and a repo-wide grep.
+Rule, enforced by review.
 
 ## Rejected alternatives
 - Anonymised or rounded corporate numbers. Still an internal metric once published.

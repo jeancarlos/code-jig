@@ -3,7 +3,7 @@
 Status: accepted (2026-10-14)
 
 ## Decision
-`doctor --check-binary` scans the native Codex binary for every key the pack writes. It rejects launchers smaller than 1,000,000 bytes. It also audits the `AGENTS.md` chain against `project_doc_max_bytes`.
+`doctor --check-binary` scans the native Codex binary for every key the pack uses or will write. It rejects launchers smaller than 1,000,000 bytes. Without that flag, `doctor` also checks the core pin and that the core is clean, and audits the `AGENTS.md` chain against `project_doc_max_bytes`.
 
 ## Reason to exist
 Codex is alpha and config keys change. A renamed key is ignored silently, so the pack would keep working on paper and do nothing.
