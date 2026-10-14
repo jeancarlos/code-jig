@@ -104,38 +104,92 @@ class Cli(unittest.TestCase):
         self.assertIn("overlay.toml", message)
         self.assertFalse((home / "AGENTS.md").exists())
 
+    def test_bad_profiles_exits_2(self):
+        root = tree(self)
+        core, ov = tiered(root)
+        write(ov.root / "overlay.toml", 'core_version = "v0.2.0"\ncore_writable = true\n')
+        write(ov.root / "profiles.toml", "default = \n")
+        home = root / "codex home"
+        err = io.StringIO()
+        args = types.SimpleNamespace(overlay=str(ov.root), codex_home=str(home))
+        with mock.patch.object(install.paths, "CORE", core), contextlib.redirect_stderr(err):
+            code = cli(args)
+        self.assertEqual(code, 2)
+        self.assertIn("profiles.toml", err.getvalue())
+        self.assertFalse(home.exists())
+
+
+
+def tiered(root):
+    core = root / "core-repo"
+    write(core / "core" / "AGENTS.core.md", "core rules\n")
+    write(core / "core" / "tiers.toml", 'default = "medium"\nreview = "high"\n')
+    ov = root / "overlay"
+    write(ov / "profiles.toml", 'default = "m-a"\nreview = "n-b"\n')
+    return core, Overlay(ov, "v0.2.0", True)
+
 
 class Run(unittest.TestCase):
     def test_override_warns(self):
         root = tree(self)
-        core = root / "core-repo"
-        write(core / "core" / "AGENTS.core.md", "core rules\n")
-        (root / "overlay").mkdir()
+        core, ov = tiered(root)
         home = root / "codex home"
         write(home / "AGENTS.override.md", "x\n")
-        lines = run(core, Overlay(root / "overlay", "v0.1.0", True), home)
+        lines = run(core, ov, home)
         self.assertTrue(any("AGENTS.override.md" in line for line in lines))
 
     def test_empty_override_is_silent(self):
         root = tree(self)
-        core = root / "core-repo"
-        write(core / "core" / "AGENTS.core.md", "core rules\n")
-        (root / "overlay").mkdir()
+        core, ov = tiered(root)
         home = root / "codex home"
         write(home / "AGENTS.override.md", "")
-        lines = run(core, Overlay(root / "overlay", "v0.1.0", True), home)
+        lines = run(core, ov, home)
         self.assertFalse(any("override" in line for line in lines))
 
     def test_end_to_end(self):
         root = tree(self)
-        core = root / "core-repo"
-        write(core / "core" / "AGENTS.core.md", "core rules\n")
-        ov = Overlay(root / "overlay", "v0.1.0", True)
-        (root / "overlay").mkdir()
+        core, ov = tiered(root)
         home = root / "codex home"
         lines = run(core, ov, home)
         self.assertIn("core rules", (home / "AGENTS.md").read_text(encoding="utf-8"))
         self.assertTrue(any("AGENTS.md" in line for line in lines))
+
+
+class Profiles(unittest.TestCase):
+    def test_writes_one_profile_per_tier(self):
+        root = tree(self)
+        core, ov = tiered(root)
+        home = root / "codex home"
+        run(core, ov, home)
+        self.assertTrue(is_generated(home / "default.config.toml"))
+        self.assertIn('model = "n-b"', (home / "review.config.toml").read_text(encoding="utf-8"))
+
+    def test_user_profile_with_tier_name_is_backed_up(self):
+        root = tree(self)
+        core, ov = tiered(root)
+        home = root / "codex home"
+        write(home / "default.config.toml", 'model = "mine"\n')
+        lines = run(core, ov, home)
+        [backup] = home.glob("default.config.toml.bak-*")
+        self.assertEqual(backup.read_text(encoding="utf-8"), 'model = "mine"\n')
+        self.assertTrue(any(str(backup) in line for line in lines))
+
+    def test_bad_profiles_writes_nothing(self):
+        root = tree(self)
+        core, ov = tiered(root)
+        write(ov.root / "profiles.toml", 'default = "m-a"\n')
+        home = root / "codex home"
+        with self.assertRaises(ValueError):
+            run(core, ov, home)
+        self.assertFalse(home.exists())
+
+    def test_user_config_toml_untouched(self):
+        root = tree(self)
+        core, ov = tiered(root)
+        home = root / "codex home"
+        write(home / "config.toml", 'model = "mine"\n')
+        run(core, ov, home)
+        self.assertEqual((home / "config.toml").read_text(encoding="utf-8"), 'model = "mine"\n')
 
 
 class HashStyle(unittest.TestCase):

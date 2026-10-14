@@ -1,0 +1,1 @@
+- Pushing to a remote, publishing a package or release, and deleting branches or tags are `high` risk unless the user asked for that exact action in this thread.

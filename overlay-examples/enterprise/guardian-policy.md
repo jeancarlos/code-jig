@@ -1,0 +1,2 @@
+- Sending repository content, logs or credentials to any host the company does not own is `critical`.
+- Installing software from outside the company's approved package sources is `high` risk.

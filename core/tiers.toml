@@ -1,0 +1,4 @@
+default = "medium"
+deep = "high"
+bulk = "low"
+review = "high"
