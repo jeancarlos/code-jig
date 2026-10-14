@@ -333,7 +333,7 @@ class Cli(unittest.TestCase):
         self.root = tree(self)
         self.bindir = tree(self)
         self.old_path = os.environ.get("PATH", "")
-        os.environ["PATH"] = str(self.bindir) + os.pathsep + os.path.dirname(sys.executable)
+        os.environ["PATH"] = os.pathsep.join([str(self.bindir), os.path.dirname(sys.executable), os.path.dirname(shutil.which("git"))])
         self.addCleanup(os.environ.__setitem__, "PATH", self.old_path)
         self.out = self.enterContext(contextlib.redirect_stdout(io.StringIO()))
         self.enterContext(contextlib.redirect_stderr(io.StringIO()))
