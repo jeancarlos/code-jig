@@ -78,12 +78,15 @@ def chain_files(home: Path, cwd: Path) -> list[Path]:
 
 def _doc_max(home: Path) -> int:
     cfg = home / "config.toml"
-    if cfg.is_file():
-        try:
-            return int(tomllib.loads(cfg.read_text(encoding="utf-8")).get("project_doc_max_bytes", DEFAULT_DOC_MAX))
-        except (tomllib.TOMLDecodeError, ValueError):
-            return DEFAULT_DOC_MAX
-    return DEFAULT_DOC_MAX
+    if not cfg.is_file():
+        return DEFAULT_DOC_MAX
+    try:
+        value = tomllib.loads(cfg.read_text(encoding="utf-8")).get("project_doc_max_bytes", DEFAULT_DOC_MAX)
+    except (OSError, ValueError):
+        return DEFAULT_DOC_MAX
+    if isinstance(value, bool) or not isinstance(value, int):
+        return DEFAULT_DOC_MAX
+    return value
 
 
 def check_chain(home: Path, cwd: Path) -> list[Check]:
@@ -97,16 +100,23 @@ def check_chain(home: Path, cwd: Path) -> list[Check]:
     return [("ok", "AGENTS.md chain", detail)]
 
 
-def _git(core: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(core), *args], capture_output=True, text=True, encoding="utf-8")
+def _git(core: Path, *args: str) -> subprocess.CompletedProcess | None:
+    try:
+        return subprocess.run(["git", "-C", str(core), *args], capture_output=True, text=True, encoding="utf-8")
+    except OSError:
+        return None
 
 
 def check_core(core: Path, ov: Overlay) -> list[Check]:
     strict = "FAIL" if not ov.core_writable else "warn"
-    tag = _git(core, "describe", "--tags", "--exact-match", "HEAD").stdout.strip()
+    described = _git(core, "describe", "--tags", "--exact-match", "HEAD")
+    tag = described.stdout.strip() if described and described.returncode == 0 else ""
     pin = ("ok", "core pin", tag) if tag == ov.core_version else (
         strict, "core pin", f"core is at {tag or 'an untagged commit'}, overlay pins {ov.core_version}")
-    dirty = _git(core, "status", "--porcelain").stdout.strip()
+    status = _git(core, "status", "--porcelain")
+    if status is None or status.returncode != 0:
+        return [pin, ("FAIL", "core clean", f"{core} is not a readable git repo or git is missing")]
+    dirty = status.stdout.strip()
     clean = ("FAIL", "core clean", "core has local edits but core_writable = false") if dirty and not ov.core_writable \
         else ("ok", "core clean", "local edits allowed" if dirty else "no local edits")
     return [pin, clean]

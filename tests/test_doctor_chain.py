@@ -37,3 +37,27 @@ class Chain(unittest.TestCase):
     def test_under_cap_ok(self):
         write(self.home / "AGENTS.md", "small")
         self.assertEqual(check_chain(self.home, self.cwd)[0][0], "ok")
+
+
+class BadCap(unittest.TestCase):
+    def setUp(self):
+        root = tree(self)
+        self.home = root / "codex home"
+        self.cwd = root
+        self.cwd.mkdir(parents=True, exist_ok=True)
+
+    def test_list_cap_falls_back_to_default(self):
+        write(self.home / "config.toml", "project_doc_max_bytes = [1]\n")
+        write(self.home / "AGENTS.md", "small")
+        self.assertEqual(check_chain(self.home, self.cwd), [("ok", "AGENTS.md chain", "5 of 32768 bytes")])
+
+    def test_bool_cap_falls_back_to_default(self):
+        write(self.home / "config.toml", "project_doc_max_bytes = true\n")
+        write(self.home / "AGENTS.md", "small")
+        self.assertEqual(check_chain(self.home, self.cwd), [("ok", "AGENTS.md chain", "5 of 32768 bytes")])
+
+    def test_non_utf8_config_falls_back_to_default(self):
+        (self.home / "config.toml").parent.mkdir(parents=True, exist_ok=True)
+        (self.home / "config.toml").write_bytes(b"\xff\xfe\x00bad")
+        write(self.home / "AGENTS.md", "small")
+        self.assertEqual(check_chain(self.home, self.cwd), [("ok", "AGENTS.md chain", "5 of 32768 bytes")])
