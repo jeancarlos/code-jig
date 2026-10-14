@@ -1,6 +1,11 @@
+import contextlib
+import io
+import types
 import unittest
+from unittest import mock
 
-from harness.install import MARKER, render_agents, run, write_generated
+from harness import install
+from harness.install import MARKER, cli, render_agents, run, write_generated
 from harness.overlay import Overlay
 from tests.util import tree, write
 
@@ -53,6 +58,36 @@ class WriteGenerated(unittest.TestCase):
         self.target.write_bytes(b"regras \xe7\xe3o\n")
         backup = write_generated(self.target, MARKER + "new\n")
         self.assertEqual(backup.read_bytes(), b"regras \xe7\xe3o\n")
+
+
+    def test_same_second_backup_is_not_overwritten(self):
+        self.home.mkdir(parents=True)
+        stamped = self.home / "AGENTS.md.bak-20260101-000000"
+        stamped.write_bytes(b"first backup\n")
+        write(self.target, "second user file\n")
+        with mock.patch.object(install.time, "strftime", return_value="20260101-000000"):
+            backup = write_generated(self.target, MARKER + "new\n")
+        self.assertEqual(stamped.read_bytes(), b"first backup\n")
+        self.assertEqual(backup.read_bytes(), b"second user file\n")
+        self.assertNotEqual(backup, stamped)
+
+
+class Cli(unittest.TestCase):
+    def test_malformed_overlay_exits_2_and_writes_nothing(self):
+        root = tree(self)
+        ov = root / "overlay"
+        write(ov / "overlay.toml", "core_version = \n")
+        home = root / "codex home"
+        home.mkdir(parents=True)
+        err = io.StringIO()
+        args = types.SimpleNamespace(overlay=str(ov), codex_home=str(home))
+        with contextlib.redirect_stderr(err):
+            code = cli(args)
+        self.assertEqual(code, 2)
+        message = err.getvalue()
+        self.assertEqual(message.count("\n"), 1)
+        self.assertIn("overlay.toml", message)
+        self.assertFalse((home / "AGENTS.md").exists())
 
 
 class Run(unittest.TestCase):

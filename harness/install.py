@@ -27,6 +27,10 @@ def write_generated(path: Path, text: str) -> Path | None:
     backup = None
     if path.exists() and not _is_generated(path):
         backup = path.with_name(f"{path.name}.bak-{time.strftime('%Y%m%d-%H%M%S')}")
+        n = 0
+        while backup.exists():
+            n += 1
+            backup = path.with_name(f"{path.name}.bak-{time.strftime('%Y%m%d-%H%M%S')}-{n}")
         path.replace(backup)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
