@@ -25,6 +25,17 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--profile", default="review")
     r.add_argument("--codex-bin")
     r.add_argument("files", nargs="*")
+    a = sub.add_parser("analyze")
+    a.add_argument("path", nargs="?", default=".")
+    a.add_argument("--base")
+    a.add_argument("--top", type=int, default=10)
+    a.add_argument("--json", action="store_true")
+    a.add_argument("--timeout", type=int, default=600)
+    tr = sub.add_parser("trace")
+    tr.add_argument("ids")
+    tr.add_argument("--path", default=".")
+    tr.add_argument("--pattern", default="REQ-{id}")
+    tr.add_argument("--json", action="store_true")
     return p
 
 
@@ -41,6 +52,10 @@ def main(argv: list[str] | None = None) -> int:
         from harness.tokens import cli
     elif args.cmd == "cross-review":
         from harness.review import cli
+    elif args.cmd == "analyze":
+        from harness.analyze import cli
+    elif args.cmd == "trace":
+        from harness.trace import cli
     else:
         from harness.doctor import cli
     return cli(args)
