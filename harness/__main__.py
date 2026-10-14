@@ -14,6 +14,8 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--codex-bin")
     d.add_argument("--check-binary", action="store_true")
     d.add_argument("--live", action="store_true")
+    c = sub.add_parser("collect")
+    c.add_argument("--rescan", action="store_true")
     return p
 
 
@@ -24,6 +26,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.cmd == "install":
         from harness.install import cli
+    elif args.cmd == "collect":
+        from harness.collect import cli
     else:
         from harness.doctor import cli
     return cli(args)

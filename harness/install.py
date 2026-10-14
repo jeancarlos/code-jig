@@ -1,5 +1,8 @@
 import hashlib
+import json
 import os
+import shlex
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -39,18 +42,61 @@ def is_generated(path: Path) -> bool:
     return False
 
 
+def _backup_name(path: Path) -> Path:
+    backup = path.with_name(f"{path.name}.bak-{time.strftime('%Y%m%d-%H%M%S')}")
+    n = 0
+    while backup.exists():
+        n += 1
+        backup = path.with_name(f"{path.name}.bak-{time.strftime('%Y%m%d-%H%M%S')}-{n}")
+    return backup
+
+
 def write_generated(path: Path, text: str) -> Path | None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(text, encoding="utf-8", newline="\n")
     backup = None
     if path.exists() and not is_generated(path):
-        backup = path.with_name(f"{path.name}.bak-{time.strftime('%Y%m%d-%H%M%S')}")
-        n = 0
-        while backup.exists():
-            n += 1
-            backup = path.with_name(f"{path.name}.bak-{time.strftime('%Y%m%d-%H%M%S')}-{n}")
+        backup = _backup_name(path)
         path.replace(backup)
+    os.replace(tmp, path)
+    return backup
+
+
+HOOK_STATUS = "codex-harness collect"
+
+
+def hook_commands(core: Path, home: Path, python: str) -> tuple[str, str]:
+    posix = f"PYTHONPATH={shlex.quote(str(core))} {shlex.quote(python)} -m harness --codex-home {shlex.quote(str(home))} collect"
+    windows = f'set "PYTHONPATH={core}" && "{python}" -m harness --codex-home "{home}" collect'
+    return posix, windows
+
+
+def merged_hooks(path: Path, posix: str, windows: str) -> str:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig")) if path.is_file() else {"hooks": {}}
+    except (OSError, ValueError) as e:
+        raise ValueError(f"{path}: {e}") from e
+    hooks = data.setdefault("hooks", {}) if isinstance(data, dict) else None
+    if not isinstance(hooks, dict) or not isinstance(hooks.setdefault("Stop", []), list):
+        raise ValueError(f'{path}: expected {{"hooks": {{"Stop": [...]}}}}')
+    hooks["Stop"] = [g for g in hooks["Stop"] if not (isinstance(g, dict) and any(
+        isinstance(h, dict) and h.get("statusMessage") == HOOK_STATUS for h in g.get("hooks") or []))]
+    hooks["Stop"].append({"hooks": [{"type": "command", "command": posix, "commandWindows": windows,
+                                     "timeout": 60, "statusMessage": HOOK_STATUS}]})
+    return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+
+
+def write_merged(path: Path, text: str) -> Path | None:
+    if path.is_file() and path.read_bytes() == text.encode("utf-8"):
+        return None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8", newline="\n")
+    backup = None
+    if path.exists():
+        backup = _backup_name(path)
+        shutil.copy2(path, backup)
     os.replace(tmp, path)
     return backup
 
@@ -88,13 +134,14 @@ def plan(core: Path, ov: Overlay, home: Path) -> list[tuple[Path, str]]:
     outputs = [(home / "AGENTS.md", render_agents(core, ov.root))]
     outputs += [(home / f"{t.name}.config.toml", render_profile(t, policy)) for t in tiers.load(core, ov.root)]
     outputs += [(home / "rules" / name, text) for name, text in rule_files(ov.root).items()]
+    outputs.append((home / "hooks.json", merged_hooks(home / "hooks.json", *hook_commands(core, home, sys.executable))))
     return outputs
 
 
 def run(core: Path, ov: Overlay, home: Path) -> list[str]:
     lines = []
     for target, text in plan(core, ov, home):
-        backup = write_generated(target, text)
+        backup = (write_merged if target.name == "hooks.json" else write_generated)(target, text)
         lines.append(f"wrote {target}")
         if backup:
             lines.append(f"moved your previous file to {backup}")

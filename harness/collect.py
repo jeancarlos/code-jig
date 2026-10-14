@@ -1,6 +1,7 @@
 import json
 import re
 import sqlite3
+import sys
 from pathlib import Path
 
 SCHEMA = """
@@ -165,3 +166,19 @@ def scan(con: sqlite3.Connection, home: Path, rescan: bool = False) -> dict[str,
         summary["lines"] += lines
         summary["quarantined"] += bad
     return summary
+
+
+def cli(args) -> int:
+    from harness import paths
+    try:
+        home = paths.codex_home(args.codex_home)
+        con = connect(db_path(home))
+        try:
+            summary = scan(con, home, rescan=args.rescan)
+        finally:
+            con.close()
+        print(f"harness collect: {summary['files']} files, {summary['lines']} new lines, {summary['quarantined']} quarantined", file=sys.stderr)
+    except Exception as e:
+        print(f"harness collect: {type(e).__name__}: {e}", file=sys.stderr)
+    print("{}")
+    return 0

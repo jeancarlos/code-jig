@@ -9,7 +9,7 @@ import tomllib
 from pathlib import Path
 
 from harness import managed, paths, probe, tiers
-from harness.install import render_agents, render_profile
+from harness.install import HOOK_STATUS, render_agents, render_profile
 from harness.overlay import Overlay, load
 
 Check = tuple[str, str, str]
@@ -188,6 +188,21 @@ def check_tiers(home: Path, core: Path, ov: Overlay) -> list[Check]:
     return checks
 
 
+def check_hook(home: Path) -> list[Check]:
+    path = home / "hooks.json"
+    if not path.is_file():
+        return [("warn", "stop hook", f"{path} missing; run harness install")]
+    try:
+        groups = json.loads(path.read_text(encoding="utf-8-sig"))["hooks"]["Stop"]
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        return [("FAIL", "stop hook", f"{path}: {e}")]
+    found = isinstance(groups, list) and any(
+        isinstance(g, dict) and any(isinstance(h, dict) and h.get("statusMessage") == HOOK_STATUS for h in g.get("hooks") or [])
+        for g in groups)
+    return [("ok", "stop hook", "registered; Codex asks to trust it once") if found
+            else ("warn", "stop hook", "not registered; run harness install")]
+
+
 def _git(core: Path, *args: str) -> subprocess.CompletedProcess | None:
     try:
         return subprocess.run(["git", "-C", str(core), *args], capture_output=True, text=True, encoding="utf-8")
@@ -228,6 +243,7 @@ def cli(args) -> int:
             checks += check_core(paths.CORE, ov)
             checks += check_global(home, paths.CORE, ov)
             checks += check_tiers(home, paths.CORE, ov)
+            checks += check_hook(home)
             try:
                 ts = tiers.load(paths.CORE, ov.root)
             except ValueError:
