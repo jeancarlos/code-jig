@@ -20,6 +20,11 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--days", type=int, default=7)
     t.add_argument("--cache-floor", type=float, default=97.5)
     t.add_argument("--top", type=int, default=10)
+    r = sub.add_parser("cross-review")
+    r.add_argument("--base")
+    r.add_argument("--profile", default="review")
+    r.add_argument("--codex-bin")
+    r.add_argument("files", nargs="*")
     return p
 
 
@@ -34,6 +39,8 @@ def main(argv: list[str] | None = None) -> int:
         from harness.collect import cli
     elif args.cmd == "tokens":
         from harness.tokens import cli
+    elif args.cmd == "cross-review":
+        from harness.review import cli
     else:
         from harness.doctor import cli
     return cli(args)

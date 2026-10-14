@@ -1,0 +1,66 @@
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+from harness import paths, probe
+from harness.doctor import resolve_codex_bin
+
+MAX_BYTES = 200_000
+PROMPT = """You are reviewing work produced by a model from a different family. Find real defects only: wrong behaviour, security problems, data loss, unhandled inputs, contradictions with the stated intent. No style or naming remarks.
+
+For each finding give: severity (critical, important, minor), location (file:line or section), the concrete input or situation that triggers it, and the fix. If you find nothing worth fixing, answer exactly: no findings.
+
+Material to review:
+
+"""
+
+
+def gather(cwd: Path, base: str | None, files: list[str]) -> str:
+    if files:
+        parts = []
+        for name in files:
+            path = (cwd / name)
+            data = path.read_bytes() if path.is_file() else None
+            if data is None:
+                raise ValueError(f"{name}: not a file")
+            if b"\0" in data:
+                raise ValueError(f"{name}: binary file")
+            parts.append(f"=== {name} ===\n{data.decode('utf-8', 'replace')}")
+        text = "\n\n".join(parts)
+    else:
+        try:
+            r = subprocess.run(["git", "diff", base or "HEAD"], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        except OSError:
+            raise ValueError("git is not installed") from None
+        if r.returncode != 0:
+            raise ValueError(f"git diff failed: {(r.stderr.strip().splitlines() or ['not a git repository'])[0]}")
+        text = r.stdout
+    if not text.strip():
+        raise ValueError("nothing to review: no diff and no files")
+    if len(text.encode("utf-8")) > MAX_BYTES:
+        raise ValueError(f"input is over {MAX_BYTES} bytes; review a smaller diff or fewer files")
+    return text
+
+
+def cli(args) -> int:
+    try:
+        material = gather(Path.cwd(), args.base, args.files)
+    except ValueError as e:
+        print(f"harness: {e}", file=sys.stderr)
+        return 2
+    bin_path = resolve_codex_bin(args.codex_bin)
+    if bin_path is None:
+        print("harness: codex not found; pass --codex-bin PATH", file=sys.stderr)
+        return 2
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "findings.md"
+        cmd = [*probe.command(bin_path), "exec", "--profile", args.profile, "--sandbox", "read-only", "--ephemeral",
+               "--skip-git-repo-check", "-o", str(out), "-"]
+        r = subprocess.run(cmd, input=PROMPT + material, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", cwd=Path.cwd(), env=probe.env_for(paths.codex_home(args.codex_home)))
+        if r.returncode != 0 or not out.is_file():
+            print(f"harness: codex exec failed: {(r.stderr.strip().splitlines() or ['no output'])[-1]}", file=sys.stderr)
+            return 1
+        print(out.read_text(encoding="utf-8").strip())
+    return 0

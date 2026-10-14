@@ -15,8 +15,12 @@ def command(bin_path: Path) -> list[str]:
     return [str(bin_path)]
 
 
+def env_for(home: Path) -> dict[str, str]:
+    return dict(os.environ, CODEX_HOME=str(home))
+
+
 def run_codex(bin_path: Path, home: Path, args: list[str], cwd: Path, timeout: int):
-    env = dict(os.environ, CODEX_HOME=str(home))
+    env = env_for(home)
     try:
         return subprocess.run([*command(bin_path), *args], capture_output=True, text=True, encoding="utf-8",
                               errors="replace", env=env, cwd=cwd, timeout=timeout, stdin=subprocess.DEVNULL)
