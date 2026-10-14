@@ -103,3 +103,7 @@ class Probe(unittest.TestCase):
         [(level, _, detail)] = probe.check_prompt(self.bin, self.home, self.cwd, [Tier("default", "m-a", "medium")], skills=["nope"])
         self.assertEqual(level, "FAIL")
         self.assertIn("nope", detail)
+
+    def test_skill_name_in_prose_is_not_a_loaded_skill(self):
+        [(level, _, _)] = probe.check_prompt(self.bin, self.home, self.cwd, [Tier("default", "m-a", "medium")], skills=["skills_instructions"])
+        self.assertEqual(level, "FAIL")
