@@ -21,5 +21,5 @@ About 60 lines. One review costs the review tier's tokens for the material, whic
 Script orchestration plus model judgement.
 
 ## Rejected alternatives
-- A gateway to another vendor's model: the corporate laptop allows Codex only.
+- A gateway to another vendor's model: a managed machine may allow Codex only.
 - Applying the reviewer's fixes automatically: findings are claims until verified.
