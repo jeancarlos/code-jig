@@ -16,6 +16,10 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--live", action="store_true")
     c = sub.add_parser("collect")
     c.add_argument("--rescan", action="store_true")
+    t = sub.add_parser("tokens")
+    t.add_argument("--days", type=int, default=7)
+    t.add_argument("--cache-floor", type=float, default=97.5)
+    t.add_argument("--top", type=int, default=10)
     return p
 
 
@@ -28,6 +32,8 @@ def main(argv: list[str] | None = None) -> int:
         from harness.install import cli
     elif args.cmd == "collect":
         from harness.collect import cli
+    elif args.cmd == "tokens":
+        from harness.tokens import cli
     else:
         from harness.doctor import cli
     return cli(args)
