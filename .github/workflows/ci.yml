@@ -49,6 +49,16 @@ jobs:
           bin=$(find "$(npm root -g)/@openai" -type f \( -name codex -o -name codex.exe \) -size +10M | head -1)
           echo "native binary: $bin"
           python -m harness doctor --check-binary --codex-bin "$bin"
+      - name: execpolicy example and full doctor
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          bin=$(find "$(npm root -g)/@openai" -type f -name codex -size +10M | head -1)
+          "$bin" execpolicy check --rules overlay-examples/personal/rules/toolchain.rules git push --force origin main | grep -q '"decision":"forbidden"'
+          test "$("$bin" execpolicy check --rules overlay-examples/personal/rules/toolchain.rules git push origin main)" = '{"matchedRules":[]}'
+          home="$RUNNER_TEMP/codex home"
+          python -m harness --overlay overlay-examples/personal --codex-home "$home" install
+          python -m harness --overlay overlay-examples/personal --codex-home "$home" doctor --codex-bin "$bin"
   lint-agents:
     runs-on: ubuntu-latest
     steps:
