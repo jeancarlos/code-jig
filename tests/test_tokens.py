@@ -57,3 +57,14 @@ class Prefix(unittest.TestCase):
         self.assertEqual(tokens.prefix("curl -sI x"), "curl")
         self.assertEqual(tokens.prefix("FOO=1 make build"), "make")
         self.assertEqual(tokens.prefix(""), "")
+
+
+class Escapes(unittest.TestCase):
+    def test_control_characters_are_not_printed_raw(self):
+        s = {"input": 1, "cached": 1, "output": 0, "by_kind": {}, "guardian_share": 0.0, "reviews": 0, "input_per_review": 0,
+             "escalations": [("curl\x1b]52;c;cHduZWQ=\x07", 1)], "over_long": 0, "quarantined": 0,
+             "sessions": [{"id": "s\x1b[2J", "turns": 1, "input": 1, "cached": 1, "guardian_input": 0, "subagent_input": 0, "compactions": 0, "polling": 0}],
+             "models": [("m\x1b[31m", 1, 0)]}
+        text = "\n".join(tokens.render(s, 97.5))
+        self.assertNotIn("\x1b", text)
+        self.assertNotIn("\x07", text)

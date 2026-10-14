@@ -66,9 +66,13 @@ def write_generated(path: Path, text: str) -> Path | None:
 HOOK_STATUS = "codex-harness collect"
 
 
+def interpreter() -> str:
+    return getattr(sys, "_base_executable", None) or sys.executable
+
+
 def hook_commands(lib: Path, home: Path, python: str) -> tuple[str, str]:
-    posix = f"PYTHONPATH={shlex.quote(str(lib))} {shlex.quote(python)} -P -m harness --codex-home {shlex.quote(str(home))} collect"
-    windows = f'set "PYTHONPATH={lib}" && "{python}" -P -m harness --codex-home "{home}" collect'
+    posix = f"PYTHONPATH={shlex.quote(str(lib))} {shlex.quote(python)} -P -s -m harness --codex-home {shlex.quote(str(home))} collect"
+    windows = f'set "PYTHONPATH={lib}" && "{python}" -P -s -m harness --codex-home "{home}" collect'
     return posix, windows
 
 
@@ -136,7 +140,7 @@ def plan(core: Path, ov: Overlay, home: Path) -> list[tuple[Path, str]]:
     outputs += [(home / "rules" / name, text) for name, text in rule_files(ov.root).items()]
     lib = home / "codex-harness" / "lib"
     outputs += [(lib / "harness" / p.name, stamp(p.read_text(encoding="utf-8"), "hash")) for p in sorted((core / "harness").glob("*.py"))]
-    outputs.append((home / "hooks.json", merged_hooks(home / "hooks.json", *hook_commands(lib, home, sys.executable))))
+    outputs.append((home / "hooks.json", merged_hooks(home / "hooks.json", *hook_commands(lib, home, interpreter()))))
     return outputs
 
 

@@ -104,3 +104,15 @@ class HookRunsInstalledCopy(unittest.TestCase):
         command = json.loads((home / "hooks.json").read_text(encoding="utf-8"))["hooks"]["Stop"][-1]["hooks"][0]["command"]
         self.assertIn(str(lib), command)
         self.assertNotIn(str(core), command)
+
+
+class HookInterpreter(unittest.TestCase):
+    def test_flags_and_base_interpreter(self):
+        import sys
+        from unittest import mock
+        from harness import install
+        posix, windows = hook_commands(tree(self), tree(self), "/usr/bin/python3")
+        self.assertIn(" -P -s -m harness ", posix)
+        self.assertIn(" -P -s -m harness ", windows)
+        with mock.patch.object(sys, "_base_executable", "/opt/base/python3", create=True):
+            self.assertEqual(install.interpreter(), "/opt/base/python3")

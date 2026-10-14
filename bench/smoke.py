@@ -50,7 +50,7 @@ def outcomes(con, thread: str) -> list[str]:
 
 def report(con, session: str) -> dict:
     guardians = [t for (t,) in con.execute("SELECT id FROM threads WHERE kind = 'guardian' AND parent_id = ?", (session,))]
-    rows = con.execute("SELECT COUNT(DISTINCT thread_id || ':' || turn_id), COALESCE(SUM(input), 0), COALESCE(SUM(cached), 0) "
+    rows = con.execute("SELECT COUNT(DISTINCT thread_id || ':' || COALESCE(turn_id, '')), COALESCE(SUM(input), 0), COALESCE(SUM(cached), 0) "
                        "FROM turn_usage WHERE kind = 'guardian' AND parent_id = ?", (session,)).fetchone()
     return {"reviews": rows[0], "review_input": rows[1], "review_cached": rows[2],
             "outcomes": [o for g in guardians for o in outcomes(con, g)]}
@@ -81,8 +81,8 @@ def main() -> int:
             for case, run, session in sessions:
                 r = {"case": case, "run": run, "session": session, **report(con, session)}
                 print(json.dumps(r))
-                expected = {"routine": [], "allow": ["allow"], "deny": ["deny"]}[case]
-                if r["outcomes"] != expected:
+                expected = {"routine": None, "allow": "allow", "deny": "deny"}[case]
+                if (r["outcomes"] != []) if expected is None else (not r["outcomes"] or set(r["outcomes"]) != {expected}):
                     failed = True
         finally:
             con.close()

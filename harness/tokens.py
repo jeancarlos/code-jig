@@ -65,6 +65,10 @@ def summary(con: sqlite3.Connection, since: str, top: int = 10, long_turns: int 
     }
 
 
+def _safe(text: str) -> str:
+    return "".join(ch if ch.isprintable() else f"\\x{ord(ch):02x}" for ch in text)
+
+
 def _pct(a: int, b: int) -> str:
     return f"{100 * a / b:.1f}%" if b else "-"
 
@@ -80,11 +84,11 @@ def render(s: dict, floor: float) -> list[str]:
     for x in s["sessions"]:
         hit = 100 * x["cached"] / x["input"] if x["input"] else 100.0
         flag = "  LOW" if x["input"] and hit < floor else ""
-        out.append(f"  {x['id']}  {x['input']:,}  {hit:.1f}%{flag}  {x['turns']}  {x['compactions']}  {x['polling']}  {x['guardian_input']:,}  {x['subagent_input']:,}")
+        out.append(f"  {_safe(x['id'])}  {x['input']:,}  {hit:.1f}%{flag}  {x['turns']}  {x['compactions']}  {x['polling']}  {x['guardian_input']:,}  {x['subagent_input']:,}")
     out += ["", "Escalations sent to Guardian, by command:"]
-    out += [f"  {p or '(empty)'}  {n}" for p, n in s["escalations"]] or ["  none"]
+    out += [f"  {_safe(p) or '(empty)'}  {n}" for p, n in s["escalations"]] or ["  none"]
     out += ["", "By model (input, output):"]
-    out += [f"  {m}  {i:,}  {o:,}" for m, i, o in s["models"]] or ["  none"]
+    out += [f"  {_safe(m)}  {i:,}  {o:,}" for m, i, o in s["models"]] or ["  none"]
     if s["quarantined"]:
         out += ["", f"warning: {s['quarantined']} rollout lines quarantined; see the quarantine table"]
     return out

@@ -103,3 +103,26 @@ class ToolCall(unittest.TestCase):
         self.assertIsNone(collect.tool_call({"type": "custom_tool_call", "call_id": "a", "input": "text(await tools.view_image({path:\"x\"}))"}))
         self.assertEqual(collect.tool_call({"type": "custom_tool_call", "call_id": "b", "input": 'tools.exec_command({cmd:"echo \\"hi\\""})'}), ("b", 'echo "hi"', False))
         self.assertIsNone(collect.tool_call({"type": "message"}))
+
+
+class Robustness(unittest.TestCase):
+    def setUp(self):
+        self.root = tree(self)
+
+    def scan(self, names):
+        home = home_with(self.root / names[0], names)
+        con = collect.connect(collect.db_path(home))
+        self.addCleanup(con.close)
+        return con, collect.scan(con, home)
+
+    def test_fork_keeps_first_session_meta(self):
+        con, _ = self.scan(["forked"])
+        self.assertEqual(totals(con, "fork-1"), (7, 0, 1))
+        self.assertEqual(totals(con, "main-1"), (None, None, None))
+        self.assertEqual(con.execute("SELECT kind FROM threads WHERE id='fork-1'").fetchone()[0], "subagent")
+
+    def test_poison_lines_are_quarantined_and_later_files_still_collected(self):
+        con, summary = self.scan(["poison", "subagent"])
+        self.assertEqual(totals(con, "poison-1"), (5, 0, 1))
+        self.assertEqual(totals(con, "sub-1"), (500, 0, 5))
+        self.assertGreaterEqual(summary["quarantined"], 2)

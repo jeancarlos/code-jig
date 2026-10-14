@@ -44,6 +44,10 @@ def kind_of(meta: dict) -> str:
     return "main"
 
 
+def _s(v) -> str | None:
+    return v if isinstance(v, str) else None
+
+
 def _usage(u) -> tuple[int, ...] | None:
     if not isinstance(u, dict) or not all(isinstance(u.get(k), int) and not isinstance(u.get(k), bool) for k in USAGE_KEYS):
         return None
@@ -103,51 +107,55 @@ def _scan_file(con: sqlite3.Connection, path: Path) -> tuple[int, int]:
             con.execute("INSERT OR IGNORE INTO quarantine VALUES (?,?,?)", (str(path), line, reason))
 
         try:
-            o = json.loads(raw)
-        except ValueError:
-            quarantine("not JSON")
-            continue
-        p = o.get("payload") if isinstance(o, dict) else None
-        if not isinstance(p, dict):
-            quarantine("no payload")
-            continue
-        t, ts = o.get("type"), o.get("timestamp")
-        if t == "session_meta":
-            thread = p.get("id") if isinstance(p.get("id"), str) else thread
-            con.execute("INSERT OR REPLACE INTO threads VALUES (?,?,?,?,?)",
-                        (thread, p.get("parent_thread_id"), kind_of(p), p.get("timestamp") or ts, p.get("cwd")))
-        elif thread is None:
-            quarantine("before session_meta")
-        elif t == "turn_context":
-            model = p.get("model") or model
-            turn = p.get("turn_id") or turn
-        elif t == "token_usage_record":
-            u = _usage(p.get("usage"))
-            if u is None or not isinstance(p.get("response_id"), str):
-                quarantine("token_usage_record shape")
+            try:
+                o = json.loads(raw)
+            except ValueError:
+                quarantine("not JSON")
                 continue
-            con.execute("INSERT OR IGNORE INTO usage VALUES (?,?,?,?,?,?,?,?,?)",
-                        (thread, p["response_id"], p.get("turn_id") or turn, ts, model, *u))
-        elif t == "event_msg" and p.get("type") == "token_count":
-            info = p.get("info")
-            if info is None:
+            p = o.get("payload") if isinstance(o, dict) else None
+            if not isinstance(p, dict):
+                quarantine("no payload")
                 continue
-            total = (info.get("total_token_usage") or {}).get("total_tokens") if isinstance(info, dict) else None
-            u = _usage(info.get("last_token_usage")) if isinstance(info, dict) else None
-            if u is None or not isinstance(total, int):
-                quarantine("token_count shape")
-                continue
-            if total == last_total:
-                continue
-            last_total = total
-            con.execute("INSERT OR IGNORE INTO usage VALUES (?,?,?,?,?,?,?,?,?)",
-                        (thread, f"tc:{line}", turn, ts, model, *u))
-        elif t == "compacted":
-            con.execute("INSERT OR IGNORE INTO compactions VALUES (?,?,?)", (thread, line, ts))
-        elif t == "response_item":
-            call = tool_call(p)
-            if call:
-                con.execute("INSERT OR IGNORE INTO calls VALUES (?,?,?,?,?,?)", (thread, call[0], turn, ts, call[1], int(call[2])))
+            t, ts = o.get("type"), o.get("timestamp")
+            if t == "session_meta":
+                if thread is None and isinstance(p.get("id"), str):
+                    thread = p["id"]
+                    con.execute("INSERT OR REPLACE INTO threads VALUES (?,?,?,?,?)",
+                                (thread, _s(p.get("parent_thread_id")), kind_of(p), _s(p.get("timestamp")) or _s(ts), _s(p.get("cwd"))))
+            elif thread is None:
+                quarantine("before session_meta")
+            elif t == "turn_context":
+                model = _s(p.get("model")) or model
+                turn = _s(p.get("turn_id")) or turn
+            elif t == "token_usage_record":
+                u = _usage(p.get("usage"))
+                if u is None or not isinstance(p.get("response_id"), str):
+                    quarantine("token_usage_record shape")
+                    continue
+                con.execute("INSERT OR IGNORE INTO usage VALUES (?,?,?,?,?,?,?,?,?)",
+                            (thread, p["response_id"], _s(p.get("turn_id")) or turn, _s(ts), model, *u))
+            elif t == "event_msg" and p.get("type") == "token_count":
+                info = p.get("info")
+                if info is None:
+                    continue
+                total = (info.get("total_token_usage") or {}).get("total_tokens") if isinstance(info, dict) else None
+                u = _usage(info.get("last_token_usage")) if isinstance(info, dict) else None
+                if u is None or not isinstance(total, int):
+                    quarantine("token_count shape")
+                    continue
+                if total == last_total:
+                    continue
+                last_total = total
+                con.execute("INSERT OR IGNORE INTO usage VALUES (?,?,?,?,?,?,?,?,?)",
+                            (thread, f"tc:{line}", turn, _s(ts), model, *u))
+            elif t == "compacted":
+                con.execute("INSERT OR IGNORE INTO compactions VALUES (?,?,?)", (thread, line, _s(ts)))
+            elif t == "response_item":
+                call = tool_call(p)
+                if call:
+                    con.execute("INSERT OR IGNORE INTO calls VALUES (?,?,?,?,?,?)", (thread, call[0], turn, _s(ts), call[1], int(call[2])))
+        except Exception as e:
+            quarantine(type(e).__name__)
     con.execute("INSERT OR REPLACE INTO files VALUES (?,?,?,?,?,?,?,?)",
                 (str(path), offset + end, size, thread, model, turn, line, last_total))
     return count, bad

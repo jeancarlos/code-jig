@@ -1,0 +1,4 @@
+{"timestamp": "2026-10-12T10:00:00.000Z", "type": "session_meta", "payload": {"id": "fork-1", "parent_thread_id": "main-1", "source": {"subagent": {"thread_spawn": {"parent_thread_id": "main-1", "depth": 1}}}, "thread_source": "subagent", "cwd": "/w", "timestamp": "2026-10-12T10:00:00.000Z"}}
+{"timestamp": "2026-10-12T10:00:00.100Z", "type": "session_meta", "payload": {"id": "main-1", "source": "exec", "thread_source": "user", "cwd": "/w", "timestamp": "2026-10-10T10:00:00.000Z"}}
+{"timestamp": "2026-10-12T10:00:01.000Z", "type": "turn_context", "payload": {"turn_id": "ft1", "model": "m-b"}}
+{"timestamp": "2026-10-12T10:00:02.000Z", "type": "token_usage_record", "payload": {"thread_id": "fork-1", "turn_id": "ft1", "response_id": "fr1", "usage": {"input_tokens": 7, "cached_input_tokens": 0, "cache_write_input_tokens": 0, "output_tokens": 1, "reasoning_output_tokens": 0, "total_tokens": 8}}}
