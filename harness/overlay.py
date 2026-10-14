@@ -15,8 +15,8 @@ class Overlay:
 def load(root: Path) -> Overlay:
     path = root / "overlay.toml"
     try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as e:
+        data = tomllib.loads(path.read_text(encoding="utf-8-sig"))
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError) as e:
         raise ValueError(f"{path}: {e}") from e
     missing = [k for k in REQUIRED if k not in data]
     if missing:

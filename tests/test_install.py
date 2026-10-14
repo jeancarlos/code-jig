@@ -5,7 +5,8 @@ import unittest
 from unittest import mock
 
 from harness import install
-from harness.install import MARKER, cli, render_agents, run, write_generated
+from harness.install import stamp
+from harness.install import MARKER_PREFIX, cli, render_agents, run, write_generated
 from harness.overlay import Overlay
 from tests.util import tree, write
 
@@ -20,12 +21,12 @@ class Render(unittest.TestCase):
     def test_core_then_overlay(self):
         write(self.ov / "AGENTS.overlay.md", "overlay rules\n")
         text = render_agents(self.core, self.ov)
-        self.assertTrue(text.startswith(MARKER))
+        self.assertTrue(text.startswith(MARKER_PREFIX))
         self.assertLess(text.index("core rules"), text.index("overlay rules"))
 
     def test_overlay_file_optional(self):
         self.ov.mkdir(parents=True)
-        self.assertEqual(render_agents(self.core, self.ov), MARKER + "core rules\n")
+        self.assertEqual(render_agents(self.core, self.ov), stamp("core rules\n"))
 
 
 class WriteGenerated(unittest.TestCase):
@@ -34,29 +35,43 @@ class WriteGenerated(unittest.TestCase):
         self.target = self.home / "AGENTS.md"
 
     def test_creates_new(self):
-        self.assertIsNone(write_generated(self.target, MARKER + "x\n"))
-        self.assertEqual(self.target.read_text(encoding="utf-8"), MARKER + "x\n")
+        self.assertIsNone(write_generated(self.target, stamp("x\n")))
+        self.assertEqual(self.target.read_text(encoding="utf-8"), stamp("x\n"))
 
     def test_overwrites_own_file_without_backup(self):
-        write(self.target, MARKER + "old\n")
-        self.assertIsNone(write_generated(self.target, MARKER + "new\n"))
+        write(self.target, stamp("old\n"))
+        self.assertIsNone(write_generated(self.target, stamp("new\n")))
         self.assertEqual(list(self.home.glob("AGENTS.md.bak-*")), [])
 
     def test_backs_up_user_file(self):
         write(self.target, "my own rules\n")
-        backup = write_generated(self.target, MARKER + "new\n")
+        backup = write_generated(self.target, stamp("new\n"))
         self.assertEqual(backup.read_text(encoding="utf-8"), "my own rules\n")
-        self.assertEqual(self.target.read_text(encoding="utf-8"), MARKER + "new\n")
+        self.assertEqual(self.target.read_text(encoding="utf-8"), stamp("new\n"))
 
     def test_bom_on_own_file_is_still_own(self):
         self.home.mkdir(parents=True)
-        self.target.write_bytes(b"\xef\xbb\xbf" + (MARKER + "old\n").encode())
-        self.assertIsNone(write_generated(self.target, MARKER + "new\n"))
+        self.target.write_bytes(b"\xef\xbb\xbf" + (stamp("old\n")).encode())
+        self.assertIsNone(write_generated(self.target, stamp("new\n")))
+
+    def test_edited_generated_file_backed_up(self):
+        write(self.target, stamp("old\n"))
+        original = self.target.read_bytes()
+        self.target.write_bytes(original + b"my edit\n")
+        backup = write_generated(self.target, stamp("new\n"))
+        self.assertEqual(backup.read_bytes(), original + b"my edit\n")
+
+    def test_failed_write_keeps_user_file(self):
+        write(self.target, "mine\n")
+        with mock.patch.object(install.Path, "write_text", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                write_generated(self.target, stamp("new\n"))
+        self.assertEqual(self.target.read_text(encoding="utf-8"), "mine\n")
 
     def test_non_utf8_user_file_backed_up(self):
         self.home.mkdir(parents=True)
         self.target.write_bytes(b"regras \xe7\xe3o\n")
-        backup = write_generated(self.target, MARKER + "new\n")
+        backup = write_generated(self.target, stamp("new\n"))
         self.assertEqual(backup.read_bytes(), b"regras \xe7\xe3o\n")
 
 
@@ -66,7 +81,7 @@ class WriteGenerated(unittest.TestCase):
         stamped.write_bytes(b"first backup\n")
         write(self.target, "second user file\n")
         with mock.patch.object(install.time, "strftime", return_value="20260101-000000"):
-            backup = write_generated(self.target, MARKER + "new\n")
+            backup = write_generated(self.target, stamp("new\n"))
         self.assertEqual(stamped.read_bytes(), b"first backup\n")
         self.assertEqual(backup.read_bytes(), b"second user file\n")
         self.assertNotEqual(backup, stamped)
@@ -91,6 +106,26 @@ class Cli(unittest.TestCase):
 
 
 class Run(unittest.TestCase):
+    def test_override_warns(self):
+        root = tree(self)
+        core = root / "core-repo"
+        write(core / "core" / "AGENTS.core.md", "core rules\n")
+        (root / "overlay").mkdir()
+        home = root / "codex home"
+        write(home / "AGENTS.override.md", "x\n")
+        lines = run(core, Overlay(root / "overlay", "v0.1.0", True), home)
+        self.assertTrue(any("AGENTS.override.md" in line for line in lines))
+
+    def test_empty_override_is_silent(self):
+        root = tree(self)
+        core = root / "core-repo"
+        write(core / "core" / "AGENTS.core.md", "core rules\n")
+        (root / "overlay").mkdir()
+        home = root / "codex home"
+        write(home / "AGENTS.override.md", "")
+        lines = run(core, Overlay(root / "overlay", "v0.1.0", True), home)
+        self.assertFalse(any("override" in line for line in lines))
+
     def test_end_to_end(self):
         root = tree(self)
         core = root / "core-repo"

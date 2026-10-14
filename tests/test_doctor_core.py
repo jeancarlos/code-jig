@@ -2,7 +2,8 @@ import subprocess
 import unittest
 from unittest import mock
 
-from harness.doctor import check_core
+from harness.doctor import check_core, check_global
+from harness.install import render_agents, stamp
 from harness.overlay import Overlay
 from tests.util import tree, write
 
@@ -54,3 +55,56 @@ class NotGit(unittest.TestCase):
         with mock.patch("harness.doctor.subprocess.run", side_effect=FileNotFoundError("git")):
             checks = check_core(self.core, Overlay(self.core, "v0.1.0", False))
         self.assertEqual({name: level for level, name, _ in checks}["core clean"], "FAIL")
+
+
+class GitFailure(unittest.TestCase):
+    def setUp(self):
+        self.core = tree(self) / "core"
+        write(self.core / "f.txt", "a")
+
+    def test_stderr_in_detail_and_pin_not_untagged(self):
+        fail = mock.Mock(returncode=128, stdout="", stderr="fatal: detected dubious ownership\nmore\n")
+        with mock.patch("harness.doctor.subprocess.run", return_value=fail):
+            pin, clean = check_core(self.core, Overlay(self.core, "v0.1.0", False))
+        self.assertIn("dubious ownership", clean[2])
+        self.assertNotIn("more", clean[2])
+        self.assertNotIn("untagged", pin[2])
+        self.assertIn("cannot be checked", pin[2])
+
+
+class GlobalAgents(unittest.TestCase):
+    def setUp(self):
+        root = tree(self)
+        self.core = root / "core"
+        write(self.core / "core" / "AGENTS.core.md", "core rules\n")
+        self.ovdir = root / "ov"
+        self.ovdir.mkdir()
+        self.ov = Overlay(self.ovdir, "v0.1.0", True)
+        self.home = root / "home"
+        self.home.mkdir()
+
+    def level(self):
+        [(level, name, _)] = check_global(self.home, self.core, self.ov)
+        self.assertEqual(name, "global AGENTS.md")
+        return level
+
+    def test_ok(self):
+        write(self.home / "AGENTS.md", render_agents(self.core, self.ovdir))
+        self.assertEqual(self.level(), "ok")
+
+    def test_missing_warns(self):
+        self.assertEqual(self.level(), "warn")
+
+    def test_stale_warns(self):
+        write(self.home / "AGENTS.md", stamp("old\n"))
+        self.assertEqual(self.level(), "warn")
+
+    def test_override_fails(self):
+        write(self.home / "AGENTS.md", render_agents(self.core, self.ovdir))
+        write(self.home / "AGENTS.override.md", "x\n")
+        self.assertEqual(self.level(), "FAIL")
+
+    def test_empty_override_ignored(self):
+        write(self.home / "AGENTS.md", render_agents(self.core, self.ovdir))
+        write(self.home / "AGENTS.override.md", "")
+        self.assertEqual(self.level(), "ok")

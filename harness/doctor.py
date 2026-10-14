@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import mmap
 import os
 import shutil
@@ -6,6 +8,7 @@ import tomllib
 from pathlib import Path
 
 from harness import paths
+from harness.install import render_agents
 from harness.overlay import Overlay, load
 
 Check = tuple[str, str, str]
@@ -28,10 +31,13 @@ def check_binary(bin_path: Path | None, keys=PACK_KEYS) -> list[Check]:
     name = "codex keys"
     if bin_path is None or not bin_path.is_file():
         return [("FAIL", name, "codex binary not found; pass --codex-bin PATH or set CODEX_BIN")]
-    if bin_path.stat().st_size < SHIM_MAX_BYTES:
-        return [("FAIL", name, f"{bin_path} is a launcher, not the native binary; pass --codex-bin PATH")]
-    with open(bin_path, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
-        missing = [k for k in keys if m.find(k.encode()) == -1]
+    try:
+        if bin_path.stat().st_size < SHIM_MAX_BYTES:
+            return [("FAIL", name, f"{bin_path} is a launcher, not the native binary; pass --codex-bin PATH")]
+        with open(bin_path, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
+            missing = [k for k in keys if m.find(k.encode()) == -1]
+    except OSError as e:
+        return [("FAIL", name, f"cannot read {bin_path}: {e.strerror or e}")]
     if missing:
         return [("FAIL", name, f"not in {bin_path.name}: {', '.join(missing)}")]
     return [("ok", name, f"{len(keys)} keys present in {bin_path.name}")]
@@ -100,6 +106,19 @@ def check_chain(home: Path, cwd: Path) -> list[Check]:
     return [("ok", "AGENTS.md chain", detail)]
 
 
+def check_global(home: Path, core: Path, ov: Overlay) -> list[Check]:
+    name = "global AGENTS.md"
+    override = home / "AGENTS.override.md"
+    if override.is_file() and override.stat().st_size > 0:
+        return [("FAIL", name, f"{override} is non-empty; Codex loads it instead of the generated AGENTS.md")]
+    target = home / "AGENTS.md"
+    if not target.is_file():
+        return [("warn", name, f"{target} is missing; run harness install")]
+    if target.read_bytes() != render_agents(core, ov.root).encode("utf-8"):
+        return [("warn", name, f"{target} is stale; run harness install")]
+    return [("ok", name, f"{target} is current")]
+
+
 def _git(core: Path, *args: str) -> subprocess.CompletedProcess | None:
     try:
         return subprocess.run(["git", "-C", str(core), *args], capture_output=True, text=True, encoding="utf-8")
@@ -111,11 +130,16 @@ def check_core(core: Path, ov: Overlay) -> list[Check]:
     strict = "FAIL" if not ov.core_writable else "warn"
     described = _git(core, "describe", "--tags", "--exact-match", "HEAD")
     tag = described.stdout.strip() if described and described.returncode == 0 else ""
-    pin = ("ok", "core pin", tag) if tag == ov.core_version else (
-        strict, "core pin", f"core is at {tag or 'an untagged commit'}, overlay pins {ov.core_version}")
     status = _git(core, "status", "--porcelain")
     if status is None or status.returncode != 0:
-        return [pin, ("FAIL", "core clean", f"{core} is not a readable git repo or git is missing")]
+        reason = f"{core} is not a readable git repo or git is missing"
+        first = (status.stderr.strip().splitlines() or [""])[0] if status else ""
+        if first:
+            reason += f": {first}"
+        pin = (strict, "core pin", f"cannot be checked; overlay pins {ov.core_version}")
+        return [pin, ("FAIL", "core clean", reason)]
+    pin = ("ok", "core pin", tag) if tag == ov.core_version else (
+        strict, "core pin", f"core is at {tag or 'an untagged commit'}, overlay pins {ov.core_version}")
     dirty = status.stdout.strip()
     clean = ("FAIL", "core clean", "core has local edits but core_writable = false") if dirty and not ov.core_writable \
         else ("ok", "core clean", "local edits allowed" if dirty else "no local edits")
@@ -131,5 +155,6 @@ def cli(args) -> int:
             checks.append(("FAIL", "overlay", str(e)))
         else:
             checks += check_core(paths.CORE, ov)
+            checks += check_global(paths.codex_home(args.codex_home), paths.CORE, ov)
         checks += check_chain(paths.codex_home(args.codex_home), Path.cwd())
     return report(checks)

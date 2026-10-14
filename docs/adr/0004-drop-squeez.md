@@ -15,7 +15,6 @@ Measured on the personal bench machine over 7 days:
 - The top 1% of calls gave 86% of the savings. The top 5% gave 96%.
 - Issues #269 (concurrent init truncates `AGENTS.md`) and #270 were open on 2026-10-14.
 - During the design session it swallowed command output entirely (17 tokens became 0).
-- Also measured on a corporate workload (numbers kept private); the effect was also small.
 
 ## Cost
 None. Codex already caps giant outputs with `tool_output_token_limit`.

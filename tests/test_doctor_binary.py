@@ -1,6 +1,7 @@
 import contextlib
 import io
 import unittest
+from unittest import mock
 
 from harness.doctor import SHIM_MAX_BYTES, check_binary, report
 from tests.util import tree
@@ -33,6 +34,13 @@ class CheckBinary(unittest.TestCase):
         [(level, _, detail)] = check_binary(shim, ("alpha_key",))
         self.assertEqual(level, "FAIL")
         self.assertIn("--codex-bin", detail)
+
+    def test_unreadable_binary_fails_cleanly(self):
+        b = fake_binary(self.root, ["alpha_key"])
+        with mock.patch("builtins.open", side_effect=PermissionError(13, "Permission denied")):
+            [(level, _, detail)] = check_binary(b, ("alpha_key",))
+        self.assertEqual(level, "FAIL")
+        self.assertIn("cannot read", detail)
 
     def test_not_found(self):
         [(level, _, detail)] = check_binary(None, ("alpha_key",))

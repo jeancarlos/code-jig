@@ -32,6 +32,19 @@ class LoadOverlay(unittest.TestCase):
             load(self.root)
 
 
+class Encodings(unittest.TestCase):
+    def test_bom_toml_loads(self):
+        root = tree(self)
+        (root / "overlay.toml").write_bytes(b"\xef\xbb\xbf" + b'core_version = "v0.1.0"\ncore_writable = true\n')
+        self.assertEqual(load(root).core_version, "v0.1.0")
+
+    def test_utf16_toml_names_file(self):
+        root = tree(self)
+        (root / "overlay.toml").write_bytes('core_version = "v0.1.0"\n'.encode("utf-16"))
+        with self.assertRaisesRegex(ValueError, "overlay.toml"):
+            load(root)
+
+
 class OverlayDir(unittest.TestCase):
     def test_unset_exits_with_hint(self):
         with mock.patch.dict(os.environ, {}, clear=True):
