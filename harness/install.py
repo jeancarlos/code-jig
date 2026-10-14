@@ -66,9 +66,9 @@ def write_generated(path: Path, text: str) -> Path | None:
 HOOK_STATUS = "codex-harness collect"
 
 
-def hook_commands(core: Path, home: Path, python: str) -> tuple[str, str]:
-    posix = f"PYTHONPATH={shlex.quote(str(core))} {shlex.quote(python)} -m harness --codex-home {shlex.quote(str(home))} collect"
-    windows = f'set "PYTHONPATH={core}" && "{python}" -m harness --codex-home "{home}" collect'
+def hook_commands(lib: Path, home: Path, python: str) -> tuple[str, str]:
+    posix = f"PYTHONPATH={shlex.quote(str(lib))} {shlex.quote(python)} -P -m harness --codex-home {shlex.quote(str(home))} collect"
+    windows = f'set "PYTHONPATH={lib}" && "{python}" -P -m harness --codex-home "{home}" collect'
     return posix, windows
 
 
@@ -134,7 +134,9 @@ def plan(core: Path, ov: Overlay, home: Path) -> list[tuple[Path, str]]:
     outputs = [(home / "AGENTS.md", render_agents(core, ov.root))]
     outputs += [(home / f"{t.name}.config.toml", render_profile(t, policy)) for t in tiers.load(core, ov.root)]
     outputs += [(home / "rules" / name, text) for name, text in rule_files(ov.root).items()]
-    outputs.append((home / "hooks.json", merged_hooks(home / "hooks.json", *hook_commands(core, home, sys.executable))))
+    lib = home / "codex-harness" / "lib"
+    outputs += [(lib / "harness" / p.name, stamp(p.read_text(encoding="utf-8"), "hash")) for p in sorted((core / "harness").glob("*.py"))]
+    outputs.append((home / "hooks.json", merged_hooks(home / "hooks.json", *hook_commands(lib, home, sys.executable))))
     return outputs
 
 
