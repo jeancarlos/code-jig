@@ -43,7 +43,7 @@ def _digest(home: Path) -> str:
     return first.split(MARKER_BODY, 1)[1].split(" ", 1)[0]
 
 
-def check_prompt(bin_path: Path | None, home: Path, cwd: Path, ts: list[Tier]) -> list[Check]:
+def check_prompt(bin_path: Path | None, home: Path, cwd: Path, ts: list[Tier], skills: list[str] | None = None) -> list[Check]:
     if bin_path is None:
         return [("warn", "prompt probe", "codex not found; skipped")]
     digest = _digest(home)
@@ -57,6 +57,8 @@ def check_prompt(bin_path: Path | None, home: Path, cwd: Path, ts: list[Tier]) -
             checks.append(("FAIL", name, _error(r)))
         elif digest and f"sha256:{digest}" not in r.stdout:
             checks.append(("FAIL", name, "the generated AGENTS.md is not in the prompt; check AGENTS.override.md and project_doc_max_bytes"))
+        elif missing := [s for s in skills or [] if s not in r.stdout]:
+            checks.append(("FAIL", name, f"skills not loaded: {', '.join(missing)}; run harness install"))
         else:
             checks.append(("ok", name, "profile loads" + (" and AGENTS.md reaches the prompt" if digest else "")))
     return checks

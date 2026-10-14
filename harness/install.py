@@ -28,6 +28,10 @@ def render_agents(core: Path, overlay_root: Path) -> str:
     extra = overlay_root / "AGENTS.overlay.md"
     if extra.is_file():
         parts.append(extra.read_text(encoding="utf-8-sig"))
+    index = overlay_root / "knowledge" / "INDEX.md"
+    if index.is_file():
+        parts.append(f"## Knowledge\n\nThis machine keeps one fact per file in {index.parent}. "
+                     f"Read {index} when a task touches a tool, service or convention it may cover.\n")
     return stamp("\n".join(p.rstrip("\n") + "\n" for p in parts))
 
 

@@ -18,7 +18,7 @@ if "prompt-input" in args:
         sys.stderr.write("WARNING: proceeding\nError: broken.config.toml:1:9: bad\n"); sys.exit(1)
     agents = os.path.join(home, "AGENTS.md")
     text = open(agents, encoding="utf-8").read() if os.path.exists(agents) and profile != "hidden" else ""
-    print('[{"type":"message","content":[{"text":%r}]}]' % text)
+    print('[{"type":"message","content":[{"text":%r}]}]' % (text + " <skills_instructions> - grilling: x"))
 elif args and args[0] == "execpolicy":
     files = [args[i + 1] for i, a in enumerate(args) if a == "--rules"]
     for f in files:
@@ -96,3 +96,10 @@ class Probe(unittest.TestCase):
     def test_no_rules_dir_is_ok(self):
         [(level, _, _)] = probe.check_rules(self.bin, self.home, self.cwd)
         self.assertEqual(level, "ok")
+
+    def test_prompt_lists_installed_skills(self):
+        [(level, _, _)] = probe.check_prompt(self.bin, self.home, self.cwd, [Tier("default", "m-a", "medium")], skills=["grilling"])
+        self.assertEqual(level, "ok")
+        [(level, _, detail)] = probe.check_prompt(self.bin, self.home, self.cwd, [Tier("default", "m-a", "medium")], skills=["nope"])
+        self.assertEqual(level, "FAIL")
+        self.assertIn("nope", detail)

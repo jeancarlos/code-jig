@@ -9,7 +9,7 @@ import tomllib
 from pathlib import Path
 
 from harness import managed, paths, probe, tiers
-from harness.install import HOOK_STATUS, render_agents, render_profile
+from harness.install import HOOK_STATUS, render_agents, render_profile, skill_sources
 from harness.overlay import Overlay, load
 
 Check = tuple[str, str, str]
@@ -203,6 +203,25 @@ def check_hook(home: Path) -> list[Check]:
             else ("warn", "stop hook", "not registered; run harness install")]
 
 
+def check_knowledge(ov: Overlay) -> list[Check]:
+    kb = ov.root / "knowledge"
+    index = kb / "INDEX.md"
+    if not kb.is_dir():
+        return [("ok", "knowledge", "no knowledge base")]
+    if not index.is_file():
+        return [("warn", "knowledge", f"{kb} has no INDEX.md; Codex is not pointed at it")]
+    n = len(index.read_text(encoding="utf-8-sig").splitlines())
+    return [("ok", "knowledge", f"index has {n} of 150 lines") if n <= 150
+            else ("warn", "knowledge", f"{index} has {n} lines; merge or delete facts to stay at 150")]
+
+
+def check_superpowers(home: Path) -> list[Check]:
+    plugins = read_config(home).get("plugins")
+    if isinstance(plugins, dict) and any(k.startswith("superpowers@") for k in plugins):
+        return [("ok", "superpowers", "installed")]
+    return [("warn", "superpowers", "not installed; run: codex plugin add superpowers@openai-curated")]
+
+
 def _git(core: Path, *args: str) -> subprocess.CompletedProcess | None:
     try:
         return subprocess.run(["git", "-C", str(core), *args], capture_output=True, text=True, encoding="utf-8")
@@ -244,12 +263,18 @@ def cli(args) -> int:
             checks += check_global(home, paths.CORE, ov)
             checks += check_tiers(home, paths.CORE, ov)
             checks += check_hook(home)
+            checks += check_knowledge(ov)
+            checks += check_superpowers(home)
             try:
                 ts = tiers.load(paths.CORE, ov.root)
             except ValueError:
                 ts = []
             checks += managed.check_requirements(managed.requirements_path(), paths.CORE / "bench" / "requirements.toml", ts)
-            checks += probe.check_prompt(bin_path, home, Path.cwd(), ts)
+            try:
+                skills = sorted(skill_sources(paths.CORE, ov.root))
+            except ValueError:
+                skills = []
+            checks += probe.check_prompt(bin_path, home, Path.cwd(), ts, skills)
             checks += probe.check_rules(bin_path, home, Path.cwd())
             if args.live:
                 checks += probe.check_live(bin_path, home, Path.cwd(), ts)

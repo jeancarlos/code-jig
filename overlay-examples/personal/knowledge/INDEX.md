@@ -1,0 +1,1 @@
+- [Bench machine](bench-machine.md): the personal machine is the test bench; core edits are allowed here.
