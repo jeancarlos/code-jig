@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>codex-harness deck</title>
+<style>
+:root{--bg:#fafaf7;--fg:#1d1d1b;--muted:#5f5f59;--accent:#2f5d50;--rule:#deded7;--fill-bg:#fff1c2;--fill-fg:#6b4b00}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#141413;--fg:#ecece6;--muted:#a8a8a0;--accent:#86c5ae;--rule:#2e2e2b;--fill-bg:#3b3013;--fill-fg:#f2d48a}}
+:root[data-theme="dark"]{--bg:#141413;--fg:#ecece6;--muted:#a8a8a0;--accent:#86c5ae;--rule:#2e2e2b;--fill-bg:#3b3013;--fill-fg:#f2d48a}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:18px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+.slide{display:none;box-sizing:border-box;min-height:100vh;max-width:1000px;margin:0 auto;padding:6vh 16px 10vh}
+.slide.on{display:block}
+body.all .slide{display:block;min-height:auto;border-bottom:1px solid var(--rule)}
+h1{font-size:clamp(1.8rem,5vw,2.8rem);margin:0 0 .3em}
+h2{color:var(--accent);margin:0 0 .6em;font-size:clamp(1.3rem,3.5vw,1.9rem)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}
+.stat{border:1px solid var(--rule);border-radius:8px;padding:12px 14px}
+.stat b{display:block;font-size:1.8em;line-height:1.2}
+.stat small{color:var(--muted)}
+.fill{background:var(--fill-bg);color:var(--fill-fg);border-radius:4px;padding:0 6px;font:600 .75em ui-monospace,monospace;white-space:normal}
+.muted{color:var(--muted)}
+pre{overflow-x:auto;font-size:.78em;border:1px solid var(--rule);border-radius:8px;padding:12px}
+li{margin:.25em 0}
+nav{position:fixed;bottom:8px;right:16px;font-size:.8em;color:var(--muted)}
+@media print{.slide{display:block;break-after:page}nav{display:none}}
+</style>
+<script src="data.js"></script>
+<script src="data.local.js" onerror="void 0"></script>
+</head>
+<body>
+<main id="deck"></main>
+<nav id="pos"></nav>
+<script>
+const D = Object.assign({}, window.DECK_DATA || {}, window.DECK_LOCAL || {});
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const v = (k, unit = "") => D[k] == null ? `<span class="fill">fill in ${esc(k)} in data.local.js</span>` : esc(D[k]) + unit;
+const stat = (k, label, unit = "") => `<div class="stat"><b>${v(k, unit)}</b><small>${label}</small></div>`;
+const slides = [
+  () => `<h1>codex-harness</h1><p>A token-frugal config pack for the official Codex CLI, built on a personal bench and used on a corporate laptop.</p><p class="muted">Codex ${v("bench_codex_version")} on the bench, ${v("ci_codex_version")} in CI.</p>`,
+  () => `<h2>Where the tokens go</h2><div class="grid">${stat("work_guardian_share","Guardian reviews, share of input","%")}${stat("work_guardian_context_per_review","context re-read per Guardian review")}${stat("work_largest_session_turns","turns in the largest session")}${stat("work_context_per_turn","context per turn in that session")}${stat("work_cache_hit","cache hit","%")}${stat("work_output_share","output as share of input","%")}</div><p class="muted">Input dominates. Every turn re-sends the context; cache makes it cheaper, not free.</p>`,
+  () => `<h2>squeez: measured, then removed</h2><div class="grid">${stat("bench_squeez_share_of_input","of all input saved on the bench (7 days)","%")}${stat("work_squeez_share","of all input saved at work","%")}${stat("bench_squeez_unchanged_pct","of Bash calls left unchanged","%")}${stat("bench_squeez_top1_share","of savings from the top 1% of calls","%")}</div><p>${v("bench_squeez_calls")} Bash calls; ${v("bench_squeez_grew_calls")} came out larger. It worked as a cap on giant outputs, which Codex already has: <code>tool_output_token_limit</code>.</p>`,
+  () => `<h2>What the research found</h2><ul><li>The Guardian model is chosen from OpenAI's model catalog and runs at low effort. There is no supported knob to change it.</li><li>Guardian context is tunable, experimentally: <code>[features.guardianv2]</code>.</li><li>A custom <code>[auto_review].policy</code> replaces the default instead of merging.</li><li>Profiles are separate files since 0.134; the old <code>[profiles]</code> table is rejected.</li><li>Changing reasoning effort mid-session breaks the prompt cache.</li><li>The AGENTS.md chain stops loading silently at 32 KiB.</li></ul><p class="muted">Two independent researchers, every claim checked against the binary and the source at rust-v0.163.0-alpha.11.</p>`,
+  () => `<h2>Architecture</h2><pre>public core (tagged)            overlay (one per machine, private)
+harness/  Python CLI            overlay.toml   core_version, core_writable
+AGENTS.core.md                  profiles.toml  tier -> model ID
+tiers.toml, rules/, policy/     AGENTS.overlay.md, rules/, skills/
+skills/, bench/, docs/          guardian-policy.md, knowledge/
+
+        harness install  -->  CODEX_HOME</pre><p>The bench improves the core. The corporate laptop improves only its overlay. Ideas cross back clean-room, never as code.</p>`,
+  () => `<h2>Guardian: fewer reviews, smaller input, better policy</h2><ol><li><b>.rules</b> let read-only commands and the repo's own test, lint and build run without review.</li><li><b>guardianv2</b> context limits, switched on only after a bench A/B.</li><li><b>Policy</b> = upstream default + local additions, diffed on every Codex upgrade.</li></ol><p class="muted">Overriding the reviewer model was rejected: it means tampering with a security control.</p>`,
+  () => `<h2>Tracker without a server</h2><ul><li>A <code>Stop</code> hook runs <code>harness collect</code>: rollout JSONL to SQLite, incremental and idempotent.</li><li><code>harness tokens</code> prints the sessions, the Guardian share, cache hit and polling turns.</li><li>A Grafana dashboard is optional, for an already-approved instance.</li></ul>`,
+  () => `<h2>Security posture</h2><ul><li>Codex is the only client that talks to OpenAI.</li><li>No proxy, no daemon, no auto-update, no binaries on the laptop.</li><li>Corporate data never crosses to the personal side; the public repo carries bench data only.</li></ul>`,
+  () => `<h2>Roadmap</h2><ol><li>Skeleton: install, doctor, CI, this deck.</li><li>Guardian and tiers: profiles, rules, policy, bench A/B.</li><li>Tracker: collect, tokens, deck v2 with bench data.</li><li>Skills: superpowers, cross-review, web-consensus, grilling, improve.</li></ol>`
+];
+const deck = document.getElementById("deck");
+deck.innerHTML = slides.map((s, i) => `<section class="slide" id="s${i + 1}">${s()}</section>`).join("");
+const all = [...deck.children];
+let i = Math.max(0, Math.min(all.length - 1, (parseInt(location.hash.slice(2), 10) || 1) - 1));
+const show = n => { i = Math.max(0, Math.min(all.length - 1, n)); all.forEach((el, j) => el.classList.toggle("on", j === i)); document.getElementById("pos").textContent = `${i + 1} / ${all.length}`; history.replaceState(null, "", `#s${i + 1}`); };
+if (new URLSearchParams(location.search).has("all")) document.body.classList.add("all");
+document.addEventListener("keydown", e => { if (["ArrowRight","PageDown"," "].includes(e.key)) show(i + 1); if (["ArrowLeft","PageUp"].includes(e.key)) show(i - 1); });
+deck.addEventListener("click", e => { if (!e.target.closest("a,code,pre")) show(i + 1); });
+show(i);
+</script>
+</body>
+</html>

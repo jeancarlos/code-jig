@@ -1,0 +1,19 @@
+window.DECK_DATA = {
+  bench_codex_version: "0.162.0-alpha.17.2",
+  ci_codex_version: "0.162.1",
+  bench_squeez_calls: "40,105",
+  bench_squeez_unchanged_pct: 67,
+  bench_squeez_grew_calls: "1,795",
+  bench_squeez_top1_share: 86,
+  bench_squeez_top5_share: 96,
+  bench_input_7d: "1,857.8M",
+  bench_squeez_share_of_input: 0.05,
+  work_guardian_share: null,
+  work_guardian_context_per_review: null,
+  work_cache_hit: null,
+  work_largest_session_turns: null,
+  work_context_per_turn: null,
+  work_polling_turns: null,
+  work_output_share: null,
+  work_squeez_share: null
+};
