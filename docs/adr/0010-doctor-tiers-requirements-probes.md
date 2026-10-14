@@ -7,6 +7,7 @@ Status: accepted (2026-10-14)
 - per tier: the profile file exists and is current; the model is in this account's `models_cache.json` and supports the tier's effort (candidates are listed, never picked); `config.toml` has no legacy profile with a tier's name; `review` and `default` use different model families;
 - the local managed `requirements.toml` (`/etc/codex/` on Linux and macOS, `%ProgramData%\OpenAI\Codex\` on Windows): FAIL when `auto_review` is not an allowed reviewer; warn when `auto_review.ignore_rules` names a tier model, when `allow_managed_hooks_only` is set, or when a managed `guardian_extra_policy` overrides the overlay; and a key-level diff against `bench/requirements.toml`;
 - a zero-token probe per tier, `codex --profile <tier> debug prompt-input ping`: the profile parses and the generated `AGENTS.md` reaches the prompt;
+- every file in `$CODEX_HOME/rules` loads under `codex execpolicy check`: when one file fails to parse, Codex silently runs with no exec policy at all, `default.rules` included (`codex-rs/core/src/exec_policy.rs`, rust-v0.162.1);
 - `--live`, opt-in: one short `codex exec --profile <tier> --ephemeral --sandbox read-only` per tier, checking the `model:` and `reasoning effort:` lines Codex prints before the turn.
 
 ## Reason to exist
