@@ -13,6 +13,7 @@ def build_parser() -> argparse.ArgumentParser:
     d = sub.add_parser("doctor")
     d.add_argument("--codex-bin")
     d.add_argument("--check-binary", action="store_true")
+    d.add_argument("--live", action="store_true")
     return p
 
 

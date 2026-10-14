@@ -1,0 +1,74 @@
+import subprocess
+import sys
+import unittest
+from unittest import mock
+
+from harness import probe
+from harness.install import stamp
+from harness.tiers import Tier
+from tests.util import tree, write
+
+FAKE = r'''
+import os, sys
+args = sys.argv[1:]
+home = os.environ["CODEX_HOME"]
+if "prompt-input" in args:
+    profile = args[args.index("--profile") + 1]
+    if profile == "broken":
+        sys.stderr.write("WARNING: proceeding\nError: broken.config.toml:1:9: bad\n"); sys.exit(1)
+    agents = os.path.join(home, "AGENTS.md")
+    text = open(agents, encoding="utf-8").read() if os.path.exists(agents) and profile != "hidden" else ""
+    print('[{"type":"message","content":[{"text":%r}]}]' % text)
+elif args and args[0] == "exec":
+    profile = args[args.index("--profile") + 1]
+    sys.stderr.write("OpenAI Codex v0\n--------\nworkdir: x\nmodel: %s\nreasoning effort: %s\nsession id: 1\n--------\n"
+                     % ("m-a" if profile != "wrong" else "zzz", "medium"))
+    print("OK")
+'''
+
+
+class Probe(unittest.TestCase):
+    def setUp(self):
+        root = tree(self)
+        self.home = root / "codex home"
+        write(self.home / "AGENTS.md", stamp("core\n"))
+        script = write(root / "fake_codex.py", FAKE)
+        patcher = mock.patch.object(probe, "command", lambda b: [sys.executable, str(script)])
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.cwd = root
+        self.bin = self.home / "codex"
+
+    def test_prompt_ok(self):
+        [(level, _, detail)] = probe.check_prompt(self.bin, self.home, self.cwd, [Tier("default", "m-a", "medium")])
+        self.assertEqual(level, "ok")
+        self.assertIn("AGENTS.md reaches the prompt", detail)
+
+    def test_prompt_broken_profile_fails_with_error(self):
+        [(level, _, detail)] = probe.check_prompt(self.bin, self.home, self.cwd, [Tier("broken", "m", "low")])
+        self.assertEqual(level, "FAIL")
+        self.assertIn("broken.config.toml", detail)
+
+    def test_prompt_marker_missing_fails(self):
+        [(level, _, detail)] = probe.check_prompt(self.bin, self.home, self.cwd, [Tier("hidden", "m", "low")])
+        self.assertEqual(level, "FAIL")
+        self.assertIn("AGENTS.md", detail)
+
+    def test_no_binary_warns(self):
+        [(level, _, _)] = probe.check_prompt(None, self.home, self.cwd, [Tier("default", "m", "low")])
+        self.assertEqual(level, "warn")
+
+    def test_timeout_is_a_fail_not_a_crash(self):
+        with mock.patch.object(probe.subprocess, "run", side_effect=subprocess.TimeoutExpired("codex", 1)):
+            [(level, _, detail)] = probe.check_prompt(self.bin, self.home, self.cwd, [Tier("default", "m", "low")])
+        self.assertEqual(level, "FAIL")
+        self.assertIn("timed out", detail)
+
+    def test_live_matches_and_mismatches(self):
+        checks = probe.check_live(self.bin, self.home, self.cwd,
+                                  [Tier("default", "m-a", "medium"), Tier("wrong", "m-a", "medium")])
+        self.assertEqual([c[0] for c in checks], ["ok", "FAIL"])
+
+    def test_parse_summary_strips_ansi(self):
+        s = "\x1b[1mmodel:\x1b[0m gpt-x\n\x1b[1mreasoning effort:\x1b[0m high\nuser\nmodel: later\n"
+        self.assertEqual(probe.parse_summary(s), {"model": "gpt-x", "reasoning effort": "high"})

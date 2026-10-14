@@ -8,7 +8,7 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-from harness import managed, paths, tiers
+from harness import managed, paths, probe, tiers
 from harness.install import render_agents, render_profile
 from harness.overlay import Overlay, load
 
@@ -216,7 +216,9 @@ def check_core(core: Path, ov: Overlay) -> list[Check]:
 
 
 def cli(args) -> int:
-    checks = check_binary(resolve_codex_bin(args.codex_bin))
+    bin_path = resolve_codex_bin(args.codex_bin)
+    home = paths.codex_home(args.codex_home)
+    checks = check_binary(bin_path)
     if not args.check_binary:
         try:
             ov = load(paths.overlay_dir(args.overlay))
@@ -224,12 +226,15 @@ def cli(args) -> int:
             checks.append(("FAIL", "overlay", str(e)))
         else:
             checks += check_core(paths.CORE, ov)
-            checks += check_global(paths.codex_home(args.codex_home), paths.CORE, ov)
-            checks += check_tiers(paths.codex_home(args.codex_home), paths.CORE, ov)
+            checks += check_global(home, paths.CORE, ov)
+            checks += check_tiers(home, paths.CORE, ov)
             try:
                 ts = tiers.load(paths.CORE, ov.root)
             except ValueError:
                 ts = []
             checks += managed.check_requirements(managed.requirements_path(), paths.CORE / "bench" / "requirements.toml", ts)
-        checks += check_chain(paths.codex_home(args.codex_home), Path.cwd())
+            checks += probe.check_prompt(bin_path, home, Path.cwd(), ts)
+            if args.live:
+                checks += probe.check_live(bin_path, home, Path.cwd(), ts)
+        checks += check_chain(home, Path.cwd())
     return report(checks)
