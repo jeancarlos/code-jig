@@ -1,0 +1,72 @@
+import unittest
+
+from harness.install import SKILL_SIDECAR, install_skills, skill_sources, tree_digest
+from tests.util import tree, write
+
+SKILL = "---\nname: {n}\ndescription: test skill {n}\n---\n\nbody\n"
+
+
+def skill(root, name, body=None):
+    write(root / name / "SKILL.md", body or SKILL.format(n=name))
+    return root / name
+
+
+class Skills(unittest.TestCase):
+    def setUp(self):
+        self.root = tree(self)
+        self.core = self.root / "core-repo"
+        self.ov = self.root / "overlay"
+        self.dest = self.root / "agents" / "skills"
+        skill(self.core / "skills", "grilling")
+
+    def test_sources_and_clash(self):
+        skill(self.ov / "skills", "mine")
+        self.assertEqual(sorted(skill_sources(self.core, self.ov)), ["grilling", "mine"])
+        skill(self.ov / "skills", "grilling")
+        with self.assertRaisesRegex(ValueError, "grilling"):
+            skill_sources(self.core, self.ov)
+
+    def test_install_copies_with_sidecar(self):
+        install_skills(skill_sources(self.core, self.ov), self.dest)
+        got = self.dest / "grilling"
+        self.assertEqual((got / "SKILL.md").read_text(encoding="utf-8"), SKILL.format(n="grilling"))
+        self.assertEqual((got / SKILL_SIDECAR).read_text(encoding="utf-8").strip(), tree_digest(got))
+
+    def test_user_skill_with_same_name_is_backed_up(self):
+        skill(self.dest, "grilling", "---\nname: grilling\ndescription: mine\n---\nmine\n")
+        lines = install_skills(skill_sources(self.core, self.ov), self.dest)
+        [backup] = self.dest.glob("grilling.bak-*")
+        self.assertIn("mine", (backup / "SKILL.md").read_text(encoding="utf-8"))
+        self.assertTrue(any(str(backup) in line for line in lines))
+
+    def test_reinstall_replaces_own_copy_without_backup(self):
+        install_skills(skill_sources(self.core, self.ov), self.dest)
+        write(self.core / "skills" / "grilling" / "SKILL.md", SKILL.format(n="grilling") + "v2\n")
+        install_skills(skill_sources(self.core, self.ov), self.dest)
+        self.assertEqual(list(self.dest.glob("grilling.bak-*")), [])
+        self.assertIn("v2", (self.dest / "grilling" / "SKILL.md").read_text(encoding="utf-8"))
+
+    def test_removed_skill_pruned_edited_copy_kept(self):
+        skill(self.ov / "skills", "a")
+        skill(self.ov / "skills", "b")
+        install_skills(skill_sources(self.core, self.ov), self.dest)
+        write(self.dest / "b" / "SKILL.md", "---\nname: b\ndescription: edited\n---\n")
+        import shutil
+        shutil.rmtree(self.ov / "skills" / "a")
+        shutil.rmtree(self.ov / "skills" / "b")
+        lines = install_skills(skill_sources(self.core, self.ov), self.dest)
+        self.assertFalse((self.dest / "a").exists())
+        self.assertTrue((self.dest / "b").exists())
+        self.assertTrue(any(line.startswith("warning:") and "b" in line for line in lines))
+
+    def test_unrelated_user_skills_untouched(self):
+        mine = skill(self.dest, "other")
+        install_skills(skill_sources(self.core, self.ov), self.dest)
+        self.assertTrue((mine / "SKILL.md").exists())
+
+
+class RealHomeIsolation(unittest.TestCase):
+    def test_tests_never_target_the_real_skills_folder(self):
+        from pathlib import Path
+        from harness import paths
+        self.assertNotEqual(paths.agents_skills(), Path.home() / ".agents" / "skills")

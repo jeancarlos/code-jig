@@ -129,11 +129,62 @@ def prune_rules(rules_dir: Path, keep: set[str]) -> list[str]:
     return lines
 
 
+SKILL_SIDECAR = ".codex-harness"
+
+
+def _skill_dirs(root: Path) -> dict[str, Path]:
+    return {p.parent.name: p.parent for p in sorted(root.glob("*/SKILL.md"))} if root.is_dir() else {}
+
+
+def skill_sources(core: Path, overlay_root: Path) -> dict[str, Path]:
+    core_skills, ov_skills = _skill_dirs(core / "skills"), _skill_dirs(overlay_root / "skills")
+    clash = sorted(set(core_skills) & set(ov_skills))
+    if clash:
+        raise ValueError(f"{overlay_root / 'skills'}: {', '.join(clash)} already in {core / 'skills'}; rename the overlay skill")
+    return {**core_skills, **ov_skills}
+
+
+def tree_digest(src: Path) -> str:
+    h = hashlib.sha256()
+    for f in sorted(p for p in src.rglob("*") if p.is_file() and p.name != SKILL_SIDECAR and "__pycache__" not in p.parts):
+        h.update(f.relative_to(src).as_posix().encode() + b"\0" + f.read_bytes() + b"\0")
+    return h.hexdigest()
+
+
+def _own_skill(d: Path) -> bool:
+    side = d / SKILL_SIDECAR
+    return side.is_file() and side.read_text(encoding="utf-8").strip() == tree_digest(d)
+
+
+def install_skills(sources: dict[str, Path], dest: Path) -> list[str]:
+    lines = []
+    dest.mkdir(parents=True, exist_ok=True)
+    for name, src in sources.items():
+        target = dest / name
+        if target.exists() and not _own_skill(target):
+            backup = _backup_name(target)
+            target.replace(backup)
+            lines.append(f"moved your previous {target} to {backup}")
+        elif target.exists():
+            shutil.rmtree(target)
+        shutil.copytree(src, target, ignore=shutil.ignore_patterns("__pycache__", SKILL_SIDECAR))
+        (target / SKILL_SIDECAR).write_text(tree_digest(target) + "\n", encoding="utf-8", newline="\n")
+        lines.append(f"wrote {target}")
+    for d in sorted(p for p in dest.iterdir() if p.is_dir() and p.name not in sources and (p / SKILL_SIDECAR).is_file()):
+        if _own_skill(d):
+            shutil.rmtree(d)
+            lines.append(f"removed {d}: no longer in the core or overlay")
+        else:
+            lines.append(f"warning: left {d}: edited by hand, Codex still loads it")
+    return lines
+
+
 def render_profile(tier: tiers.Tier, policy: str) -> str:
     return stamp(tiers.profile_body(tier, policy), "hash")
 
 
 def plan(core: Path, ov: Overlay, home: Path) -> list[tuple[Path, str]]:
+    skill_sources(core, ov.root)
     policy = tiers.extra_policy(ov.root)
     outputs = [(home / "AGENTS.md", render_agents(core, ov.root))]
     outputs += [(home / f"{t.name}.config.toml", render_profile(t, policy)) for t in tiers.load(core, ov.root)]
@@ -152,6 +203,7 @@ def run(core: Path, ov: Overlay, home: Path) -> list[str]:
         if backup:
             lines.append(f"moved your previous file to {backup}")
     lines += prune_rules(home / "rules", set(rule_files(ov.root)))
+    lines += install_skills(skill_sources(core, ov.root), paths.agents_skills())
     override = home / "AGENTS.override.md"
     if override.is_file() and override.stat().st_size > 0:
         lines.append(f"warning: {override} exists and Codex loads it instead of {home / 'AGENTS.md'}")

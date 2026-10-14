@@ -16,3 +16,7 @@ def overlay_dir(arg: str | None) -> Path:
     if not (root / "overlay.toml").is_file():
         raise SystemExit(f"harness: {root / 'overlay.toml'} not found")
     return root
+
+
+def agents_skills() -> Path:
+    return Path(os.environ.get("CODEX_HARNESS_SKILLS_DIR") or Path.home() / ".agents" / "skills").expanduser()
