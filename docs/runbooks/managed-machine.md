@@ -13,7 +13,7 @@ A managed machine (a work laptop, a shared build box, anything someone else admi
 
 Use a tagged release, never a branch:
 - Download the tag's source archive from the release page. This leaves no credentials on the machine.
-- Or clone the tag over HTTPS: `git clone --branch v0.4.1 https://github.com/jeancarlos/codex-harness`
+- Or clone the tag over HTTPS: `git clone --branch v0.5.0 https://github.com/jeancarlos/codex-harness`
 
 Do not sign in to a personal account with write access on a machine someone else administers.
 

@@ -22,7 +22,9 @@ I use coding agents every day, and I kept running into the same four problems.
 - **Guardian everywhere**, with your additions layered on the upstream policy.
 - **Token tracker**: `harness tokens` shows input, cache hit, Guardian share, escalated commands, the heaviest sessions and per-model usage. All local.
 - **Cross-family review**: `harness cross-review` sends your diff to a model from another family, read-only, before you push.
-- **Skills**: `cross-review`, `grilling` (stress-test a decision), `web-consensus` (settle facts against live sources), `improve` (turn a lesson into a durable change). Plus [superpowers](https://github.com/obra/superpowers) in one command.
+- **Sonar-style analysis without a server**: `harness analyze` runs the analyzers you already have (lizard, ruff, mypy, eslint with sonarjs, tsc, dotnet build with SonarAnalyzer, semgrep, gitleaks, osv-scanner) and groups the findings like Sonar: security, secrets, dependencies, bugs, types, complexity, duplication.
+- **Requirement tracing**: `harness trace` checks which requirement IDs (from Azure DevOps, GitHub issues or a Markdown design) have tests, and which tests cite IDs that no longer exist.
+- **Skills**: `cross-review`, `grilling` (stress-test a decision), `web-consensus` (settle facts against live sources), `improve` (turn a lesson into a durable change), and the deterministic toolbox: `code-analysis`, `regression-tests`, `hld-trace`, `bug-hunt` (property tests, fuzzing, mutation testing), `codegen` (OpenAPI clients, codemods). Plus [superpowers](https://github.com/obra/superpowers) in one command.
 - **Knowledge base**: one fact per file, indexed, pointed at by the generated AGENTS.md.
 - **Doctor**: checks the binary, the pins, every tier's model against your account's catalog, managed requirements and the AGENTS.md budget, and probes each tier for free.
 - **Works on locked-down machines**: native Windows support, no scripts required, respects administrator-managed Codex config and tells you how it differs from what was tested.
@@ -50,6 +52,7 @@ Edit `~/codex-overlay/profiles.toml` to pick your models; `doctor` lists the one
 | [Daily use](docs/runbooks/daily-use.md) | Tiers, skills, reviews, the repo's own AGENTS.md |
 | [Doctor](docs/runbooks/doctor.md) | What every check means and how to fix it |
 | [Tokens](docs/runbooks/tokens.md) | Reading the usage report |
+| [Code quality](docs/runbooks/code-quality.md) | `analyze`, `trace`, the toolbox skills, installing the tools |
 | [Managed machines](docs/runbooks/managed-machine.md) | Installing where someone else administers the machine |
 | [Network and certificates](docs/runbooks/network-and-certificates.md) | TLS-inspecting networks, git and CLI tools in the sandbox |
 | [Circuit breaker](docs/runbooks/circuit-breaker.md) | When Guardian stops a turn |

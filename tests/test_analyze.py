@@ -2,6 +2,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -66,6 +67,10 @@ class Detect(unittest.TestCase):
         write(self.root / "tool.py", "")
         self.assertEqual(analyze.detect(self.root), {"python"})
 
+    def test_python_package_without_packaging_files(self):
+        write(self.root / "pkg" / "__init__.py", "")
+        self.assertEqual(analyze.detect(self.root), {"python"})
+
     def test_dotnet_by_solution(self):
         write(self.root / "App.slnx", "")
         self.assertEqual(analyze.detect(self.root), {"dotnet"})
@@ -104,6 +109,14 @@ class Parsers(unittest.TestCase):
         cog = next(f for f in found if f.rule == "cognitive-complexity")
         self.assertIn("17", cog.message)
 
+    def test_lizard_lists_only_source_code(self):
+        for name in ("a.py", "b.cs", "c.ts", "d.tsx", "e.js", "data.json", "f.jsonl", "README.md", "node_modules/x/y.js"):
+            write(self.root / name, "x\n")
+        args = analyze._lizard_args("lizard", self.root, self.tmp)
+        listed = (self.tmp / "files.txt").read_text(encoding="utf-8").split()
+        self.assertEqual(listed, ["a.py", "b.cs", "c.ts", "d.tsx", "e.js"])
+        self.assertEqual(args[-2:], ["-f", str(self.tmp / "files.txt")])
+
     def test_lizard_empty_and_garbage(self):
         self.assertEqual(analyze.parse_lizard("", self.root, self.tmp), [])
         self.assertEqual(analyze.parse_lizard("not,a,lizard,row\n", self.root, self.tmp), [])
@@ -134,9 +147,10 @@ class Parsers(unittest.TestCase):
             {"ruleId": "security/detect-eval-with-expression", "line": 7, "message": "eval"},
             {"ruleId": "no-unused-vars", "line": 9, "message": "unused"},
             {"ruleId": None, "line": 1, "message": "Parsing error"},
+            {"ruleId": "sonarjs/no-hardcoded-passwords", "line": 3, "message": "password"},
         ]}])
         found = analyze.parse_eslint(out, self.root, self.tmp)
-        self.assertEqual([f.category for f in found], ["complexity", "security", "bug", "bug"])
+        self.assertEqual([f.category for f in found], ["complexity", "security", "bug", "bug", "security"])
         self.assertEqual(found[3].rule, "parse")
         self.assertEqual(found[0].path, "src/x.ts")
 
@@ -233,6 +247,12 @@ class Run(unittest.TestCase):
         report = analyze.run_tools([self.tool("ruff", analyze.parse_ruff)], self.root, {"python"}, path=str(self.bindir))
         self.assertEqual(len(report.errors), 1)
         self.assertIn("unreadable output", report.errors[0][1])
+
+    def test_default_ok_is_zero_only(self):
+        fake_tool(self.bindir, "mypy", "", code=1)
+        t = analyze.Tool("mypy", "any", lambda exe, root, tmp: [exe], analyze.parse_mypy)
+        report = analyze.run_tools([t], self.root, {"python"}, path=str(self.bindir))
+        self.assertIn("exit 1", report.errors[0][1])
 
     def test_timeout_is_error(self):
         fake_tool(self.bindir, "mypy", "", sleep=5)
@@ -358,3 +378,30 @@ class RealTools(unittest.TestCase):
         rules = {f.rule for f in report.findings}
         self.assertIn("cognitive-complexity", rules)
         self.assertTrue(any(r.startswith("S") for r in rules))
+
+    @unittest.skipUnless(shutil.which("gitleaks"), "gitleaks not installed")
+    def test_real_gitleaks(self):
+        root = tree(self)
+        key = "AKIA" + "Q7Z2X4J6L3N5P2R7"
+        write(root / "pyproject.toml", "")
+        write(root / "settings.py", f'AWS_ACCESS_KEY_ID = "{key}"\n')
+        git(root, "init", "-q")
+        git(root, "add", ".")
+        git(root, "commit", "-q", "-m", "x")
+        tools = [t for t in analyze.TOOLS if t.name == "gitleaks"]
+        report = analyze.run_tools(tools, root, {"python"})
+        self.assertEqual(report.errors, [])
+        self.assertEqual({(f.category, f.path) for f in report.findings}, {("secret", "settings.py")})
+        self.assertNotIn(key, json.dumps([f.message for f in report.findings]))
+
+    @unittest.skipUnless(shutil.which("osv-scanner"), "osv-scanner not installed")
+    def test_real_osv_scanner(self):
+        root = tree(self)
+        write(root / "package.json", '{"name": "x", "version": "1.0.0", "dependencies": {"lodash": "4.17.20"}}')
+        write(root / "package-lock.json", json.dumps({"name": "x", "version": "1.0.0", "lockfileVersion": 3, "requires": True, "packages": {
+            "": {"name": "x", "version": "1.0.0", "dependencies": {"lodash": "4.17.20"}},
+            "node_modules/lodash": {"version": "4.17.20", "resolved": "https://registry.npmjs.org/lodash/-/lodash-4.17.20.tgz"}}}))
+        tools = [t for t in analyze.TOOLS if t.name == "osv-scanner"]
+        report = analyze.run_tools(tools, root, {"node"})
+        self.assertEqual(report.errors, [])
+        self.assertTrue(any(f.category == "dependency" and "lodash@4.17.20" in f.message for f in report.findings))

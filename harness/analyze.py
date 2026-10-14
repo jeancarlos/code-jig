@@ -17,12 +17,14 @@ CATEGORIES = ("security", "secret", "dependency", "bug", "type", "complexity", "
 OPT_OUT = {"SEMGREP_SEND_METRICS": "off", "SEMGREP_ENABLE_VERSION_CHECK": "0", "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
            "DOTNET_NOLOGO": "1", "KIOTA_CLI_TELEMETRY_OPTOUT": "1"}
 COGNITIVE, CYCLOMATIC, NLOC, PARAMS = 15, 15, 100, 7
+CODE_SUFFIXES = {".py", ".cs", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".vue", ".java", ".kt", ".go", ".rs", ".swift", ".php", ".rb", ".scala", ".lua", ".c", ".cc", ".cpp", ".h", ".hpp", ".m"}
 SKIP_DIRS = {".git", "node_modules", "bin", "obj", ".venv", "venv", "dist", "build", "__pycache__"}
 ESLINT_COMPLEXITY = {"complexity", "max-depth", "max-lines-per-function", "max-params", "max-nested-callbacks",
                      "sonarjs/cognitive-complexity", "sonarjs/cyclomatic-complexity", "sonarjs/nested-control-flow"}
-ESLINT_SECURITY = {"sonarjs/os-command", "sonarjs/sql-queries", "sonarjs/code-eval", "sonarjs/pseudo-random",
-                   "sonarjs/no-hardcoded-passwords", "sonarjs/no-hardcoded-ip", "sonarjs/hashing", "sonarjs/insecure-cookie",
-                   "sonarjs/weak-ssl", "sonarjs/no-clear-text-protocols"}
+ESLINT_SECURITY = {f"sonarjs/{r}" for r in (
+    "code-eval", "cookie-no-httponly", "cors", "csrf", "encryption-secure-mode", "file-permissions", "hardcoded-secret-signatures",
+    "hashing", "insecure-cookie", "no-clear-text-protocols", "no-hardcoded-ip", "no-hardcoded-passwords", "no-hardcoded-secrets",
+    "no-ip-forward", "no-os-command-from-path", "no-unsafe-unzip")}
 DOTNET_COMPLEXITY = {"S3776", "S1541", "S138", "S107", "CA1502", "CA1505", "CA1506"}
 DOTNET_SECURITY = {"CA2100", "S2068", "S2077", "S2245", "S3649", "S4423", "S4426", "S4433", "S4507", "S4790",
                    "S5332", "S5344", "S5443", "S5542", "S5547", "S5659", "S5773", "S6418"}
@@ -49,7 +51,7 @@ class Tool:
     parse: Callable[[str, Path, Path], list[Finding]]
     applies: Callable[[Path], bool] = lambda root: True
     hint: str = ""
-    ok: tuple[int, ...] = (0, 1)
+    ok: tuple[int, ...] = (0,)
     reason: str = ""
 
 
@@ -67,7 +69,7 @@ def detect(root: Path) -> set[str]:
     if (root / "package.json").is_file():
         stacks.add("node")
     markers = ("pyproject.toml", "setup.py", "setup.cfg")
-    if any((root / m).is_file() for m in markers) or any(root.glob("requirements*.txt")) or any(root.glob("*.py")):
+    if any((root / m).is_file() for m in markers) or any(root.glob("requirements*.txt")) or any(root.glob("*.py")) or any(root.glob("*/*.py")):
         stacks.add("python")
     return stacks
 
@@ -127,27 +129,31 @@ def _json(out: str, kind: type):
 
 def _lizard_args(exe: str, root: Path, tmp: Path) -> list[str]:
     listing = tmp / "files.txt"
-    listing.write_text("\n".join(source_files(root)) + "\n", encoding="utf-8")
+    code = [n for n in source_files(root) if Path(n).suffix.lower() in CODE_SUFFIXES]
+    listing.write_text("\n".join(code) + "\n", encoding="utf-8")
     return [exe, "-Ecognitive", "-Eduplicate", "--csv", "-f", str(listing)]
 
 
-def parse_lizard(out: str, root: Path, tmp: Path) -> list[Finding]:
+def _lizard_metrics(rows: list[str], root: Path) -> list[Finding]:
     found = []
-    lines = out.splitlines()
-    split = lines.index("Duplicates") if "Duplicates" in lines else len(lines)
-    for row in csv.reader(lines[:split]):
+    for row in csv.reader(rows):
         if len(row) < 11 or not row[0].isdigit():
             continue
-        nloc, ccn, params, path, name, start = int(row[0]), int(row[1]), int(row[3]), rel(row[6], root), row[7], int(row[9])
         cog = int(row[11]) if len(row) > 11 and row[11].isdigit() else 0
+        path, name, start = rel(row[6], root), row[7], int(row[9])
         for rule, value, limit, label in (("cognitive-complexity", cog, COGNITIVE, "cognitive complexity"),
-                                          ("cyclomatic-complexity", ccn, CYCLOMATIC, "cyclomatic complexity"),
-                                          ("function-length", nloc, NLOC, "lines of code"),
-                                          ("parameters", params, PARAMS, "parameters")):
+                                          ("cyclomatic-complexity", int(row[1]), CYCLOMATIC, "cyclomatic complexity"),
+                                          ("function-length", int(row[0]), NLOC, "lines of code"),
+                                          ("parameters", int(row[3]), PARAMS, "parameters")):
             if value > limit:
                 found.append(Finding("complexity", "lizard", rule, path, start, f"{name} has {value} {label} (limit {limit})"))
+    return found
+
+
+def _lizard_duplicates(lines: list[str], root: Path) -> list[Finding]:
+    found = []
     block: list[tuple[str, int, int]] = []
-    for line in lines[split:]:
+    for line in lines:
         m = DUP_LOC.match(line.strip())
         if m:
             block.append((rel(m.group(1), root), int(m.group(2)), int(m.group(3))))
@@ -157,6 +163,12 @@ def parse_lizard(out: str, root: Path, tmp: Path) -> list[Finding]:
             found.append(Finding("duplication", "lizard", "duplicate-block", path, start, f"same code as {where}"))
             block = []
     return found
+
+
+def parse_lizard(out: str, root: Path, tmp: Path) -> list[Finding]:
+    lines = out.splitlines()
+    split = lines.index("Duplicates") if "Duplicates" in lines else len(lines)
+    return _lizard_metrics(lines[:split], root) + _lizard_duplicates(lines[split:], root)
 
 
 def parse_ruff(out: str, root: Path, tmp: Path) -> list[Finding]:
@@ -281,7 +293,7 @@ TOOLS = [
     Tool("eslint", "node", lambda exe, root, tmp: [exe, ".", "-f", "json"], parse_eslint, _has_eslint_config,
          "npm install -D eslint eslint-plugin-sonarjs", reason="no eslint config"),
     Tool("tsc", "node", lambda exe, root, tmp: [exe, "--noEmit", "--pretty", "false", "-p", "."], parse_tsc,
-         lambda root: (root / "tsconfig.json").is_file(), "npm install -D typescript", (0, 1, 2), "no tsconfig.json"),
+         lambda root: (root / "tsconfig.json").is_file(), "npm install -D typescript", reason="no tsconfig.json"),
     Tool("dotnet", "dotnet", lambda exe, root, tmp: [exe, "build", "--nologo", "--no-incremental", "-clp:NoSummary", *_dotnet_target(root)],
          parse_dotnet, lambda root: bool(_dotnet_target(root)), "install the .NET SDK", reason="no solution or project at the root"),
     Tool("semgrep", "any", lambda exe, root, tmp: [exe, "scan", "--metrics=off", "--disable-version-check", "--config", str(_semgrep_rules(root)), "--json", "--quiet", "."],
@@ -298,10 +310,27 @@ def _first(text: str) -> str:
     return (text.strip().splitlines() or [""])[0][:300]
 
 
+def _run_one(t: Tool, exe: str, root: Path, env: dict, timeout: int) -> tuple[list[Finding], str | None]:
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        try:
+            r = subprocess.run(t.argv(exe, root, tmp), cwd=root, env=env, capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return [], f"timed out after {timeout}s"
+        except OSError as e:
+            return [], f"cannot run: {e}"
+        try:
+            found = t.parse(r.stdout, root, tmp)
+        except (ValueError, KeyError, TypeError, IndexError, AttributeError) as e:
+            return [], f"unreadable output: {e}; {_first(r.stderr)}"
+    if r.returncode not in t.ok and not found:
+        return [], f"exit {r.returncode}: {_first(r.stderr) or _first(r.stdout)}"
+    return found, None
+
+
 def run_tools(tools: list[Tool], root: Path, stacks: set[str], path: str | None = None, timeout: int = 600) -> Report:
-    findings: list[Finding] = []
-    skipped: list[tuple[str, str]] = []
-    errors: list[tuple[str, str]] = []
+    report = Report([], [], [])
     env = {**os.environ, **OPT_OUT}
     if path is not None:
         env["PATH"] = path
@@ -309,35 +338,20 @@ def run_tools(tools: list[Tool], root: Path, stacks: set[str], path: str | None 
         if not stacks or (t.stack != "any" and t.stack not in stacks):
             continue
         if not t.applies(root):
-            skipped.append((t.name, t.reason))
+            report.skipped.append((t.name, t.reason))
             continue
         exe = resolve(t.name, root, t.stack, path)
         if exe is None:
-            skipped.append((t.name, f"not installed; {t.hint}"))
+            report.skipped.append((t.name, f"not installed; {t.hint}"))
             continue
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            try:
-                r = subprocess.run(t.argv(exe, root, tmp), cwd=root, env=env, capture_output=True, text=True,
-                                   encoding="utf-8", errors="replace", timeout=timeout)
-            except subprocess.TimeoutExpired:
-                errors.append((t.name, f"timed out after {timeout}s"))
-                continue
-            except OSError as e:
-                errors.append((t.name, f"cannot run: {e}"))
-                continue
-            try:
-                found = t.parse(r.stdout, root, tmp)
-            except (ValueError, KeyError, TypeError, IndexError, AttributeError) as e:
-                errors.append((t.name, f"unreadable output: {e}; {_first(r.stderr)}"))
-                continue
-        if r.returncode not in t.ok and not found:
-            errors.append((t.name, f"exit {r.returncode}: {_first(r.stderr) or _first(r.stdout)}"))
-        findings += found
-    return Report(findings, skipped, errors)
+        found, error = _run_one(t, exe, root, env, timeout)
+        report.findings.extend(found)
+        if error:
+            report.errors.append((t.name, error))
+    return report
 
 
-def _clean(text: str) -> str:
+def printable(text: str) -> str:
     return "".join(ch if ch.isprintable() else f"\\x{ord(ch):02x}" for ch in text)
 
 
@@ -351,11 +365,11 @@ def render(report: Report, stacks: set[str], top: int = 10) -> list[str]:
         out.append(f"== {category} ({len(items)})")
         for f in items[:top]:
             where = f"{f.path}:{f.line}" if f.line else f.path
-            out.append(f"  {_clean(where)}  {_clean(f.rule)}  {_clean(f.message)[:200]}")
+            out.append(f"  {printable(where)}  {printable(f.rule)}  {printable(f.message)[:200]}")
         if len(items) > top:
             out.append(f"  and {len(items) - top} more")
     out += [f"skipped: {name} ({why})" for name, why in report.skipped]
-    out += [f"error: {name}: {_clean(why)}" for name, why in report.errors]
+    out += [f"error: {name}: {printable(why)}" for name, why in report.errors]
     return out
 
 

@@ -33,6 +33,11 @@ Installed into `~/.agents/skills`, picked up by every session. Ask for them by n
 | `grilling` | Stress-test a plan or decision; it asks at most three questions per round and keeps the settled answers. |
 | `web-consensus` | Settle a factual question against live sources instead of memory. |
 | `improve` | "Remember this", "make this a rule": turns a lesson into an overlay change, then reinstalls. |
+| `code-analysis` | "What would Sonar say": runs `harness analyze` and fixes by category. |
+| `regression-tests` | Bug fixes and behaviour changes: failing test first, then coverage of the changed lines. |
+| `hld-trace` | "Does this follow the design": requirement IDs to tests with `harness trace`. |
+| `bug-hunt` | Property tests, fuzzing, mutation testing on the changed files. |
+| `codegen` | OpenAPI clients, codemods, scaffolding from a script kept in the repo. |
 
 superpowers (`codex plugin add superpowers@openai-curated-remote`) adds brainstorming, planning, TDD and debugging workflows.
 
@@ -57,6 +62,7 @@ Codex reads `AGENTS.md` from the repo root down to the current directory, after 
 | Codex stops a turn after denials | [circuit-breaker](circuit-breaker.md) |
 | Wrong model, missing skills, stale files | [doctor](doctor.md) |
 | Usage higher than expected | [tokens](tokens.md) |
+| Analysis tools skipped or erroring | [code-quality](code-quality.md) |
 | Cannot reach the network, certificate errors | [network-and-certificates](network-and-certificates.md) |
 | After a Codex or core update | [upgrade-and-rollback](upgrade-and-rollback.md) |
 | Commits or PRs carry Codex attribution | [commit-attribution](commit-attribution.md) |

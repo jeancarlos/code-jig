@@ -18,7 +18,7 @@ Keep your overlay in its own private repo. Never put it inside the core checkout
 `core_writable = false` means nothing may edit the core; `doctor` checks the core tree is unchanged. Set it to true only if you intend to change the core; the `improve` skill honours it.
 
 ## Pinning core_version
-Pin `core_version` to a tag (for example v0.4.1). `doctor` reports `ok core pin: v0.4.1`, and FAILs a core that is not a git checkout.
+Pin `core_version` to a tag (for example v0.5.0). `doctor` reports `ok core pin: v0.5.0`, and FAILs a core that is not a git checkout.
 
 ## Clean-room rule
 Contribute upstream only what you wrote without copying from private overlays or employer material. No corporate measurements anywhere in the core.

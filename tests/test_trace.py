@@ -81,6 +81,13 @@ class Trace(unittest.TestCase):
         write(self.root / "ignored" / "tests" / "test_x.py", "REQ-77\n")
         self.assertEqual(trace.trace(self.root, ["77"]).missing, ["77"])
 
+    def test_render_escapes_control_characters(self):
+        result = trace.Result({"1": ["tests/a\x1b[2J.py"]}, ["evil\x1b]0;x\x07"], {"9\x1b": ["tests/b.py"]})
+        text = "\n".join(trace.render(result))
+        self.assertNotIn("\x1b", text)
+        self.assertNotIn("\x07", text)
+        self.assertIn("evil\\x1b]0;x\\x07", text)
+
     def test_render(self):
         text = "\n".join(trace.render(trace.trace(self.root, ["12", "1"])))
         self.assertIn("1 of 2 requirements have tests", text)

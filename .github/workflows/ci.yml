@@ -59,6 +59,49 @@ jobs:
           home="$RUNNER_TEMP/codex home"
           python -m harness --overlay overlay-examples/personal --codex-home "$home" install
           python -m harness --overlay overlay-examples/personal --codex-home "$home" doctor --codex-bin "$bin"
+  analyze-real:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install lizard==1.24.1 ruff==0.17.0
+      - name: gitleaks and osv-scanner (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz | tar xz -C "$RUNNER_TEMP/bin" gitleaks
+          curl -sSL -o "$RUNNER_TEMP/bin/osv-scanner" https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_linux_amd64
+          chmod +x "$RUNNER_TEMP/bin/osv-scanner"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: gitleaks and osv-scanner (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bin = Join-Path $env:RUNNER_TEMP "bin"
+          New-Item -ItemType Directory -Force $bin | Out-Null
+          Invoke-WebRequest https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_windows_x64.zip -OutFile (Join-Path $bin "gl.zip")
+          Expand-Archive (Join-Path $bin "gl.zip") -DestinationPath $bin
+          Invoke-WebRequest https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_windows_amd64.exe -OutFile (Join-Path $bin "osv-scanner.exe")
+          Add-Content $env:GITHUB_PATH $bin
+      - name: real tools
+        env:
+          HARNESS_REAL_TOOLS: "1"
+        run: python -m unittest tests.test_analyze -v
+      - name: analyze and trace run clean on this repo
+        shell: bash
+        run: |
+          python -m harness analyze --json > "$RUNNER_TEMP/analyze.json" || test $? -eq 1
+          python -c "import json, sys; d = json.load(open(sys.argv[1], encoding='utf-8')); assert d['errors'] == [], d['errors']; assert 'python' in d['stacks']; print(len(d['findings']), 'findings')" "$RUNNER_TEMP/analyze.json"
+          printf '1\n' > "$RUNNER_TEMP/ids.txt"
+          python -m harness trace "$RUNNER_TEMP/ids.txt" --json > "$RUNNER_TEMP/trace.json" || test $? -eq 1
+          python -c "import json, sys; d = json.load(open(sys.argv[1], encoding='utf-8')); assert d['missing'] == ['1'], d" "$RUNNER_TEMP/trace.json"
   lint-agents:
     runs-on: ubuntu-latest
     steps:

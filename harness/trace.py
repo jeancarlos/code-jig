@@ -6,7 +6,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from harness.analyze import source_files
+from harness.analyze import printable, source_files
 
 TEST_PATH = re.compile(
     r"(^|/)(tests?|__tests__|specs?)/"
@@ -32,17 +32,21 @@ def _norm(value) -> str:
     return text[4:] if text.lower().startswith("req-") else text
 
 
+def _json_ids(data) -> list:
+    if isinstance(data, dict):
+        data = data.get("workItems") or data.get("value") or ([data] if "id" in data else [])
+    if isinstance(data, (int, str)) and not isinstance(data, bool):
+        return [data]
+    if not isinstance(data, list):
+        return []
+    return [item.get("id") if isinstance(item, dict) else item for item in data if not isinstance(item, (list, bool))]
+
+
 def read_ids(text: str) -> list[str]:
     try:
-        data = json.loads(text)
+        raw = _json_ids(json.loads(text))
     except ValueError:
         raw = [line.split()[0] for line in text.splitlines() if line.strip()]
-    else:
-        if isinstance(data, dict):
-            data = data.get("workItems") or data.get("value") or ([data] if "id" in data else [])
-        elif isinstance(data, (int, str)) and not isinstance(data, bool):
-            data = [data]
-        raw = [item.get("id") if isinstance(item, dict) else item for item in data if not isinstance(item, (list, bool))] if isinstance(data, list) else []
     ids = [_norm(v) for v in raw if v is not None and _norm(v)]
     return list(dict.fromkeys(ids))
 
@@ -77,16 +81,16 @@ def trace(root: Path, ids: list[str], pattern: str = "REQ-{id}") -> Result:
 
 def _files(names: list[str], limit: int = 3) -> str:
     extra = f" and {len(names) - limit} more" if len(names) > limit else ""
-    return ", ".join(names[:limit]) + extra
+    return printable(", ".join(names[:limit]) + extra)
 
 
 def render(result: Result) -> list[str]:
     total = len(result.covered) + len(result.missing)
     out = [f"trace: {len(result.covered)} of {total} requirements have tests"]
-    out += [f"  {i}  {_files(names)}" for i, names in result.covered.items()]
+    out += [f"  {printable(i)}  {_files(names)}" for i, names in result.covered.items()]
     if result.missing:
-        out.append(f"missing: {', '.join(result.missing)}")
-    out += [f"unknown in tests: {i} ({_files(names)})" for i, names in result.unknown.items()]
+        out.append(f"missing: {printable(', '.join(result.missing))}")
+    out += [f"unknown in tests: {printable(i)} ({_files(names)})" for i, names in result.unknown.items()]
     return out
 
 
