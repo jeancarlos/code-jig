@@ -55,6 +55,30 @@ def write_generated(path: Path, text: str) -> Path | None:
     return backup
 
 
+RULES_PREFIX = "codex-harness-"
+
+
+def rule_files(overlay_root: Path) -> dict[str, str]:
+    src = overlay_root / "rules"
+    if not src.is_dir():
+        return {}
+    return {f"{RULES_PREFIX}{p.stem}.rules": stamp(p.read_text(encoding="utf-8-sig"), "hash")
+            for p in sorted(src.glob("*.rules"))}
+
+
+def prune_rules(rules_dir: Path, keep: set[str]) -> list[str]:
+    lines = []
+    for f in sorted(rules_dir.glob(f"{RULES_PREFIX}*.rules")) if rules_dir.is_dir() else []:
+        if f.name in keep:
+            continue
+        if is_generated(f):
+            f.unlink()
+            lines.append(f"removed {f}: no longer in the overlay")
+        else:
+            lines.append(f"warning: left {f}: edited by hand, Codex still loads it")
+    return lines
+
+
 def render_profile(tier: tiers.Tier, policy: str) -> str:
     return stamp(tiers.profile_body(tier, policy), "hash")
 
@@ -63,6 +87,7 @@ def plan(core: Path, ov: Overlay, home: Path) -> list[tuple[Path, str]]:
     policy = tiers.extra_policy(ov.root)
     outputs = [(home / "AGENTS.md", render_agents(core, ov.root))]
     outputs += [(home / f"{t.name}.config.toml", render_profile(t, policy)) for t in tiers.load(core, ov.root)]
+    outputs += [(home / "rules" / name, text) for name, text in rule_files(ov.root).items()]
     return outputs
 
 
@@ -73,6 +98,7 @@ def run(core: Path, ov: Overlay, home: Path) -> list[str]:
         lines.append(f"wrote {target}")
         if backup:
             lines.append(f"moved your previous file to {backup}")
+    lines += prune_rules(home / "rules", set(rule_files(ov.root)))
     override = home / "AGENTS.override.md"
     if override.is_file() and override.stat().st_size > 0:
         lines.append(f"warning: {override} exists and Codex loads it instead of {home / 'AGENTS.md'}")

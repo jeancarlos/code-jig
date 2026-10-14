@@ -1,0 +1,7 @@
+prefix_rule(
+    pattern = ["git", "push", ["--force", "-f"]],
+    decision = "forbidden",
+    justification = "Use git push --force-with-lease, and only when the user asked for it.",
+    match = ["git push --force origin main", "git push -f"],
+    not_match = ["git push --force-with-lease origin main", "git push origin main"],
+)
