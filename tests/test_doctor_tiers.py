@@ -81,6 +81,11 @@ class Catalog(unittest.TestCase):
         write(home / "models_cache.json", '{"models": [1, {"slug": 2}, {"slug": "ok", "supported_reasoning_levels": [1]}]}')
         self.assertEqual(catalog(home), {"ok": set()})
 
+    def test_odd_effort_values_are_ignored(self):
+        home = tree(self)
+        write(home / "models_cache.json", '{"models": [{"slug": "m", "supported_reasoning_levels": [{"effort": "low"}, {}, {"effort": ["x"]}, {"effort": 3}]}]}')
+        self.assertEqual(catalog(home), {"m": {"low"}})
+
     def test_family(self):
         self.assertEqual(family("gpt-6-astra"), "gpt-6")
         self.assertEqual(family("gpt-5.6-sol"), "gpt-5.6")

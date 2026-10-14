@@ -19,6 +19,12 @@ if "prompt-input" in args:
     agents = os.path.join(home, "AGENTS.md")
     text = open(agents, encoding="utf-8").read() if os.path.exists(agents) and profile != "hidden" else ""
     print('[{"type":"message","content":[{"text":%r}]}]' % text)
+elif args and args[0] == "execpolicy":
+    files = [args[i + 1] for i, a in enumerate(args) if a == "--rules"]
+    for f in files:
+        if "BROKEN" in open(f, encoding="utf-8").read():
+            sys.stderr.write("Error: failed to parse policy at %s\n" % f); sys.exit(1)
+    print('{"matchedRules":[]}')
 elif args and args[0] == "exec":
     profile = args[args.index("--profile") + 1]
     sys.stderr.write("OpenAI Codex v0\n--------\nworkdir: x\nmodel: %s\nreasoning effort: %s\nsession id: 1\n--------\n"
@@ -72,3 +78,21 @@ class Probe(unittest.TestCase):
     def test_parse_summary_strips_ansi(self):
         s = "\x1b[1mmodel:\x1b[0m gpt-x\n\x1b[1mreasoning effort:\x1b[0m high\nuser\nmodel: later\n"
         self.assertEqual(probe.parse_summary(s), {"model": "gpt-x", "reasoning effort": "high"})
+
+    def test_rules_load(self):
+        write(self.home / "rules" / "default.rules", "ok\n")
+        write(self.home / "rules" / "codex-harness-a.rules", "ok\n")
+        [(level, _, detail)] = probe.check_rules(self.bin, self.home, self.cwd)
+        self.assertEqual(level, "ok")
+        self.assertIn("2", detail)
+
+    def test_broken_rules_file_fails_naming_it(self):
+        write(self.home / "rules" / "default.rules", "ok\n")
+        write(self.home / "rules" / "codex-harness-bad.rules", "BROKEN\n")
+        [(level, _, detail)] = probe.check_rules(self.bin, self.home, self.cwd)
+        self.assertEqual(level, "FAIL")
+        self.assertIn("codex-harness-bad.rules", detail)
+
+    def test_no_rules_dir_is_ok(self):
+        [(level, _, _)] = probe.check_rules(self.bin, self.home, self.cwd)
+        self.assertEqual(level, "ok")

@@ -139,7 +139,7 @@ def catalog(home: Path) -> dict[str, set[str]] | None:
     for m in models:
         if isinstance(m, dict) and isinstance(m.get("slug"), str):
             levels = m.get("supported_reasoning_levels")
-            out[m["slug"]] = {lv.get("effort") for lv in levels if isinstance(lv, dict)} if isinstance(levels, list) else set()
+            out[m["slug"]] = {lv["effort"] for lv in levels if isinstance(lv, dict) and isinstance(lv.get("effort"), str)} if isinstance(levels, list) else set()
     return out
 
 
@@ -234,6 +234,7 @@ def cli(args) -> int:
                 ts = []
             checks += managed.check_requirements(managed.requirements_path(), paths.CORE / "bench" / "requirements.toml", ts)
             checks += probe.check_prompt(bin_path, home, Path.cwd(), ts)
+            checks += probe.check_rules(bin_path, home, Path.cwd())
             if args.live:
                 checks += probe.check_live(bin_path, home, Path.cwd(), ts)
         checks += check_chain(home, Path.cwd())

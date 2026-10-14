@@ -58,6 +58,20 @@ def check_prompt(bin_path: Path | None, home: Path, cwd: Path, ts: list[Tier]) -
     return checks
 
 
+def check_rules(bin_path: Path | None, home: Path, cwd: Path) -> list[Check]:
+    files = sorted(f for f in (home / "rules").glob("*.rules") if f.is_file()) if (home / "rules").is_dir() else []
+    if not files:
+        return [("ok", "rules load", "no rules files")]
+    if bin_path is None:
+        return [("warn", "rules load", "codex not found; skipped")]
+    r = run_codex(bin_path, home, ["execpolicy", "check", *[a for f in files for a in ("--rules", str(f))], "true"], cwd, 60)
+    if isinstance(r, str):
+        return [("FAIL", "rules load", r)]
+    if r.returncode != 0:
+        return [("FAIL", "rules load", f"Codex drops every rule, default.rules included, when one file fails: {_error(r)}")]
+    return [("ok", "rules load", f"{len(files)} files in {home / 'rules'} load")]
+
+
 def parse_summary(stderr: str) -> dict[str, str]:
     out: dict[str, str] = {}
     for line in stderr.splitlines():
