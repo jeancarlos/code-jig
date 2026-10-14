@@ -8,7 +8,7 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-from harness import paths, tiers
+from harness import managed, paths, tiers
 from harness.install import render_agents, render_profile
 from harness.overlay import Overlay, load
 
@@ -226,5 +226,10 @@ def cli(args) -> int:
             checks += check_core(paths.CORE, ov)
             checks += check_global(paths.codex_home(args.codex_home), paths.CORE, ov)
             checks += check_tiers(paths.codex_home(args.codex_home), paths.CORE, ov)
+            try:
+                ts = tiers.load(paths.CORE, ov.root)
+            except ValueError:
+                ts = []
+            checks += managed.check_requirements(managed.requirements_path(), paths.CORE / "bench" / "requirements.toml", ts)
         checks += check_chain(paths.codex_home(args.codex_home), Path.cwd())
     return report(checks)
