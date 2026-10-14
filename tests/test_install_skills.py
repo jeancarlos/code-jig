@@ -35,7 +35,8 @@ class Skills(unittest.TestCase):
     def test_user_skill_with_same_name_is_backed_up(self):
         skill(self.dest, "grilling", "---\nname: grilling\ndescription: mine\n---\nmine\n")
         lines = install_skills(skill_sources(self.core, self.ov), self.dest)
-        [backup] = self.dest.glob("grilling.bak-*")
+        self.assertEqual(list(self.dest.glob("grilling.bak-*")), [])
+        [backup] = (self.dest.parent / "skills-backup").glob("grilling.bak-*")
         self.assertIn("mine", (backup / "SKILL.md").read_text(encoding="utf-8"))
         self.assertTrue(any(str(backup) in line for line in lines))
 

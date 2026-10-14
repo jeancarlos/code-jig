@@ -166,7 +166,9 @@ def install_skills(sources: dict[str, Path], dest: Path) -> list[str]:
     for name, src in sources.items():
         target = dest / name
         if target.exists() and not _own_skill(target):
-            backup = _backup_name(target)
+            backups = dest.parent / "skills-backup"
+            backups.mkdir(parents=True, exist_ok=True)
+            backup = _backup_name(backups / name)
             target.replace(backup)
             lines.append(f"moved your previous {target} to {backup}")
         elif target.exists():

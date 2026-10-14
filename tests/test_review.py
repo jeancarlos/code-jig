@@ -57,3 +57,21 @@ class Cli(unittest.TestCase):
             code = review.cli(types.SimpleNamespace(base=None, profile="review", codex_bin=str(root / "codex"), files=[str(root / "doc.md")], codex_home=None))
         self.assertEqual(code, 0)
         self.assertIn("F1 doc.md:1 bug", out.getvalue())
+
+
+class Isolation(unittest.TestCase):
+    def test_reviewer_cannot_escalate_or_search_and_material_is_marked_untrusted(self):
+        root = tree(self)
+        write(root / "doc.md", "plan\n")
+        log = root / "argv.txt"
+        fake = write(root / "fake.py", "import sys, json\nargs = sys.argv[1:]\nopen(%r, 'w').write(json.dumps({'args': args, 'stdin': sys.stdin.read()}))\nopen(args[args.index('-o') + 1], 'w').write('no findings')\n" % str(log))
+        with mock.patch.object(probe, "command", lambda b: [sys.executable, str(fake)]), \
+             mock.patch("sys.stdout", new_callable=__import__("io").StringIO):
+            review.cli(types.SimpleNamespace(base=None, profile="review", codex_bin=str(root / "codex"), files=[str(root / "doc.md")], codex_home=None))
+        import json
+        got = json.loads(log.read_text(encoding="utf-8"))
+        joined = " ".join(got["args"])
+        self.assertIn('approvals_reviewer="user"', joined)
+        self.assertIn('web_search="disabled"', joined)
+        self.assertIn("--sandbox read-only", joined)
+        self.assertIn("untrusted", got["stdin"].split("plan")[0])

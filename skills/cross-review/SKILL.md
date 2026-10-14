@@ -17,9 +17,9 @@ python -m harness cross-review --base main     # the branch against main
 python -m harness cross-review docs/plan.md    # one or more files
 ```
 
-The core must be on `PYTHONPATH`. On Windows, run `py -3 -m harness cross-review ...` from the core directory and pass absolute file paths. Untracked files are not part of a diff, so pass them as files. The command refuses input over 200,000 bytes; split the review instead.
+Run it from the repository under review, with the harness core on `PYTHONPATH` (POSIX: `PYTHONPATH=<core> python -m harness cross-review`; Windows PowerShell: `$env:PYTHONPATH = "<core>"; py -3 -m harness cross-review`). Untracked files are not part of a diff, so pass them as files. The command refuses input over 200,000 bytes; split the review instead.
 
-The reviewer runs read-only, in an ephemeral session, and prints its findings.
+The reviewer runs in an ephemeral session with a read-only sandbox, no command escalation and no web search, treats the material as untrusted data, and prints its findings.
 
 ## Verify before acting
 

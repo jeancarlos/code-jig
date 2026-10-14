@@ -3,7 +3,7 @@
 Status: accepted (2026-10-14)
 
 ## Decision
-The core ships four skills in `skills/`: `cross-review`, `web-consensus`, `grilling` and `improve`. An overlay may add its own in `<overlay>/skills/`. A name used by both is an error. `harness install` copies each skill to `~/.agents/skills/<name>/` with a `.codex-harness` sidecar holding a sha256 of the copied tree. A directory is only replaced or pruned while its sidecar still matches; a user's own directory with the same name is moved to a timestamped backup. superpowers is not copied: doctor checks `config.toml` for `[plugins."superpowers@..."]` and otherwise prints `codex plugin add superpowers@openai-curated`. Doctor's prompt probe checks that every installed skill appears in Codex's skills list.
+The core ships four skills in `skills/`: `cross-review`, `web-consensus`, `grilling` and `improve`. An overlay may add its own in `<overlay>/skills/`. A name used by both is an error. `harness install` copies each skill to `~/.agents/skills/<name>/` with a `.codex-harness` sidecar holding a sha256 of the copied tree. A directory is only replaced or pruned while its sidecar still matches; a user's own directory with the same name is moved to a timestamped backup in `~/.agents/skills-backup/`, outside the skills root so Codex stops loading it. superpowers is not copied: doctor checks `config.toml` for `[plugins."superpowers@..."]` and otherwise prints `codex plugin add superpowers@openai-curated`. Doctor's prompt probe checks that every installed skill appears in Codex's skills list.
 
 ## Reason to exist
 These are the workflows used most on the bench (planning, cross-model review, sourced research, decision interviews), plus the one that lets the harness improve itself without leaking corporate knowledge.

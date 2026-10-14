@@ -70,3 +70,15 @@ class OverlayDir(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Resolve(unittest.TestCase):
+    def test_relative_overlay_becomes_absolute(self):
+        import os
+        from harness import paths
+        root = tree(self)
+        write(root / "ov" / "overlay.toml", 'core_version = "v1"\ncore_writable = true\n')
+        old = os.getcwd()
+        os.chdir(root)
+        self.addCleanup(os.chdir, old)
+        self.assertTrue(paths.overlay_dir("ov").is_absolute())
