@@ -217,9 +217,10 @@ def check_knowledge(ov: Overlay) -> list[Check]:
 
 def check_superpowers(home: Path) -> list[Check]:
     plugins = read_config(home).get("plugins")
-    if isinstance(plugins, dict) and any(k.startswith("superpowers@") for k in plugins):
+    if isinstance(plugins, dict) and any(k.startswith("superpowers@") for k in plugins) \
+            or any((home / "plugins" / "cache").glob("*/superpowers")):
         return [("ok", "superpowers", "installed")]
-    return [("warn", "superpowers", "not installed; run: codex plugin add superpowers@openai-curated")]
+    return [("warn", "superpowers", "not installed; run: codex plugin add superpowers@openai-curated-remote")]
 
 
 def _git(core: Path, *args: str) -> subprocess.CompletedProcess | None:

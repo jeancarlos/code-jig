@@ -3,7 +3,7 @@
 Status: accepted (2026-10-14)
 
 ## Decision
-The core ships four skills in `skills/`: `cross-review`, `web-consensus`, `grilling` and `improve`. An overlay may add its own in `<overlay>/skills/`. A name used by both is an error. `harness install` copies each skill to `~/.agents/skills/<name>/` with a `.codex-harness` sidecar holding a sha256 of the copied tree. A directory is only replaced or pruned while its sidecar still matches; a user's own directory with the same name is moved to a timestamped backup in `~/.agents/skills-backup/`, outside the skills root so Codex stops loading it. superpowers is not copied: doctor checks `config.toml` for `[plugins."superpowers@..."]` and otherwise prints `codex plugin add superpowers@openai-curated`. Doctor's prompt probe checks that every installed skill appears in Codex's skills list.
+The core ships four skills in `skills/`: `cross-review`, `web-consensus`, `grilling` and `improve`. An overlay may add its own in `<overlay>/skills/`. A name used by both is an error. `harness install` copies each skill to `~/.agents/skills/<name>/` with a `.codex-harness` sidecar holding a sha256 of the copied tree. A directory is only replaced or pruned while its sidecar still matches; a user's own directory with the same name is moved to a timestamped backup in `~/.agents/skills-backup/`, outside the skills root so Codex stops loading it. superpowers is not copied: doctor looks for it in `config.toml` (`[plugins."superpowers@..."]`) or in the plugin cache (`$CODEX_HOME/plugins/cache/*/superpowers`), and otherwise prints `codex plugin add superpowers@openai-curated-remote`. Doctor's prompt probe checks that every installed skill appears in Codex's skills list.
 
 ## Reason to exist
 These are the workflows used most on the bench (planning, cross-model review, sourced research, decision interviews), plus the one that lets the harness improve itself without leaking corporate knowledge.
@@ -12,7 +12,7 @@ These are the workflows used most on the bench (planning, cross-model review, so
 - Codex reads user skills from `~/.agents/skills`. `$CODEX_HOME/skills` is "deprecated ... kept for backward compatibility" (`codex-rs/ext/skills/src/host_roots.rs`, rust-v0.162.1).
 - `SKILL.md` must start with a `---` frontmatter line (`codex-rs/skills/src/parser.rs`), so the ownership marker cannot go in the file itself.
 - Codex lists loaded skills in the prompt as `- <name>: <description> (file: ...)` (bench, `debug prompt-input`).
-- superpowers 6.4.2 is published as `superpowers@openai-curated` and installs non-interactively with `codex plugin add` (bench).
+- superpowers 6.4.2 is published in the remote curated marketplace as `superpowers@openai-curated-remote` (`codex plugin marketplace list` does not show that marketplace, and `@openai-curated` fails). It installs non-interactively with `codex plugin add`, into `$CODEX_HOME/plugins/cache/openai-curated-remote/superpowers/<version>`, and is not recorded in `config.toml` (bench).
 
 ## Cost
 About 50 lines in `install.py`, four Markdown files, two doctor checks.

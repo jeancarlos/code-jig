@@ -32,6 +32,13 @@ class Knowledge(unittest.TestCase):
 
     def test_superpowers(self):
         home = tree(self)
-        self.assertIn("codex plugin add superpowers@openai-curated", check_superpowers(home)[0][2])
+        self.assertIn("codex plugin add superpowers@openai-curated-remote", check_superpowers(home)[0][2])
         write(home / "config.toml", '[plugins."superpowers@openai-curated"]\nenabled = true\n')
+        self.assertEqual(check_superpowers(home)[0][0], "ok")
+
+
+class RemotePlugin(unittest.TestCase):
+    def test_remote_marketplace_install_is_found_in_the_plugin_cache(self):
+        home = tree(self)
+        (home / "plugins" / "cache" / "openai-curated-remote" / "superpowers" / "6.4.2").mkdir(parents=True)
         self.assertEqual(check_superpowers(home)[0][0], "ok")
