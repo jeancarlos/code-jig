@@ -1,0 +1,128 @@
+{
+  "__inputs": [
+    {
+      "name": "DS",
+      "label": "codex-harness SQLite",
+      "type": "datasource",
+      "pluginId": "frser-sqlite-datasource",
+      "pluginName": "SQLite"
+    }
+  ],
+  "title": "codex-harness",
+  "uid": "codex-harness",
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Guardian share of input (%)",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "${DS}"
+          },
+          "queryType": "table",
+          "queryText": "SELECT 100.0 * SUM(CASE WHEN kind = 'guardian' THEN input ELSE 0 END) / MAX(SUM(input), 1) AS value FROM turn_usage WHERE ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') AND ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch')",
+          "rawQueryText": "SELECT 100.0 * SUM(CASE WHEN kind = 'guardian' THEN input ELSE 0 END) / MAX(SUM(input), 1) AS value FROM turn_usage WHERE ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') AND ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch')"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Input per Guardian review",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "${DS}"
+          },
+          "queryType": "table",
+          "queryText": "SELECT SUM(input) * 1.0 / MAX(COUNT(DISTINCT thread_id || ':' || turn_id), 1) AS value FROM turn_usage WHERE kind = 'guardian' AND ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') AND ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch')",
+          "rawQueryText": "SELECT SUM(input) * 1.0 / MAX(COUNT(DISTINCT thread_id || ':' || turn_id), 1) AS value FROM turn_usage WHERE kind = 'guardian' AND ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') AND ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch')"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Escalations by command",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "${DS}"
+          },
+          "queryType": "table",
+          "queryText": "SELECT cmd, COUNT(*) AS n FROM calls WHERE escalated = 1 AND ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') AND ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch') GROUP BY cmd ORDER BY n DESC LIMIT 20",
+          "rawQueryText": "SELECT cmd, COUNT(*) AS n FROM calls WHERE escalated = 1 AND ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') AND ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch') GROUP BY cmd ORDER BY n DESC LIMIT 20"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Input by model",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "${DS}"
+          },
+          "queryType": "table",
+          "queryText": "SELECT COALESCE(model, '(unknown)') AS model, SUM(input) AS input, SUM(output) AS output FROM turn_usage WHERE ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') AND ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch') GROUP BY 1 ORDER BY 2 DESC",
+          "rawQueryText": "SELECT COALESCE(model, '(unknown)') AS model, SUM(input) AS input, SUM(output) AS output FROM turn_usage WHERE ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') AND ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch') GROUP BY 1 ORDER BY 2 DESC"
+        }
+      ]
+    }
+  ]
+}
