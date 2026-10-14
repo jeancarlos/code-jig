@@ -1,0 +1,5 @@
+{"timestamp":"2026-10-12T09:00:00.000Z","type":"session_meta","payload":{"id":"bad-1","source":"cli","cwd":"/w","timestamp":"2026-10-12T09:00:00.000Z"}}
+this is not json
+{"timestamp":"2026-10-12T09:00:01.000Z","type":"token_usage_record","payload":{"thread_id":"bad-1","turn_id":"x","response_id":"br1","usage":"many"}}
+{"timestamp":"2026-10-12T09:00:02.000Z","type":"something_new","payload":{"a":1}}
+{"timestamp":"2026-10-12T09:00:03.000Z","type":"token_usage_record","payload":{"thread_id":"bad-1","turn_id":"x","response_id":"br2","usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0,"total_tokens":11}}}
