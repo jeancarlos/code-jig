@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import mmap
 import os
 import shutil
@@ -7,8 +8,8 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-from harness import paths
-from harness.install import render_agents
+from harness import paths, tiers
+from harness.install import render_agents, render_profile
 from harness.overlay import Overlay, load
 
 Check = tuple[str, str, str]
@@ -18,6 +19,12 @@ PACK_KEYS = (
     "approvals_reviewer",
     "model_auto_compact_token_limit",
     "tool_output_token_limit",
+    "model_reasoning_effort",
+    "extra_policy",
+    "allowed_approvals_reviewers",
+    "ignore_rules",
+    "allow_managed_hooks_only",
+    "guardian_extra_policy",
 )
 SHIM_MAX_BYTES = 1_000_000
 
@@ -82,14 +89,15 @@ def chain_files(home: Path, cwd: Path) -> list[Path]:
     return files
 
 
-def _doc_max(home: Path) -> int:
-    cfg = home / "config.toml"
-    if not cfg.is_file():
-        return DEFAULT_DOC_MAX
+def read_config(home: Path) -> dict:
     try:
-        value = tomllib.loads(cfg.read_text(encoding="utf-8")).get("project_doc_max_bytes", DEFAULT_DOC_MAX)
+        return tomllib.loads((home / "config.toml").read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
-        return DEFAULT_DOC_MAX
+        return {}
+
+
+def _doc_max(home: Path) -> int:
+    value = read_config(home).get("project_doc_max_bytes", DEFAULT_DOC_MAX)
     if isinstance(value, bool) or not isinstance(value, int):
         return DEFAULT_DOC_MAX
     return value
@@ -117,6 +125,67 @@ def check_global(home: Path, core: Path, ov: Overlay) -> list[Check]:
     if target.read_bytes() != render_agents(core, ov.root).encode("utf-8"):
         return [("warn", name, f"{target} is stale; run harness install")]
     return [("ok", name, f"{target} is current")]
+
+
+def catalog(home: Path) -> dict[str, set[str]] | None:
+    try:
+        data = json.loads((home / "models_cache.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    models = data.get("models") if isinstance(data, dict) else None
+    if not isinstance(models, list):
+        return None
+    out = {}
+    for m in models:
+        if isinstance(m, dict) and isinstance(m.get("slug"), str):
+            levels = m.get("supported_reasoning_levels")
+            out[m["slug"]] = {lv.get("effort") for lv in levels if isinstance(lv, dict)} if isinstance(levels, list) else set()
+    return out
+
+
+def family(slug: str) -> str:
+    return slug.rsplit("-", 1)[0]
+
+
+def check_tiers(home: Path, core: Path, ov: Overlay) -> list[Check]:
+    try:
+        ts = tiers.load(core, ov.root)
+    except ValueError as e:
+        return [("FAIL", "tiers", str(e))]
+    checks: list[Check] = []
+    cfg = read_config(home)
+    profiles = cfg.get("profiles") if isinstance(cfg.get("profiles"), dict) else {}
+    legacy = [t.name for t in ts if cfg.get("profile") == t.name or t.name in profiles]
+    checks.append(("FAIL", "legacy profiles", f"{home / 'config.toml'} has profile = or [profiles.*] for {', '.join(legacy)}; Codex refuses --profile with them")
+                  if legacy else ("ok", "legacy profiles", "none"))
+    policy = tiers.extra_policy(ov.root)
+    for t in ts:
+        f = home / f"{t.name}.config.toml"
+        name = f"tier {t.name} profile"
+        if not f.is_file():
+            checks.append(("warn", name, f"{f} is missing; Codex silently uses the base config; run harness install"))
+        elif f.read_bytes() != render_profile(t, policy).encode("utf-8"):
+            checks.append(("warn", name, f"{f} is stale or edited; run harness install"))
+        else:
+            checks.append(("ok", name, f"{t.model} at {t.effort}"))
+    cat = catalog(home)
+    if cat is None:
+        checks.append(("warn", "model catalog", f"{home / 'models_cache.json'} missing or unreadable; start codex once"))
+    else:
+        for t in ts:
+            name = f"tier {t.name} model"
+            if t.model not in cat:
+                checks.append(("FAIL", name, f"{t.model} is not in this account's catalog; candidates: {', '.join(sorted(cat))}"))
+            elif cat[t.model] and t.effort not in cat[t.model]:
+                checks.append(("FAIL", name, f"{t.model} does not support {t.effort}; supported: {', '.join(sorted(cat[t.model]))}"))
+            else:
+                checks.append(("ok", name, f"{t.model} supports {t.effort}"))
+    by = {t.name: t for t in ts}
+    if "review" in by and "default" in by:
+        same = family(by["review"].model) == family(by["default"].model)
+        checks.append(("warn", "review family", f"review and default are both {family(by['default'].model)}; cross-family review catches different bugs")
+                      if same else ("ok", "review family", f"{by['review'].model} vs {by['default'].model}"))
+    return checks
 
 
 def _git(core: Path, *args: str) -> subprocess.CompletedProcess | None:
@@ -156,5 +225,6 @@ def cli(args) -> int:
         else:
             checks += check_core(paths.CORE, ov)
             checks += check_global(paths.codex_home(args.codex_home), paths.CORE, ov)
+            checks += check_tiers(paths.codex_home(args.codex_home), paths.CORE, ov)
         checks += check_chain(paths.codex_home(args.codex_home), Path.cwd())
     return report(checks)
