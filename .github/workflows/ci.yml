@@ -99,9 +99,9 @@ jobs:
         run: |
           python -m harness analyze --json > "$RUNNER_TEMP/analyze.json" || test $? -eq 1
           python -c "import json, sys; d = json.load(open(sys.argv[1], encoding='utf-8')); assert d['errors'] == [], d['errors']; assert 'python' in d['stacks']; print(len(d['findings']), 'findings')" "$RUNNER_TEMP/analyze.json"
-          printf '1\n' > "$RUNNER_TEMP/ids.txt"
+          printf '999999\n' > "$RUNNER_TEMP/ids.txt"
           python -m harness trace "$RUNNER_TEMP/ids.txt" --json > "$RUNNER_TEMP/trace.json" || test $? -eq 1
-          python -c "import json, sys; d = json.load(open(sys.argv[1], encoding='utf-8')); assert d['missing'] == ['1'], d" "$RUNNER_TEMP/trace.json"
+          python -c "import json, sys; d = json.load(open(sys.argv[1], encoding='utf-8')); assert d['missing'] == ['999999'], d" "$RUNNER_TEMP/trace.json"
   lint-agents:
     runs-on: ubuntu-latest
     steps:
