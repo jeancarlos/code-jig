@@ -26,10 +26,10 @@ Exit 0 means clean, 1 means findings or a tool error, 2 means no project, a bad 
 |---|---|---|
 | lizard | all | Cognitive complexity (Sonar's metric, limit 15), cyclomatic complexity (15), functions over 100 lines or 7 parameters, duplicated blocks |
 | ruff | Python | Bugs, smells, security (`S` rules, the bandit set) |
-| vulture | Python | Dead code: unused functions, classes, imports, unreachable code (80% confidence and up) |
+| vulture | Python | Dead code at 80% confidence and up: unused imports, variables and arguments, unreachable code, conditions that can never be true. Unused functions and classes score 60%: for a full sweep, set `[tool.vulture]` with `paths` and `min_confidence = 60` in `pyproject.toml`, which `analyze` then uses as-is |
 | mypy | Python, with a mypy config | Type errors |
 | eslint | Node, with an eslint config | Whatever the config enables; `sonarjs/*` and `security/*` rules are grouped as complexity or security |
-| knip | Node | Unused files, exports, types and dependencies; unlisted or unresolved imports and import cycles |
+| knip | Node | Unused files, exports, types and dependencies; dependencies used but not listed, and imports that do not resolve |
 | tsc | Node, with `tsconfig.json` | Type errors |
 | dotnet build | .NET | Compiler and analyzer warnings, SonarAnalyzer and Roslynator included when the project references them, and NuGet audit warnings (NU1901-NU1904) for vulnerable packages; restore asks nuget.org for advisories, sending package names |
 | semgrep | all, with `.semgrep.yml` or `.semgrep/` | Your own local rules only, run with `--metrics=off` |

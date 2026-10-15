@@ -209,17 +209,25 @@ class Parsers(unittest.TestCase):
             m.py:1: unused import 'os' (90% confidence)
             pkg/m.py:6: unused function 'unused_func' (60% confidence)
             pkg/m.py:12: unreachable code after 'return' (100% confidence, 2 lines)
+            pkg/m.py:20: unsatisfiable 'if' condition (100% confidence, 2 lines)
+            pkg/m.py:24: unreachable 'else' block (100% confidence, 3 lines)
+            C:\\work dir\\pkg\\w.py:7: unused variable 'x' (100% confidence)
             not a vulture line
         """)
         found = analyze.parse_vulture(out, self.root, self.tmp)
-        self.assertEqual([(f.category, f.rule, f.path, f.line) for f in found], [
+        self.assertEqual([(f.category, f.rule, f.path, f.line) for f in found[:5]], [
             ("unused", "unused-import", "m.py", 1), ("unused", "unused-function", "pkg/m.py", 6),
-            ("unused", "unreachable-code-after", "pkg/m.py", 12)])
+            ("unused", "unreachable-code-after", "pkg/m.py", 12), ("unused", "unsatisfiable-condition", "pkg/m.py", 20),
+            ("unused", "unreachable-block", "pkg/m.py", 24)])
+        self.assertEqual(len(found), 6)
+        self.assertEqual((found[5].rule, found[5].line), ("unused-variable", 7))
+        self.assertTrue(found[5].path.replace("\\", "/").endswith("work dir/pkg/w.py"))
         self.assertEqual(found[0].message, "unused import 'os' (90% confidence)")
 
     def test_knip(self):
         out = json.dumps({"issues": [
-            {"file": "package.json", "dependencies": [{"name": "lodash", "line": 5, "col": 6}], "devDependencies": [], "unlisted": []},
+            {"file": "package.json", "dependencies": [{"name": "lodash"}, {"name": "is-odd"}], "devDependencies": [], "unlisted": []},
+            {"file": "src/e.ts", "enumMembers": [{"name": "B", "namespace": "E", "line": 4}]},
             {"file": "src/util.ts", "exports": [{"name": "helper", "line": 3, "col": 14}], "types": [{"name": "Shape", "line": 9}]},
             {"file": "src/old.ts", "files": [{"name": "src/old.ts"}]},
             {"file": "src/app.ts", "unlisted": [{"name": "chalk"}], "unresolved": [{"name": "./gone", "line": 2}]},
@@ -227,12 +235,25 @@ class Parsers(unittest.TestCase):
         ]})
         found = analyze.parse_knip(out, self.root, self.tmp)
         self.assertEqual([(f.category, f.rule, f.path, f.line) for f in found], [
-            ("unused", "knip/dependencies", "package.json", 5), ("unused", "knip/exports", "src/util.ts", 3),
+            ("unused", "knip/dependencies", "package.json", 0), ("unused", "knip/dependencies", "package.json", 0),
+            ("unused", "knip/enumMembers", "src/e.ts", 4), ("unused", "knip/exports", "src/util.ts", 3),
             ("unused", "knip/types", "src/util.ts", 9), ("unused", "knip/files", "src/old.ts", 0),
             ("bug", "knip/unlisted", "src/app.ts", 0), ("bug", "knip/unresolved", "src/app.ts", 2),
             ("bug", "knip/cycles", "src/a.ts", 0)])
-        self.assertIn("helper", found[1].message)
+        self.assertIn("is-odd", found[1].message)
+        self.assertIn("E.B", found[2].message)
+        self.assertIn("helper", found[3].message)
         self.assertIn("src/b.ts", found[-1].message)
+
+    def test_vulture_args(self):
+        [tool] = [t for t in analyze.TOOLS if t.name == "vulture"]
+        args = tool.argv("vulture", self.root, self.tmp)
+        excludes = args[args.index("--exclude") + 1].split(",")
+        self.assertIn("bin/*", excludes)
+        self.assertIn("*/bin/*", excludes)
+        self.assertNotIn("bin", excludes)
+        write(self.root / "pyproject.toml", "[tool.vulture]\npaths = ['src', 'whitelist.py']\n")
+        self.assertEqual(tool.argv("vulture", self.root, self.tmp), ["vulture"])
 
     def test_knip_rejects_wrong_shape(self):
         with self.assertRaises(ValueError):
@@ -364,6 +385,14 @@ class Run(unittest.TestCase):
         time.sleep(6)
         self.assertFalse(marker.exists())
 
+    def test_lineless_findings_with_different_messages_are_kept(self):
+        proj = "Api/Api.csproj"
+        out = f"{proj} : warning NU1903: Package 'A' 1.0 is vulnerable\n{proj} : warning NU1903: Package 'B' 2.0 is vulnerable\n"
+        fake_tool(self.bindir, "dotnet", out)
+        t = analyze.Tool("dotnet", "any", lambda exe, root, tmp: [exe], analyze.parse_dotnet)
+        found = analyze.run_tools([t], self.root, {"dotnet"}, path=str(self.bindir)).findings
+        self.assertEqual(sorted(f.message for f in found), ["Package 'A' 1.0 is vulnerable", "Package 'B' 2.0 is vulnerable"])
+
     def test_same_finding_from_two_runs_is_reported_once(self):
         fake_tool(self.bindir, "mypy", "a.py:1: error: bad  [misc]\n", code=1)
         tools = [self.tool("mypy", analyze.parse_mypy), self.tool("mypy", analyze.parse_mypy)]
@@ -480,7 +509,7 @@ class Cli(unittest.TestCase):
         self.assertEqual(analyze.cli(args), 2)
 
 
-@unittest.skipUnless(os.environ.get("HARNESS_REAL_TOOLS"), "set HARNESS_REAL_TOOLS=1 with lizard and ruff installed")
+@unittest.skipUnless(os.environ.get("HARNESS_REAL_TOOLS"), "set HARNESS_REAL_TOOLS=1 to run the real-tool tests")
 class RealTools(unittest.TestCase):
     def test_real_lizard_and_ruff(self):
         root = tree(self)
@@ -498,14 +527,16 @@ class RealTools(unittest.TestCase):
         root = tree(self)
         write(root / "pyproject.toml", "")
         write(root / "m.py", "import os\n\ndef used():\n    return 1\n\nprint(used())\n")
+        write(root / "combine.py", "import json\n")
+        write(root / "bin" / "skip.py", "import csv\n")
         report = analyze.run_tools([t for t in analyze.TOOLS if t.name == "vulture"], root, {"python"})
         self.assertEqual(report.errors, [])
-        self.assertEqual([(f.rule, f.path, f.line) for f in report.findings], [("unused-import", "m.py", 1)])
+        self.assertEqual(sorted((f.rule, f.path, f.line) for f in report.findings), [("unused-import", "combine.py", 1), ("unused-import", "m.py", 1)])
 
     @unittest.skipUnless(shutil.which("knip"), "knip not installed")
     def test_real_knip(self):
         root = tree(self)
-        write(root / "package.json", json.dumps({"name": "x", "version": "1.0.0", "main": "index.js", "dependencies": {"left-pad": "1.3.0"}}))
+        write(root / "package.json", json.dumps({"name": "x", "version": "1.0.0", "main": "index.js", "dependencies": {"left-pad": "1.3.0", "is-odd": "3.0.1"}}))
         write(root / "index.js", "const { a } = require('./lib');\nconsole.log(a);\n")
         write(root / "lib.js", "exports.a = 1;\nexports.b = 2;\n")
         write(root / "orphan.js", "module.exports = 3;\n")
@@ -513,7 +544,8 @@ class RealTools(unittest.TestCase):
         self.assertEqual(report.errors, [])
         rules = {(f.rule, f.path) for f in report.findings}
         self.assertIn(("knip/files", "orphan.js"), rules)
-        self.assertIn(("knip/dependencies", "package.json"), rules)
+        deps = sorted(f.message for f in report.findings if f.rule == "knip/dependencies")
+        self.assertEqual(deps, ["dependencies: is-odd", "dependencies: left-pad"])
 
     @unittest.skipUnless(shutil.which("gitleaks"), "gitleaks not installed")
     def test_real_gitleaks(self):

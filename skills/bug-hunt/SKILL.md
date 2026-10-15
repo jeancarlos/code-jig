@@ -33,14 +33,14 @@ PowerShell: replace `grep -E` with `Select-String -Pattern`, and the churn line 
 
 ### Dependencies, deeper
 
-- One package against osv.dev, sending only its name and version: `curl -s -d '{"package":{"name":"lodash","ecosystem":"npm"},"version":"4.17.20"}' https://api.osv.dev/v1/query` (PowerShell: `Invoke-RestMethod -Method Post -Uri https://api.osv.dev/v1/query -ContentType application/json -Body '<same JSON>'`). The fixed versions are in `affected[].ranges[].events[].fixed`.
-- Upgrade suggestions for npm and Maven: `osv-scanner fix --strategy=in-place -L package-lock.json`. It rewrites the lockfile, so review the diff and run the tests. Its default `--data-source deps.dev` sends package names to deps.dev; `--data-source native` asks the package registry instead. Use `--offline` scans for everything else.
+- One package against osv.dev, sending only its name and version: `curl -s -d '{"package":{"name":"lodash","ecosystem":"npm"},"version":"4.17.20"}' https://api.osv.dev/v1/query` (PowerShell: `Invoke-RestMethod -Method Post -Uri https://api.osv.dev/v1/query -ContentType application/json -Body '<same JSON>'`). The fixed versions are in `vulns[].affected[].ranges[].events[].fixed`.
+- Upgrade suggestions for npm and Maven: `osv-scanner fix --strategy=in-place -L package-lock.json`. It rewrites the lockfile, so review the diff and run the tests. Its default `--data-source deps.dev` sends package names to deps.dev, and `--data-source native` sends them to the package registry; add `--offline-vulnerabilities --download-offline-databases` so the vulnerability matching itself stays local.
 - .NET: `DOTNET_CLI_TELEMETRY_OPTOUT=1 dotnet list package --vulnerable --include-transitive --format json`. Restore already asks nuget.org for advisories.
 
 ### Infrastructure code
 
-- Docker, Kubernetes, Terraform, ARM: `trivy config --disable-telemetry --skip-check-update --format json .` (the bundled checks, no download).
-- Bicep and ARM against Azure's Well-Architected rules: `Install-Module -Name PSRule.Rules.Azure -Scope CurrentUser`, then `Invoke-PSRule -InputPath ./infra -Module PSRule.Rules.Azure -Outcome Fail`. Bicep files need the expansion option described in its Bicep setup page.
+- Docker, Kubernetes, Terraform, ARM: `trivy config --disable-telemetry --skip-version-check --skip-check-update --format json .` (the bundled checks; no telemetry, no version or check download).
+- Bicep and ARM against Azure's Well-Architected rules: `Install-Module -Name PSRule.Rules.Azure -Scope CurrentUser`, then `Invoke-PSRule -InputPath ./infra -Module PSRule.Rules.Azure -Outcome Fail`. Bicep files need `AZURE_BICEP_FILE_EXPANSION` and ARM templates `AZURE_PARAMETER_FILE_EXPANSION` set to `true` in `ps-rule.yaml`; see its setup pages.
 
 ## 2. Confirm: the reality gate
 
@@ -93,7 +93,7 @@ Good properties: decode(encode(x)) == x; sorting is idempotent; a result stays i
 |---|---|---|
 | Python | atheris (Linux x86_64 wheels only) | a script calling `atheris.Setup(sys.argv, test_one_input)` and `atheris.Fuzz()`, run with `-max_total_time=60` |
 | TS/JS | jazzer.js | `npx jazzer <fuzz-target-module> -- -max_total_time=60`, the module exporting `fuzz(data)` |
-| .NET | SharpFuzz | a console project with the `SharpFuzz` package calling `Fuzzer.OutOfProcess.Run(stream => ...)`, the target assembly instrumented with the `sharpfuzz` tool (`dotnet tool install SharpFuzz.CommandLine` in a tool manifest), run under afl-fuzz on Linux or libfuzzer-dotnet on Windows; follow its README |
+| .NET | SharpFuzz | a console project with the `SharpFuzz` package and the target assembly instrumented by the `sharpfuzz` tool (`dotnet tool install SharpFuzz.CommandLine` in a tool manifest). With afl-fuzz (Linux) the harness calls `Fuzzer.OutOfProcess.Run(stream => ...)`; with libfuzzer-dotnet (Windows and Linux) it calls `Fuzzer.LibFuzzer.Run(span => ...)`. Follow its README and `docs/libFuzzer.md` |
 | HTTP APIs | schemathesis | `schemathesis run http://localhost:<port>/openapi.json`, only against a local instance |
 
 Bound every run by time. Each crashing input becomes a test.
@@ -113,7 +113,7 @@ Each surviving mutant gets a test that kills it, or a sentence on why it is equi
 ### Techniques without a new tool
 
 - **Bisect a regression**: `git bisect start <bad> <good>`, then `git bisect run <command that runs the failing test>`; the first bad commit names the cause.
-- **Flaky tests**: shuffle and repeat. pytest with `pytest-randomly` (or `-p randomly`) and a loop; `npx jest --randomize`; for .NET, run `DOTNET_CLI_TELEMETRY_OPTOUT=1 dotnet test --filter <name>` in a loop of 20. A test that fails only sometimes hides a race, shared state or an order dependency.
+- **Flaky tests**: shuffle and repeat. pytest with the `pytest-randomly` plugin installed (it shuffles every run) and a loop; `npx jest --randomize`; for .NET, run `DOTNET_CLI_TELEMETRY_OPTOUT=1 dotnet test --filter <name>` in a loop of 20. A test that fails only sometimes hides a race, shared state or an order dependency.
 - **Differential testing**: run the old and the new implementation (or two libraries) on the same generated inputs and compare.
 - **Metamorphic relations**: when the right answer is unknown, test relations instead: sorting a shuffled list gives the same result, filtering twice equals filtering once, a search for a superset term returns a superset.
 - **Invariants**: assert what must always hold at module boundaries in tests (totals add up, IDs stay unique) and let property tests drive them.

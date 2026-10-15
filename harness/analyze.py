@@ -31,9 +31,9 @@ DOTNET_SECURITY = {"CA2100", "S2068", "S2077", "S2245", "S3649", "S4423", "S4426
                    "S5332", "S5344", "S5443", "S5542", "S5547", "S5659", "S5773", "S6418"}
 MSBUILD = re.compile(r"^(.+?)\((\d+),\d+\): (warning|error) ([A-Za-z]+\d+): (.*?)(?: \[[^\]]*\])?$")
 MSBUILD_PROJECT = re.compile(r"^(.+?) : (warning|error) ([A-Za-z]+\d+): (.*?)(?: \[[^\]]*\])?$")
-VULTURE = re.compile(r"^(.+?):(\d+): (([^'(]+?)\s*(?:'[^']*')?) \((\d+)% confidence[^)]*\)$")
+VULTURE = re.compile(r"^(.+?):(\d+): (.+?) \((\d+)% confidence[^)]*\)$")
 KNIP_UNUSED = ("files", "dependencies", "devDependencies", "optionalPeerDependencies", "exports", "types", "nsExports", "nsTypes",
-               "enumMembers", "namespaceMembers", "duplicates", "catalog")
+               "enumMembers", "namespaceMembers", "duplicates", "catalog", "catalogReferences")
 KNIP_BROKEN = ("unlisted", "unresolved", "binaries", "cycles")
 MYPY = re.compile(r"^(.+?):(\d+)(?::\d+)*: error: (.*?)(?:  \[([\w-]+)\])?$")
 DUP_LOC = re.compile(r"^(.+):(\d+) ~ (\d+)$")
@@ -233,7 +233,7 @@ def _dotnet_category(rule: str) -> str:
     return "bug"
 
 
-def _dotnet_lines(out: str, root: Path):
+def _dotnet_lines(out: str):
     for line in (ln.strip() for ln in out.splitlines()):
         m = MSBUILD.match(line)
         if m:
@@ -246,7 +246,7 @@ def _dotnet_lines(out: str, root: Path):
 
 def parse_dotnet(out: str, root: Path, tmp: Path) -> list[Finding]:
     seen: dict[tuple, Finding] = {}
-    for rule, path, line, message in _dotnet_lines(out, root):
+    for rule, path, line, message in _dotnet_lines(out):
         f = Finding(_dotnet_category(rule), "dotnet", rule, rel(path, root), line, message)
         seen.setdefault((f.path, f.line, f.rule, f.message), f)
     return list(seen.values())
@@ -256,8 +256,8 @@ def parse_vulture(out: str, root: Path, tmp: Path) -> list[Finding]:
     found = []
     for m in map(VULTURE.match, out.splitlines()):
         if m:
-            rule = re.sub(r"\W+", "-", m.group(4).strip().lower())
-            found.append(Finding("unused", "vulture", rule, rel(m.group(1), root), int(m.group(2)), f"{m.group(3)} ({m.group(5)}% confidence)"))
+            rule = re.sub(r"\W+", "-", re.sub(r"'[^']*'", " ", m.group(3)).strip().lower()).strip("-")
+            found.append(Finding("unused", "vulture", rule, rel(m.group(1), root), int(m.group(2)), f"{m.group(3)} ({m.group(4)}% confidence)"))
     return found
 
 
@@ -266,7 +266,8 @@ def _knip_item(entry: dict, key: str, item, root: Path) -> Finding:
     if isinstance(item, list):
         names = " -> ".join(str(i.get("name", "")) for i in item)
         return Finding(category, "knip", f"knip/{key}", rel(entry["file"], root), 0, f"{key}: {names}")
-    return Finding(category, "knip", f"knip/{key}", rel(entry["file"], root), int(item.get("line") or 0), f"{key}: {item.get('name', '')}")
+    name = ".".join(str(part) for part in (item.get("namespace"), item.get("name", "")) if part)
+    return Finding(category, "knip", f"knip/{key}", rel(entry["file"], root), int(item.get("line") or 0), f"{key}: {name}")
 
 
 def parse_knip(out: str, root: Path, tmp: Path) -> list[Finding]:
@@ -311,6 +312,14 @@ def _has_mypy_config(root: Path) -> bool:
     return (root / "mypy.ini").is_file() or (root / ".mypy.ini").is_file() or contains("setup.cfg", "[mypy") or contains("pyproject.toml", "[tool.mypy")
 
 
+def _vulture_args(exe: str, root: Path, tmp: Path) -> list[str]:
+    pyproject = root / "pyproject.toml"
+    if pyproject.is_file() and "[tool.vulture" in pyproject.read_text(encoding="utf-8", errors="replace"):
+        return [exe]
+    excludes = ",".join(f"{d}/*,*/{d}/*" for d in sorted(SKIP_DIRS))
+    return [exe, ".", "--min-confidence", "80", "--exclude", excludes]
+
+
 def _has_eslint_config(root: Path) -> bool:
     return any(root.glob("eslint.config.*")) or any(root.glob(".eslintrc*"))
 
@@ -336,7 +345,7 @@ TOOLS = [
     Tool("lizard", "any", _lizard_args, parse_lizard, hint="pip install lizard"),
     Tool("ruff", "python", lambda exe, root, tmp: [exe, "check", "--output-format", "json", "--no-cache", "--exit-zero", "--extend-select", "S,B", "."],
          parse_ruff, hint="pip install ruff"),
-    Tool("vulture", "python", lambda exe, root, tmp: [exe, ".", "--min-confidence", "80", "--exclude", ",".join(sorted(SKIP_DIRS))],
+    Tool("vulture", "python", _vulture_args,
          parse_vulture, hint="pip install vulture", ok=(0, 3)),
     Tool("mypy", "python", lambda exe, root, tmp: [exe, "--no-error-summary", "--no-pretty", "--show-error-codes", "."],
          parse_mypy, _has_mypy_config, "pip install mypy", reason="no mypy config"),
@@ -406,7 +415,7 @@ def _run_one(t: Tool, exe: str, root: Path, env: dict, timeout: int) -> tuple[li
 
 def _add_new(findings: list[Finding], seen: set, found: list[Finding]) -> None:
     for f in found:
-        key = (f.tool, f.rule, f.path, f.line)
+        key = (f.tool, f.rule, f.path, f.line, "" if f.line else f.message)
         if key not in seen:
             seen.add(key)
             findings.append(f)

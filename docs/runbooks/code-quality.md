@@ -34,10 +34,10 @@ Exit 0: clean. Exit 1: findings or a tool error. Exit 2: no project found, a bad
 |---|---|---|
 | lizard | always, on source files that git tracks or would track (ignored files are skipped) | `complexity` above cognitive 15 (Sonar's default for S3776), cyclomatic 15, 100 lines of code or 7 parameters (the harness's limits); `duplication` for repeated blocks |
 | ruff | Python | `S` followed by digits (the bandit rules) security, `C90*`/`PLR09*` complexity, the rest bug; the repo's ruff config applies, plus `S` and `B` |
-| vulture | Python | `unused`: dead functions, classes, imports and unreachable code at 80% confidence or more |
+| vulture | Python | `unused`: unused imports, variables and arguments, unreachable code and impossible conditions (80% confidence or more). With a `[tool.vulture]` section in `pyproject.toml`, vulture runs with the project's own `paths`, `exclude` and `min_confidence`; set `min_confidence = 60` there to include unused functions and classes |
 | mypy | Python with a mypy config | type |
 | eslint | Node with an eslint config | `sonarjs/*` complexity and security rules mapped, `security/*` security, the rest bug |
-| knip | Node | `unused` files, exports, types and dependencies; `bug` for unlisted or unresolved imports and import cycles |
+| knip | Node | `unused` files, exports, types and dependencies; `bug` for dependencies used but not listed and imports that do not resolve |
 | tsc | Node with `tsconfig.json` | type |
 | dotnet build | .NET with a solution or project at the root | `S3776` and other complexity rules, `CA3*`, `CA5*` and known Sonar security rules as security, `CS*` as type, NuGet audit warnings `NU1901`-`NU1904` as dependency (project-level warnings carry no line), the rest bug |
 | semgrep | `.semgrep.yml`, `.semgrep.yaml` or `.semgrep/` exists | security |

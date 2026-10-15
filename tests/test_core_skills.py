@@ -6,11 +6,11 @@ from harness import paths
 SKILLS = paths.CORE / "skills"
 EXPECTED = {"bug-hunt", "code-analysis", "codegen", "cross-review", "grilling", "hld-trace", "improve", "regression-tests", "web-consensus"}
 OPT_OUTS = {
-    r"\bsemgrep\b": "--metrics=off",
-    r"\bkiota\b": "KIOTA_CLI_TELEMETRY_OPTOUT=1",
-    r"\bdotnet\b": "DOTNET_CLI_TELEMETRY_OPTOUT=1",
-    r"\bosv-scanner\b": "--offline",
-    r"\btrivy\b": "--disable-telemetry",
+    r"\bsemgrep\b": ("--metrics=off",),
+    r"\bkiota\b": ("KIOTA_CLI_TELEMETRY_OPTOUT=1",),
+    r"\bdotnet\b": ("DOTNET_CLI_TELEMETRY_OPTOUT=1",),
+    r"\bosv-scanner\b": ("--offline",),
+    r"\btrivy\b": ("--disable-telemetry", "--skip-version-check"),
 }
 
 
@@ -38,10 +38,11 @@ class CoreSkills(unittest.TestCase):
     def test_telemetry_opt_outs(self):
         for path in SKILLS.glob("*/SKILL.md"):
             text = path.read_text(encoding="utf-8")
-            for tool, flag in OPT_OUTS.items():
+            for tool, flags in OPT_OUTS.items():
                 if re.search(tool, text, re.IGNORECASE):
-                    with self.subTest(skill=path.parent.name, tool=tool):
-                        self.assertIn(flag, text)
+                    for flag in flags:
+                        with self.subTest(skill=path.parent.name, tool=tool, flag=flag):
+                            self.assertIn(flag, text)
 
     def test_frontmatter_parser(self):
         self.assertEqual(frontmatter("---\nname: a\ndescription: Use when x: y\n---\nbody"), {"name": "a", "description": "Use when x: y"})
