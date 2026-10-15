@@ -1,6 +1,8 @@
+import io
 import os
 import re
 import sys
+import tokenize
 from pathlib import Path
 
 from harness.atomicwrite import atomic_write, resolve_inside
@@ -94,11 +96,27 @@ def is_boilerplate_line(line: str, markers=None) -> bool:
     return BOILERPLATE_PATTERN.match(comment_text) is not None
 
 
-def humanize_text(text: str, markers) -> tuple[str, dict]:
+def python_comment_lines(text: str) -> set[int] | None:
+    """0-based numbers of lines that hold only a comment, read by the tokenizer so
+    a `#` inside a string literal is never mistaken for one. None if it cannot parse."""
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, SyntaxError):
+        return None
+    lines = text.split("\n")
+    return {
+        t.start[0] - 1
+        for t in tokens
+        if t.type == tokenize.COMMENT and not lines[t.start[0] - 1][: t.start[1]].strip()
+    }
+
+
+def humanize_text(text: str, markers, comment_lines: set[int] | None = None) -> tuple[str, dict]:
     counts = {"dashes": 0, "quotes": 0, "ellipsis": 0, "emoji": 0, "boilerplate": 0}
     kept = []
-    for line in text.split("\n"):
-        if not is_comment_line(line, markers):
+    for number, line in enumerate(text.split("\n")):
+        is_comment = number in comment_lines if comment_lines is not None else is_comment_line(line, markers)
+        if not is_comment:
             kept.append(line)
             continue
         if is_boilerplate_line(line, markers):
@@ -124,7 +142,12 @@ def humanize_file(path: str, root: str | None = None, write: bool = True) -> dic
         if b"\0" in original[:8192]:
             return result
         text = original.decode("utf-8")
-        new_text, counts = humanize_text(text, markers)
+        comment_lines = None
+        if target.suffix.lower() == ".py":
+            comment_lines = python_comment_lines(text)
+            if comment_lines is None:
+                return result
+        new_text, counts = humanize_text(text, markers, comment_lines)
         result.update(counts)
         if new_text != text:
             result["changed"] = True

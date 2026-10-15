@@ -55,9 +55,22 @@ class PostToolUseHook(unittest.TestCase):
     def test_clean_files_produce_no_output_and_stay_untouched(self):
         path = write(self.root / "a.py", "x = 1\n")
         before = os.stat(path).st_mtime_ns
-        _, out = run_hook({"cwd": str(self.root), "tool_input": {"file_path": str(path)}})
+        _, out = run_hook({"cwd": str(self.root), "tool_name": "Write", "tool_input": {"file_path": str(path)}})
         self.assertEqual(out, "")
         self.assertEqual(os.stat(path).st_mtime_ns, before)
+
+    def test_tools_that_only_read_or_mention_a_patch_touch_nothing(self):
+        path = write(self.root / "a.py", f"x{ZWSP}\n")
+        doc = f"*** Begin Patch\n*** Update File: {path.name}\n*** End Patch\n"
+        for name, tool_input in (
+            ("Read", {"file_path": str(path)}),
+            ("shell", {"command": ["cat", str(path)], "path": str(path)}),
+            ("Write", {"file_path": str(self.root / "notes.md"), "content": doc}),
+            ("apply_patch", {"command": ["apply_patch", "no patch here"], "path": str(path)}),
+        ):
+            write(self.root / "notes.md", "notes\n")
+            run_hook({"cwd": str(self.root), "tool_name": name, "tool_input": tool_input})
+        self.assertEqual(path.read_text(encoding="utf-8"), f"x{ZWSP}\n")
 
     def test_bad_input_never_fails_the_tool_call(self):
         self.assertEqual(run_hook("{not json")[0], 0)
@@ -65,7 +78,7 @@ class PostToolUseHook(unittest.TestCase):
 
     def test_files_outside_the_session_root_are_left_alone(self):
         outside = write(self.root.parent / "outside.py", f"x{ZWSP}\n")
-        run_hook({"cwd": str(self.root), "tool_input": {"file_path": str(outside)}})
+        run_hook({"cwd": str(self.root), "tool_name": "Write", "tool_input": {"file_path": str(outside)}})
         self.assertEqual(outside.read_text(encoding="utf-8"), f"x{ZWSP}\n")
 
 
@@ -92,6 +105,21 @@ class SafeWrites(unittest.TestCase):
         self.assertEqual(path.read_bytes(), b"new\n")
         self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o750)
         self.assertEqual([p.name for p in self.root.iterdir()], ["a.sh"])
+
+
+class HumanizePython(unittest.TestCase):
+    def setUp(self):
+        self.root = tree(self)
+
+    def test_hash_lines_inside_string_literals_are_code_not_comments(self):
+        from harness.humanize import humanize_file
+        source = f'SCRIPT = """\n# Here is the updated config {EM_DASH} keep\n"""\n# real {EM_DASH} comment\n'
+        path = write(self.root / "a.py", source)
+        humanize_file(str(path), root=str(self.root))
+        self.assertEqual(
+            path.read_text(encoding="utf-8"),
+            f'SCRIPT = """\n# Here is the updated config {EM_DASH} keep\n"""\n# real - comment\n',
+        )
 
 
 class HumanizeCli(unittest.TestCase):
