@@ -11,9 +11,10 @@ Classic style (Pinker, *The Sense of Style*): the writer shows the reader someth
 - **Open with a fact, not a preamble.** The first two sentences carry a concrete thing: a number, a bug, a scene. Never "Neste post vou falar sobre", never "No cenário atual".
 - **Concrete before abstract.** Show the code, the number or the failure, then name the principle. A principle with no example goes.
 - **Headings say what the section shows.** "A URL decide o idioma" beats "Internacionalização". No "Introdução", no "Conclusão".
-- **Numbers for every quality claim.** "Rápido" means nothing; "12 páginas em 4,9 s" means something.
+- **A number when the number is the point.** "Rápido" means nothing; "12 páginas em 4,9 s" means something. But a paragraph with three numbers, two file names and a commit hash is a changelog: keep the one number the reader will remember and link the rest.
 - **Say what is missing.** An honest gap makes the rest credible. A list of virtues with no cost reads as an ad.
-- **End on the next concrete thing**, a limit or an open question. No summary of what the reader just read, no moral.
+- **End on the next concrete thing**, a limit or an open question. No summary of what the reader just read, no moral, no call to action ("Faz isso no seu site").
+- **Someone is talking.** The author has opinions, gets annoyed, is wrong, is unsure. A text where every sentence is a verified neutral fact has no one in it.
 
 ## Portuguese (pt-BR)
 
@@ -52,6 +53,21 @@ Habits that make prose worse, whoever wrote it. Remove on sight. Full list in En
 - **Inflated significance**: "um marco", "revolucionou", "mudou completamente". Say what changed and by how much.
 - **Talking about the text**: "neste artigo", "como vimos acima", "vamos explorar".
 
+### Structural tells
+
+Avoiding the words above is not enough: a model that drops "crucial" and every dash still writes in its own shape. These came from a draft that had none of the word-level tells and still read as machine-made from the first line.
+
+- **Even rhythm.** Every paragraph four to six sentences of similar length, each built the same way (claim, evidence, consequence). Vary on purpose: a one-line paragraph next to a long one, a long sentence that wanders when the thought wanders, a fragment.
+- **Inventory paragraphs.** "Um confere... Outro garante... Outro checa... E tem um que...", "Pra mim, X quer dizer cinco coisas", a list of facts walked through in prose. Pick the one example that matters and tell it.
+- **Fact density.** Identifiers, counts and commit hashes in every paragraph. The reader cannot hold them; link the commit, keep the story.
+- **Narrator without a person.** No opinion, no joke, no doubt, no "eu achava". Everything reported, nothing felt.
+- **Borrowed informality.** "tá" and "pra" sprinkled over formal syntax. The register is the author's, taken from their own text, and it holds through the whole article.
+- **Swallowed scope.** The article grew to hold everything the apuração found. One idea per post; the rest is the next pauta.
+
+### On AI detectors
+
+Detectors are classifiers trained on model output. They flag predictable, even prose, and they also flag formal or non-native human writing: seven detectors marked 61% of TOEFL essays by human writers as AI (Liang et al., 2023: https://arxiv.org/abs/2304.02819). Do not chase a score and never rewrite to fool one. A flagged draft is a symptom that the author is missing from the text; the fix is the entrevista, not synonyms.
+
 ## Checklist before the editor's last aprova
 
 1. Every number and name is in the fact sheet with a source.
@@ -62,6 +78,10 @@ Habits that make prose worse, whoever wrote it. Remove on sight. Full list in En
 6. Every paragraph is one line in the file (no hard wrap).
 7. At least one honest limit is stated.
 8. Code in backticks, identifiers untranslated, decimal comma in prose.
+9. Every section carries something from the entrevista or the author's own text, and no feeling, habit or reason was invented for them.
+10. Paragraph lengths vary; no three paragraphs in a row share the same shape.
+11. The word count is within the pauta's target, and the scope is still the author's idea.
+12. No closing summary section and no call to action.
 
 ## Reading list
 
