@@ -1,3 +1,4 @@
+import http.client
 import ipaddress
 import json
 import os
@@ -9,7 +10,6 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from urllib.parse import urlsplit
 
 MAX_BYTES = 3_000_000
 TIMEOUT = 20
@@ -64,6 +64,10 @@ def page_text(body: bytes, ctype: str) -> str:
     return normalize(text)
 
 
+def is_public_ip(ip: str) -> bool:
+    return ipaddress.ip_address(ip.split("%")[0]).is_global
+
+
 def is_public(host: str) -> bool:
     """True when every address the host resolves to is a public one; a host that does not resolve passes,
     so the request itself reports it."""
@@ -71,16 +75,62 @@ def is_public(host: str) -> bool:
         infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
     except (OSError, UnicodeError):
         return True
-    return all(ipaddress.ip_address(info[4][0].split("%")[0]).is_global for info in infos)
+    return all(is_public_ip(info[4][0]) for info in infos)
+
+
+def _target(url: str) -> tuple[str, str] | None:
+    """(scheme, host) exactly as urllib and http.client will parse them for the connection."""
+    try:
+        req = urllib.request.Request(url)
+        return req.type.lower(), http.client.HTTPConnection(req.host).host
+    except (ValueError, http.client.InvalidURL):
+        return None
 
 
 def refused(url: str) -> str | None:
-    parts = urlsplit(url)
-    if parts.scheme.lower() not in ("http", "https") or not parts.hostname:
+    target = _target(url)
+    if target is None or target[0] not in ("http", "https") or not target[1]:
         return "only http and https are checked"
-    if not is_public(parts.hostname):
-        return f"{parts.hostname} is a private or local address"
+    if not is_public(target[1]):
+        return f"{target[1]} is a private or local address"
     return None
+
+
+def proxied(url: str) -> bool:
+    target = _target(url)
+    proxies = urllib.request.getproxies()
+    return bool(target) and target[0] in proxies and not urllib.request.proxy_bypass(target[1])
+
+
+def _check_peer(conn: http.client.HTTPConnection) -> None:
+    if conn._tunnel_host:
+        return
+    ip = conn.sock.getpeername()[0]
+    if not is_public_ip(ip):
+        conn.close()
+        raise OSError(f"refused: {ip} is a private or local address")
+
+
+class _HTTPConnection(http.client.HTTPConnection):
+    def connect(self):
+        super().connect()
+        _check_peer(self)
+
+
+class _HTTPSConnection(http.client.HTTPSConnection):
+    def connect(self):
+        super().connect()
+        _check_peer(self)
+
+
+class _HTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_HTTPConnection, req)
+
+
+class _HTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_HTTPSConnection, req, context=self._context)
 
 
 class _Redirects(urllib.request.HTTPRedirectHandler):
@@ -91,18 +141,19 @@ class _Redirects(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-OPENER = urllib.request.build_opener(_Redirects)
+DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}), _HTTPHandler, _HTTPSHandler, _Redirects)
+VIA_PROXY = urllib.request.build_opener(_Redirects)
 
 
 def fetch(url: str) -> tuple[str, str]:
     """(verdict, page text or detail) for one URL. Only public http and https addresses are requested,
-    redirects included."""
+    redirects included; without a proxy, the address the socket actually connected to is checked too."""
     reason = refused(url)
     if reason:
         return "bad-url", reason
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "text/html,text/plain;q=0.9,*/*;q=0.5"})
     try:
-        with OPENER.open(req, timeout=TIMEOUT) as r:
+        with (VIA_PROXY if proxied(url) else DIRECT).open(req, timeout=TIMEOUT) as r:
             ctype = r.headers.get("Content-Type", "")
             if not ctype.startswith(TEXT_TYPES):
                 return "unreadable", ctype or "unknown type"

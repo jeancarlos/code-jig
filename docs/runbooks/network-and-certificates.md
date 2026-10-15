@@ -27,7 +27,7 @@ On Windows, most of these read the Windows certificate store once the root is in
 
 ## harness check-sources
 
-`check-sources` (used by the `web-consensus` skill) fetches every cited URL with Python's `urllib`. It honours `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`, uses the system certificate store on Windows and `SSL_CERT_FILE` elsewhere, and sends a plain browser-like User-Agent. Only `http` and `https` URLs are requested. Inside a sandbox without network it stops at once and asks for an escalated run, so one Guardian review covers every URL.
+`check-sources` (used by the `web-consensus` skill) fetches every cited URL with Python's `urllib`. It honours `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`, uses the system certificate store on Windows and `SSL_CERT_FILE` elsewhere, and sends a plain browser-like User-Agent. Only `http` and `https` URLs on public addresses are requested: a URL or redirect to a loopback, private, link-local or reserved address is refused, and without a proxy the connected address is checked again. Inside a sandbox without network it stops at once and asks for an escalated run, so one Guardian review covers every URL.
 
 ## The sandbox and Guardian
 

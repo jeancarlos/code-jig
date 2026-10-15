@@ -50,15 +50,39 @@ class Sources(unittest.TestCase):
         cls.server.shutdown()
 
     def setUp(self):
-        real = sources.is_public
-        patcher = mock.patch.object(sources, "is_public", lambda host: host == "127.0.0.1" or real(host))
+        real = sources.is_public_ip
+        patcher = mock.patch.object(sources, "is_public_ip", lambda ip: ip == "127.0.0.1" or real(ip))
         patcher.start()
         self.addCleanup(patcher.stop)
+        env = mock.patch.dict(os.environ, {k: v for k, v in os.environ.items() if "proxy" not in k.lower()}, clear=True)
+        env.start()
+        self.addCleanup(env.stop)
 
     def test_private_and_local_addresses_are_refused(self):
-        for url in ("http://10.0.0.1/x", "http://169.254.169.254/latest/meta-data/", "http://localhost:1/x", "http://[::1]/x"):
+        for url in ("http://10.0.0.1/x", "http://169.254.169.254/latest/meta-data/", "http://127.0.0.2:1/x", "http://[::1]/x"):
             with self.subTest(url=url):
                 self.assertEqual(sources.fetch(url)[0], "bad-url")
+
+    def test_the_connected_address_is_checked_not_only_the_dns_answer(self):
+        port = self.server.server_address[1]
+        with mock.patch.object(sources, "is_public", lambda host: True), \
+                mock.patch.object(sources, "is_public_ip", lambda ip: False):
+            verdict, detail = sources.fetch(f"http://127.0.0.1:{port}/doc")
+        self.assertEqual(verdict, "dead")
+        self.assertIn("private", detail)
+
+    def test_urllib_parses_the_host_it_connects_to(self):
+        port = self.server.server_address[1]
+        with mock.patch.object(sources, "is_public_ip", lambda ip: False):
+            for url in (f"http://127.0.0.1:{port}\\@example.com/doc", f"http://127.0.0.1:{port}#@example.com/doc"):
+                with self.subTest(url=url):
+                    self.assertNotEqual(sources.fetch(url)[0], "ok")
+
+    def test_a_proxy_gets_the_request_and_the_host_check_still_applies(self):
+        with mock.patch.dict(os.environ, {"http_proxy": "http://127.0.0.1:9"}):
+            self.assertEqual(sources.fetch("http://10.0.0.1/x")[0], "bad-url")
+            self.assertTrue(sources.proxied("http://example.com/"))
+        self.assertFalse(sources.proxied("http://example.com/"))
 
     def test_a_redirect_to_a_private_address_is_refused(self):
         verdict, detail = sources.fetch(f"{self.base}/to-private")
