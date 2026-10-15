@@ -19,6 +19,7 @@ A linter guard on edits raised SWE-agent's resolve rate by about 3 points (arXiv
 
 - `PostToolUse` output can block and add context, but cannot replace the tool's output (`hooks/src/events/post_tool_use.rs`, rust-v0.162.1).
 - Hooks run outside the sandbox (ADR 0012). eslint configs and plugins, tsc plugins, `dotnet build` and anything in `node_modules/.bin` execute code the agent can write, so the hook runs none of them. Ruff reads configuration but executes none, and `--isolated` stops it reading even that; the select list is flake8's fatal set (syntax errors, undefined names, invalid comparisons).
+- The file path goes after `--`, so a file named like an option (`--output-file=x.py`) is linted, never parsed as a flag that would make ruff write a file outside the sandbox.
 - A `ruff` that resolves inside the workspace is skipped, because the agent could have written it. A `ruff` elsewhere on `PATH` that the sandbox lets the agent write (for example when the workspace root is the home directory) is the remaining ceiling.
 - Guardian sees only commands that escalate (ADR 0009), not file edits, so a Guardian policy line could not catch test edits.
 

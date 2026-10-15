@@ -65,7 +65,7 @@ def _python(real: Path, rel: str, text: str, root: Path) -> list[str]:
     if ruff:
         try:
             r = subprocess.run([ruff, "check", "--isolated", "--no-cache", "--quiet", "--no-fix",
-                                "--output-format", "concise", "--select", RUFF_SELECT, rel],
+                                "--output-format", "concise", "--select", RUFF_SELECT, "--", rel],
                                cwd=root, capture_output=True, text=True, encoding="utf-8",
                                errors="replace", timeout=5, stdin=subprocess.DEVNULL)
             if r.returncode in (0, 1):

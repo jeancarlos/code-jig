@@ -47,6 +47,13 @@ class Lint(unittest.TestCase):
         self.assertFalse((self.root / ".ruff_cache").exists())
 
     @unittest.skipUnless(HAS_RUFF, "ruff not on PATH")
+    def test_a_file_name_is_never_read_as_an_option(self):
+        path = write(self.root / "--output-file=written.py", "def f():\n    return undefined_name\n")
+        note = feedback.lint(str(path), str(self.root))
+        self.assertFalse((self.root / "written.py").exists())
+        self.assertIn("F821", note)
+
+    @unittest.skipUnless(HAS_RUFF, "ruff not on PATH")
     def test_repo_ruff_config_is_ignored(self):
         write(self.root / "pyproject.toml", '[tool.ruff.lint]\nselect = ["D"]\n')
         path = write(self.root / "a.py", "x = 1\n")
