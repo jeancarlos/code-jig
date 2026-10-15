@@ -62,6 +62,7 @@ Avoiding the words above is not enough: a model that drops "crucial" and every d
 - **Fact density.** Identifiers, counts and commit hashes in every paragraph. The reader cannot hold them; link the commit, keep the story.
 - **Narrator without a person.** No opinion, no joke, no doubt, no "eu achava". Everything reported, nothing felt.
 - **Borrowed informality.** "tá" and "pra" sprinkled over formal syntax. The register is the author's, taken from their own text, and it holds through the whole article.
+- **Researched trivia.** A book's publication year, a spec's exact threshold, commit counts per year: facts the author never lived and would never say. A fact belongs when the author did it, used it or hit it.
 - **Swallowed scope.** The article grew to hold everything the apuração found. One idea per post; the rest is the next pauta.
 
 ### On AI detectors
