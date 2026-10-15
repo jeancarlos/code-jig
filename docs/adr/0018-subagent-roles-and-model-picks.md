@@ -38,6 +38,9 @@ The user also asked that every skill run on the best model for its job. A skill 
 - The catalog describes `gpt-6.1-sol` as "Latest workhorse model for coding and everyday work", `gpt-6-astra` as "Frontier intelligence for the most demanding work", `gpt-6-luna` as "Fast and affordable model for easier tasks", `gpt-6-sol` as "Previous generation workhorse model" and `gpt-5.6-sol` as "Older generation workhorse model" (`models_cache.json` on the bench, 2026-10-15). The picks follow these descriptions; no quality benchmark between the models was run.
 - `multi_agent_reasoning_effort` in the catalog (`xhigh` for two models) applies only when the effort is `ultra` (`protocol/src/openai_models/reasoning_effort.rs`), so it does not raise subagent cost at the tiers' efforts.
 
+- The explorer turns off the skills catalog, apps, plugins and memories (`[skills] include_instructions = false`, `[features]`); a role file may only switch these off (`AgentRoleOverrides`). On the bench, an explorer's smallest request fell from 24,299 to 17,748 input tokens (27%), and both live runs (2026-10-15) answered with the right `path:line` on `gpt-6-luna` under a `gpt-6.1-sol` session.
+- Every explorer request still carries that baseline, so its description says to run a single grep or file read inline.
+
 ## Cost
 
 About 40 lines in `install.py` and `doctor.py`, two role files, four one-line skill edits. The two role descriptions add to the spawn tool's guidance in every request, mostly from the prompt cache.
