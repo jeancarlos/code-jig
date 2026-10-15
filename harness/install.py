@@ -1,6 +1,5 @@
 import hashlib
 import json
-import os
 import shlex
 import shutil
 import sys
@@ -50,7 +49,7 @@ def is_generated(path: Path) -> bool:
 def _backup_name(path: Path) -> Path:
     backup = path.with_name(f"{path.name}.bak-{time.strftime('%Y%m%d-%H%M%S')}")
     n = 0
-    while backup.exists():
+    while backup.exists() or backup.is_symlink():
         n += 1
         backup = path.with_name(f"{path.name}.bak-{time.strftime('%Y%m%d-%H%M%S')}-{n}")
     return backup
@@ -58,19 +57,11 @@ def _backup_name(path: Path) -> Path:
 
 def write_generated(path: Path, text: str) -> Path | None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8", newline="\n")
     backup = None
-    mode = None
     if path.exists() and not is_generated(path):
         backup = _backup_name(path)
-        mode = path.stat().st_mode
-        path.replace(backup)
-    elif path.exists():
-        mode = path.stat().st_mode
-    os.replace(tmp, path)
-    if mode is not None:
-        path.chmod(mode)
+        shutil.copy2(path, backup)
+    atomic_write(path, text.encode("utf-8"))
     return backup
 
 
@@ -103,13 +94,19 @@ def _without_status(groups: list, status: str) -> list:
         isinstance(h, dict) and h.get("statusMessage") == status for h in g.get("hooks") or []))]
 
 
+def valid_hook_groups(groups) -> bool:
+    return isinstance(groups, list) and all(
+        isinstance(g, dict) and isinstance(g.get("hooks", []), list)
+        and all(isinstance(h, dict) for h in g.get("hooks", [])) for g in groups)
+
+
 def merged_hooks(path: Path, posix: str, windows: str, watermark: tuple[str, str] | None = None) -> str:
     try:
         data = json.loads(path.read_text(encoding="utf-8-sig")) if path.is_file() else {"hooks": {}}
     except (OSError, ValueError) as e:
         raise ValueError(f"{path}: {e}") from e
     hooks = data.setdefault("hooks", {}) if isinstance(data, dict) else None
-    if not isinstance(hooks, dict) or not isinstance(hooks.setdefault("Stop", []), list):
+    if not isinstance(hooks, dict) or not valid_hook_groups(hooks.setdefault("Stop", [])):
         raise ValueError(f'{path}: expected {{"hooks": {{"Stop": [...]}}}}')
     hooks["Stop"] = _without_status(hooks["Stop"], HOOK_STATUS)
     hooks["Stop"].append({"hooks": [{"type": "command", "command": posix, "commandWindows": windows,
@@ -143,7 +140,7 @@ def merged_claude_code_hooks(path: Path, command: str) -> str:
     except (OSError, ValueError) as e:
         raise ValueError(f"{path}: {e}") from e
     hooks = data.setdefault("hooks", {}) if isinstance(data, dict) else None
-    if not isinstance(hooks, dict) or not isinstance(hooks.setdefault("PostToolUse", []), list):
+    if not isinstance(hooks, dict) or not valid_hook_groups(hooks.setdefault("PostToolUse", [])):
         raise ValueError(f'{path}: expected {{"hooks": {{"PostToolUse": [...]}}}}')
     hooks["PostToolUse"] = _without_status(hooks["PostToolUse"], CLAUDE_CODE_WATERMARK_STATUS)
     hooks["PostToolUse"].append({

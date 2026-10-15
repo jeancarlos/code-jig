@@ -9,7 +9,7 @@ import tomllib
 from pathlib import Path
 
 from harness import managed, paths, probe, tiers
-from harness.install import HOOK_STATUS, render_agents, render_profile, skill_sources
+from harness.install import HOOK_STATUS, render_agents, render_profile, skill_sources, valid_hook_groups
 from harness.overlay import Overlay, load
 
 Check = tuple[str, str, str]
@@ -194,6 +194,8 @@ def check_hook(home: Path) -> list[Check]:
         return [("warn", "stop hook", f"{path} missing; run harness install")]
     try:
         groups = json.loads(path.read_text(encoding="utf-8-sig"))["hooks"]["Stop"]
+        if not valid_hook_groups(groups):
+            raise ValueError('expected {"hooks": {"Stop": [{"hooks": [...]}]}}')
     except (OSError, ValueError, KeyError, TypeError) as e:
         return [("FAIL", "stop hook", f"{path}: {e}")]
     found = isinstance(groups, list) and any(

@@ -71,3 +71,8 @@ class RealHomeIsolation(unittest.TestCase):
         from pathlib import Path
         from harness import paths
         self.assertNotEqual(paths.agents_skills(), Path.home() / ".agents" / "skills")
+
+    def test_tests_never_target_the_real_claude_settings(self):
+        from pathlib import Path
+        from harness import paths
+        self.assertNotEqual(paths.claude_code_settings(), Path.home() / ".claude" / "settings.json")

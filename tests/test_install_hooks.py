@@ -43,6 +43,15 @@ class Hooks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "hooks.json"):
             merged_hooks(self.path, "p", "w")
 
+    def test_malformed_nested_hooks_names_file(self):
+        for hooks in (1, True, "command", {}, None, [1]):
+            with self.subTest(hooks=hooks):
+                original = json.dumps({"hooks": {"Stop": [{"hooks": hooks}]}})
+                write(self.path, original)
+                with self.assertRaisesRegex(ValueError, "hooks.json"):
+                    merged_hooks(self.path, "p", "w")
+                self.assertEqual(self.path.read_text(), original)
+
     def test_write_merged_backs_up_only_on_change(self):
         write(self.path, '{"hooks": {}}\n')
         self.assertIsNotNone(write_merged(self.path, '{"hooks": {"Stop": []}}\n'))
@@ -180,6 +189,15 @@ class ClaudeCodeHooks(unittest.TestCase):
             if group.get("statusMessage") == CLAUDE_CODE_WATERMARK_STATUS:
                 self.assertEqual(group["hooks"][0]["type"], "command")
                 self.assertIn("cmd", group["hooks"][0]["command"])
+
+    def test_malformed_nested_hooks_names_file(self):
+        for hooks in (1, True, "command", {}, None, [1]):
+            with self.subTest(hooks=hooks):
+                original = json.dumps({"hooks": {"PostToolUse": [{"hooks": hooks}]}})
+                write(self.path, original)
+                with self.assertRaisesRegex(ValueError, "settings.json"):
+                    merged_claude_code_hooks(self.path, "cmd")
+                self.assertEqual(self.path.read_text(), original)
 
     def test_write_merged_settings_backs_up_only_on_change(self):
         write(self.path, '{"hooks": {}}\n')

@@ -1,3 +1,5 @@
+import contextlib
+import io
 import unittest
 from pathlib import Path
 
@@ -8,6 +10,7 @@ from tests.util import tree, write
 class HumanizeDashes(unittest.TestCase):
     def setUp(self):
         self.root = tree(self)
+        self.enterContext(contextlib.chdir(self.root))
 
     def test_em_dash_removed_in_comment(self):
         path = self.root / "test.py"
@@ -36,6 +39,7 @@ class HumanizeDashes(unittest.TestCase):
 class HumanizeCurlyQuotes(unittest.TestCase):
     def setUp(self):
         self.root = tree(self)
+        self.enterContext(contextlib.chdir(self.root))
 
     def test_curly_single_quotes_removed(self):
         path = self.root / "test.py"
@@ -61,6 +65,7 @@ class HumanizeCurlyQuotes(unittest.TestCase):
 class HumanizeEllipsis(unittest.TestCase):
     def setUp(self):
         self.root = tree(self)
+        self.enterContext(contextlib.chdir(self.root))
 
     def test_ellipsis_replaced(self):
         path = self.root / "test.py"
@@ -74,6 +79,7 @@ class HumanizeEllipsis(unittest.TestCase):
 class HumanizeEmoji(unittest.TestCase):
     def setUp(self):
         self.root = tree(self)
+        self.enterContext(contextlib.chdir(self.root))
 
     def test_emoji_removed_from_comment(self):
         path = self.root / "test.py"
@@ -96,6 +102,7 @@ class HumanizeEmoji(unittest.TestCase):
 class HumanizeBoilerplate(unittest.TestCase):
     def setUp(self):
         self.root = tree(self)
+        self.enterContext(contextlib.chdir(self.root))
 
     def test_add_more_as_needed_removed(self):
         path = self.root / "test.py"
@@ -122,6 +129,7 @@ class HumanizeBoilerplate(unittest.TestCase):
 class HumanizeLanguages(unittest.TestCase):
     def setUp(self):
         self.root = tree(self)
+        self.enterContext(contextlib.chdir(self.root))
 
     def test_python_dash_in_comment(self):
         path = self.root / "test.py"
@@ -134,6 +142,7 @@ class HumanizeLanguages(unittest.TestCase):
 class HumanizeNoOp(unittest.TestCase):
     def setUp(self):
         self.root = tree(self)
+        self.enterContext(contextlib.chdir(self.root))
 
     def test_clean_file_not_rewritten(self):
         path = self.root / "test.py"
@@ -156,6 +165,7 @@ class HumanizeNoOp(unittest.TestCase):
 class HumanizeSymlinks(unittest.TestCase):
     def setUp(self):
         self.root = tree(self)
+        self.enterContext(contextlib.chdir(self.root))
 
     def test_symlink_skipped(self):
         target = self.root / "real.py"
@@ -165,6 +175,23 @@ class HumanizeSymlinks(unittest.TestCase):
         result = humanize_file(str(symlink), root=str(self.root))
         self.assertFalse(result.get("changed"))
         self.assertIn("Example usage", target.read_text())
+
+
+class HumanizeCheck(unittest.TestCase):
+    def test_check_does_not_write_files_or_directories(self):
+        from harness.__main__ import main
+        root = tree(self)
+        path = root / "check.py"
+        content = "# Range — 1 to 10\n"
+        for target in (path, root):
+            with self.subTest(target=target):
+                write(path, content)
+                before = path.stat().st_mtime_ns
+                with contextlib.redirect_stderr(io.StringIO()) as err:
+                    self.assertEqual(main(["humanize", "--check", str(target)]), 1)
+                self.assertEqual(path.read_text(), content)
+                self.assertEqual(path.stat().st_mtime_ns, before)
+                self.assertIn(str(path), err.getvalue())
 
 
 if __name__ == "__main__":
