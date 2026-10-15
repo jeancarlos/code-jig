@@ -40,7 +40,7 @@ PowerShell: write a `NAME=value command` line as `$env:NAME = 'value'; command`,
 ### Infrastructure code
 
 - Docker, Kubernetes, Terraform, ARM: `trivy config --disable-telemetry --skip-version-check --skip-check-update --format json .` (the bundled checks; no telemetry, no version or check download).
-- Bicep and ARM against Azure's Well-Architected rules: `Install-Module -Name PSRule.Rules.Azure -Scope CurrentUser`, then `Invoke-PSRule -InputPath ./infra -Module PSRule.Rules.Azure -Outcome Fail`. Bicep files need `AZURE_BICEP_FILE_EXPANSION` and ARM templates `AZURE_PARAMETER_FILE_EXPANSION` set to `true` in `ps-rule.yaml`; see its setup pages.
+- Bicep and ARM against Azure's Well-Architected rules: `Install-Module -Name PSRule.Rules.Azure -Scope CurrentUser`. Turn on expansion before scanning, or the templates are not read: in `ps-rule.yaml` set `configuration: { AZURE_BICEP_FILE_EXPANSION: true, AZURE_PARAMETER_FILE_EXPANSION: true }`, or for one run `$Env:PSRULE_CONFIGURATION_AZURE_BICEP_FILE_EXPANSION = 'true'` and `$Env:PSRULE_CONFIGURATION_AZURE_PARAMETER_FILE_EXPANSION = 'true'`. Then `Invoke-PSRule -Format File -InputPath ./infra -Module PSRule.Rules.Azure -Outcome Fail`.
 
 ## 2. Confirm: the reality gate
 
