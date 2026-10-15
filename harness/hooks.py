@@ -2,7 +2,8 @@ import json
 import sys
 from pathlib import Path
 
-from harness.watermark import report_result, strip_watermark
+from harness.watermark import report_result as report_watermark, strip_watermark
+from harness.humanize import humanize_file, report_result as report_humanize
 
 
 def handle_claude_code_posttooluse() -> int:
@@ -12,7 +13,9 @@ def handle_claude_code_posttooluse() -> int:
         file_path = tool_input.get("file_path")
         if file_path:
             result = strip_watermark(file_path)
-            report_result(result, "claude-code")
+            report_watermark(result, "claude-code")
+            result = humanize_file(file_path)
+            report_humanize(result)
     except Exception as e:
         print(f"watermark: hook error: {e}", file=sys.stderr)
     return 0
@@ -23,7 +26,9 @@ def handle_codex_collect_wrapper() -> int:
         data = json.loads(sys.stdin.read())
         for file in data.get("files", []):
             result = strip_watermark(file)
-            report_result(result, "codex")
+            report_watermark(result, "codex")
+            result = humanize_file(file)
+            report_humanize(result)
     except Exception:
         pass
     return 0

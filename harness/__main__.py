@@ -19,6 +19,9 @@ def build_parser() -> argparse.ArgumentParser:
     h = sub.add_parser("hooks")
     h.add_argument("--hook-type", choices=["claude-code", "codex"], required=True)
     h.add_argument("path", nargs="*")
+    hu = sub.add_parser("humanize")
+    hu.add_argument("path", nargs="*")
+    hu.add_argument("--check", action="store_true", help="dry-run: report changes without writing")
     t = sub.add_parser("tokens")
     t.add_argument("--days", type=int, default=7)
     t.add_argument("--cache-floor", type=float, default=97.5)
@@ -61,6 +64,8 @@ def main(argv: list[str] | None = None) -> int:
         from harness.trace import cli
     elif args.cmd == "hooks":
         from harness.hooks import cli
+    elif args.cmd == "humanize":
+        from harness.humanize import cli
     else:
         from harness.doctor import cli
     return cli(args)
