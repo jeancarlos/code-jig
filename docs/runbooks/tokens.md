@@ -8,6 +8,8 @@ PYTHONPATH=<core> python3 -m harness tokens --days 30 --top 20
 PYTHONPATH=<core> python3 -m harness collect --rescan       # rebuild after a hook gap
 ```
 
+Whether the harness is worth its tokens is a different question; see [evidence.md](evidence.md).
+
 If `tokens` says the database is missing, the hook has never run: check `doctor`'s `stop hook` line and accept the trust prompt in an interactive session. Then run `collect` once by hand.
 
 ## The report, line by line

@@ -21,6 +21,7 @@ I use coding agents every day, and I kept running into the same four problems.
 - **Tiers**: `default`, `deep`, `bulk`, `review`, each a generated Codex profile with its own model and reasoning effort. Pick the right brain for the job.
 - **Guardian everywhere**, with your additions layered on the upstream policy.
 - **Token tracker**: `harness tokens` shows input, cache hit, Guardian share, escalated commands, the heaviest sessions and per-model usage. All local.
+- **Evidence**: `harness evidence` compares commits made in Codex sessions with the same repos' other commits (rework, `analyze` findings) and reports test runs, skill use, Guardian decisions and cost. Local data only.
 - **Cross-family review**: `harness cross-review` sends your diff to a model from another family, read-only, before you push.
 - **Sonar-style analysis without a server**: `harness analyze` runs the analyzers you already have (lizard, ruff, vulture, mypy, eslint with sonarjs, knip, tsc, dotnet build with SonarAnalyzer and NuGet audit, semgrep, gitleaks, osv-scanner) and groups the findings like Sonar: security, secrets, dependencies, bugs, types, unused code, complexity, duplication.
 - **Requirement tracing**: `harness trace` checks which requirement IDs (from Azure DevOps, GitHub issues or a Markdown design) have tests, and which tests cite IDs that no longer exist.
@@ -52,6 +53,7 @@ Edit `~/codex-overlay/profiles.toml` to pick your models; `doctor` lists the one
 | [Daily use](docs/runbooks/daily-use.md) | Tiers, skills, reviews, the repo's own AGENTS.md |
 | [Doctor](docs/runbooks/doctor.md) | What every check means and how to fix it |
 | [Tokens](docs/runbooks/tokens.md) | Reading the usage report |
+| [Evidence](docs/runbooks/evidence.md) | Whether the harness pays off: rework, tests, skills, cost |
 | [Code quality](docs/runbooks/code-quality.md) | `analyze`, `trace`, the toolbox skills, installing the tools |
 | [Managed machines](docs/runbooks/managed-machine.md) | Installing where someone else administers the machine |
 | [Network and certificates](docs/runbooks/network-and-certificates.md) | TLS-inspecting networks, git and CLI tools in the sandbox |

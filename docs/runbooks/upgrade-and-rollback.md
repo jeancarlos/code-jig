@@ -20,6 +20,8 @@ Codex updates on its own schedule. After an update:
 
 Check out the previous tag, set `core_version` back, run `install`. Generated files are rewritten in place. Core skills that the older version does not ship are removed, unless you edited them by hand, in which case `install` leaves them and warns. Rules come from the overlay, so a core rollback does not change them.
 
+The tracker database survives a rollback: newer versions only add tables, so an older `Stop` hook keeps writing to it. Those tables (exit codes, skill reads, Guardian outcomes) stop updating until you upgrade again and run `collect --rescan`.
+
 ## What install touches
 
 | Path | Notes |
