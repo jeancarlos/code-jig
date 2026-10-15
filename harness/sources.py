@@ -68,13 +68,13 @@ def is_public_ip(ip: str) -> bool:
     return ipaddress.ip_address(ip.split("%")[0]).is_global
 
 
-def is_public(host: str) -> bool:
-    """True when every address the host resolves to is a public one; a host that does not resolve passes,
-    so the request itself reports it."""
+def is_public(host: str) -> bool | None:
+    """True when every address the host resolves to is public, False when any is not,
+    None when it does not resolve here."""
     try:
         infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
     except (OSError, UnicodeError):
-        return True
+        return None
     return all(is_public_ip(info[4][0]) for info in infos)
 
 
@@ -88,11 +88,16 @@ def _target(url: str) -> tuple[str, str] | None:
 
 
 def refused(url: str) -> str | None:
+    """Why `url` must not be requested, or None. Through a proxy, a host that does not resolve here
+    is refused: the proxy may resolve internal names this machine cannot."""
     target = _target(url)
     if target is None or target[0] not in ("http", "https") or not target[1]:
         return "only http and https are checked"
-    if not is_public(target[1]):
+    public = is_public(target[1])
+    if public is False:
         return f"{target[1]} is a private or local address"
+    if public is None and proxied(url):
+        return f"cannot confirm {target[1]} is public: it does not resolve here and a proxy would fetch it"
     return None
 
 

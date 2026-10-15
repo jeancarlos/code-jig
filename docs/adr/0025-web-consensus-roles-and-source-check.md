@@ -18,6 +18,7 @@ The user asked that web-consensus use subagents, each on the best model for its 
 - `urllib` honours the proxy variables and, on Windows, the system certificate store, which a TLS-inspecting corporate network needs.
 
 - Evidence URLs come from web pages, and `check-sources` runs escalated outside the sandbox, so it refuses any host that resolves to a non-public address (loopback, private, link-local such as cloud metadata, reserved), before the request and on every redirect (security review, v0.9.1). The host is taken as urllib and `http.client` parse it for the connection, not from `urlsplit`, whose reading of backslashes and `@` differs. Without a proxy, the address the socket actually connected to is checked as well, which closes DNS rebinding between the check and the connection (security review, v0.9.2). Through a proxy (`HTTPS_PROXY`, `HTTP_PROXY`, the Windows settings) the socket's peer is the proxy, so only the pre-check applies there and the proxy resolves the name.
+- Through a proxy, a host that does not resolve on this machine is refused (v0.9.3): the proxy can resolve internal names (`intranet.corp`) that local DNS cannot, so passing an unresolvable host there would fetch intranet pages. On a network where only the proxy resolves names, every source is refused; that is the intended failure.
 
 ## Cost
 

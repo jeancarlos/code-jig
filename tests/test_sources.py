@@ -84,6 +84,13 @@ class Sources(unittest.TestCase):
             self.assertTrue(sources.proxied("http://example.com/"))
         self.assertFalse(sources.proxied("http://example.com/"))
 
+    def test_through_a_proxy_an_unverifiable_host_is_refused(self):
+        with mock.patch.dict(os.environ, {"http_proxy": "http://127.0.0.1:9"}):
+            verdict, detail = sources.fetch("http://intranet.invalid/wiki")
+        self.assertEqual(verdict, "bad-url")
+        self.assertIn("cannot confirm", detail)
+        self.assertEqual(sources.fetch("http://intranet.invalid/wiki")[0], "dead")
+
     def test_a_redirect_to_a_private_address_is_refused(self):
         verdict, detail = sources.fetch(f"{self.base}/to-private")
         self.assertEqual(verdict, "dead")
