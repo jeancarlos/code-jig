@@ -25,6 +25,10 @@ Commands inherit the shell environment unless `shell_environment_policy` in `con
 
 On Windows, most of these read the Windows certificate store once the root is installed there; the variables are still needed for Python and Node.
 
+## harness check-sources
+
+`check-sources` (used by the `web-consensus` skill) fetches every cited URL with Python's `urllib`. It honours `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`, uses the system certificate store on Windows and `SSL_CERT_FILE` elsewhere, and sends a plain browser-like User-Agent. Only `http` and `https` URLs are requested. Inside a sandbox without network it stops at once and asks for an escalated run, so one Guardian review covers every URL.
+
 ## The sandbox and Guardian
 
 Every tier runs Codex's sandbox, which blocks network access and writes outside the workspace. So `git fetch`, `git push`, `az ...` and package installs ask to leave the sandbox, and Guardian reviews each request. That is the intended trade: each review costs input tokens (`harness tokens` shows how many), and in exchange nothing reaches the network unseen.

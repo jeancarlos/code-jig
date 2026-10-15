@@ -3,6 +3,7 @@
 ## Core vs overlay
 Core is shared and pinned. The overlay is a separate directory with fixed slots:
 - `overlay.toml`: `core_version`, `core_writable`, and optionally `auto_compact_token_limit`, a positive integer that every tier profile receives as `model_auto_compact_token_limit`. Unset, Codex compacts at 90% of the model's context window. A lower value trades re-reading a long history on every request for a summary that may lose detail; measure with `harness tokens` and `harness evidence` before and after setting it.
+  `git_gate = true` installs the git gate (AI attribution stripped from commit messages, invisible characters from staged files, attributed commits refused at push) and `prose_gate = true` adds the refusal of agent-written prose; both change the global `core.hooksPath`, so they are off unless set. See [commit-attribution](runbooks/commit-attribution.md).
 - `profiles.toml`: one model ID per tier (`default`, `deep`, `bulk`, `review`). `doctor` lists the models your account has.
 - `AGENTS.overlay.md`: appended to the core rules.
 - `guardian-policy.md`: added to the upstream Guardian policy, never replacing it.

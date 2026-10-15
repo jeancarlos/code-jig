@@ -32,7 +32,7 @@ The picks below follow each model's own description in the account catalog (`mod
 | Tier or role | Jobs and skills | Public catalog | Work catalog |
 |---|---|---|---|
 | `default` | Everyday coding, `regression-tests`, `code-analysis`, `hld-trace`, `codegen`, `improve`, `redacao` | `gpt-6.1-sol` ("latest workhorse for coding and everyday work") | `gpt-6-sol` (the newest workhorse there) |
-| `deep` | Root-cause debugging, design, unfamiliar code, `bug-hunt`, `grilling` | `gpt-6-astra` ("frontier intelligence for the most demanding work") | `gpt-6-sol` at `high`: no frontier model, so the effort carries it |
+| `deep`, and every `judge` | Root-cause debugging, design, unfamiliar code, `bug-hunt`, `grilling`, the `web-consensus` verdict | `gpt-6-astra` ("frontier intelligence for the most demanding work") | `gpt-6-sol` at `high`: no frontier model, so the effort carries it |
 | `bulk`, and every `explorer` | Lookups, searches, web research for `web-consensus`, mechanical edits | `gpt-6-luna` ("fast and affordable for easier tasks") | `gpt-6-luna` |
 | `review`, and every `reviewer` | `cross-review`, the `web-consensus` challenger, checking a finding before acting on it | `gpt-6-astra`: the strongest model checks the workhorse's work | `gpt-5.6-sol`: another generation, so different blind spots |
 
@@ -40,10 +40,11 @@ The two example overlays carry these picks: `overlay-examples/personal` for the 
 
 ## Subagent roles
 
-`install` writes two roles to `$CODEX_HOME/agents/`. Codex lists them in the spawn tool, with a note that each role's model cannot be changed:
+`install` writes three roles to `$CODEX_HOME/agents/`. Codex lists them in the spawn tool, with a note that each role's model cannot be changed:
 
 - `explorer` replaces Codex's built-in role of the same name, which runs on the parent's model. Ours runs on the `bulk` tier and answers with `path:start-end` line ranges and short quotes, never whole files. `grilling`, `redacao` and the `web-consensus` researchers use it.
-- `reviewer` runs on the `review` tier and only looks for what is wrong. The `web-consensus` challenger uses it.
+- `reviewer` runs on the `review` tier and only looks for what is wrong. The `web-consensus` challenger and the `skill-validate` judgement pass use it.
+- `judge` runs on the `deep` tier and decides between conflicting claims from the material it is given, without searching. The `web-consensus` verdict uses it, so the verdict runs on the strongest model whatever tier the session started on.
 
 Code-writing subagents keep the default role, which inherits the session's model. Ask for an explorer when you want one: "use explorers to find every caller of X".
 
@@ -55,13 +56,15 @@ Installed into `~/.agents/skills`, picked up by every session. Ask for them by n
 |---|---|
 | `cross-review` | Before you commit a plan, design or diff, get a review from a model of another family. |
 | `grilling` | Stress-test a plan or decision; it asks at most three questions per round and keeps the settled answers. |
-| `web-consensus` | Settle a factual question against live sources instead of memory. |
+| `web-consensus` | Settle a factual question against live sources instead of memory: cheap parallel researchers, a cross-family challenger, `harness check-sources` on every quote, a verdict on the strongest model. |
 | `improve` | "Remember this", "make this a rule": turns a lesson into an overlay change, then reinstalls. |
 | `code-analysis` | "What would Sonar say": runs `harness analyze` and fixes by category. |
 | `regression-tests` | Bug fixes and behaviour changes: failing test first, then coverage of the changed lines. |
 | `hld-trace` | "Does this follow the design": requirement IDs to tests with `harness trace`. |
 | `bug-hunt` | Property tests, fuzzing, mutation testing on the changed files. |
 | `codegen` | OpenAPI clients, codemods, scaffolding from a script kept in the repo. |
+| `skill-validate` | Before shipping a new or edited skill: `harness lint-skill`, then a `reviewer` pass against a fixed rubric. |
+| `remove-ai-attribution` | AI co-author or "Generated with" lines already in commits: `harness scrub`, with your approval before each push. |
 
 superpowers (`codex plugin add superpowers@openai-curated-remote`) adds brainstorming, planning, TDD and debugging workflows.
 
