@@ -96,7 +96,7 @@ def rel(path: str, root: Path) -> str:
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    return subprocess.run([shutil.which("git") or "git", *args], cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace")
 
 
 def source_files(root: Path) -> list[str]:

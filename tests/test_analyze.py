@@ -52,7 +52,7 @@ def fake_tool(bindir: Path, name: str, stdout: str = "", code: int = 0, sleep: f
 
 
 def git(cwd, *args):
-    subprocess.run(["git", "-c", "user.email=a@b", "-c", "user.name=a", *args], cwd=cwd, check=True, capture_output=True)
+    subprocess.run([shutil.which("git") or "git", "-c", "user.email=a@b", "-c", "user.name=a", *args], cwd=cwd, check=True, capture_output=True)
 
 
 class Detect(unittest.TestCase):
