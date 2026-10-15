@@ -1,6 +1,8 @@
+import json
 import re
 import statistics
 import subprocess
+import sys
 import tempfile
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -8,12 +10,13 @@ from datetime import datetime, timedelta, timezone
 from functools import partial
 from pathlib import Path
 
-from harness import analyze, paths
+from harness import analyze, collect, paths
 
 TEST_MARKERS = ("pytest", "unittest", "dotnet test", "npm test", "pnpm test", "yarn test", "run test", "vitest", "jest")
 GRACE = timedelta(hours=2)
 REWORK_DAYS = 14
 MIN_COMMITS = 20
+CAVEAT = "This is correlation, not causation: session work and baseline work are different tasks."
 HUNK = re.compile(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 SESSIONS = """
 SELECT t.id, t.cwd, t.started, MAX(x.ts) FROM threads t
@@ -172,7 +175,7 @@ def by_repo(sess: list[Session]) -> tuple[dict[Path, list[Session]], list[str]]:
 
 
 def _owners(con, since: str | None = None):
-    query = "SELECT c.thread_id, t.kind, t.parent_id, c.cmd, c.exit_code, c.escalated, c.skill, c.ts FROM calls c LEFT JOIN threads t ON t.id = c.thread_id"
+    query = "SELECT c.thread_id, t.kind, t.parent_id, c.cmd, c.exit_code, c.escalated, c.skill, c.ts FROM call_view c LEFT JOIN threads t ON t.id = c.thread_id"
     for tid, kind, parent, cmd, code, esc, skill, ts in con.execute(query):
         if since is None or (ts or "") >= since:
             yield (parent if kind != "main" and parent else tid), cmd or "", code, esc, skill
@@ -319,3 +322,72 @@ def report(con, since: datetime, now: datetime, repo: Path | None = None, analyz
             "discipline": discipline(con, {s.id for s in in_repos}),
             "use": use(con, iso, installed_skills()),
             "cost": cost(con, iso, sess, in_repos, totals["harness"]["commits"])}
+
+
+def _pct(a: float, b: float) -> str:
+    return f"{100 * a / b:.1f}%" if b else "n/a"
+
+
+def _group(name: str, g: dict) -> list[str]:
+    if g["rework_rate"] is None:
+        rework = f"rework insufficient (n={g['mature']} mature, need {MIN_COMMITS})"
+    else:
+        rework = f"rework {_pct(g['reworked'], g['mature'])} ({g['reworked']} of {g['mature']} mature)"
+    lines = [f"  {name:<9} commits {g['commits']}, {rework}"]
+    q = g.get("quality")
+    if q:
+        cats = ", ".join(f"{k} {v:.1f}" for k, v in sorted(q["per_100_lines"].items())) or "none"
+        lines.append(f"  {'':<9} findings per 100 changed lines: {cats} ({q['sampled']} commits, {q['changed_lines']} lines)")
+    return lines
+
+
+def _usage_lines(d: dict, u: dict) -> list[str]:
+    skills = ", ".join(f"{n} {v}" for n, v in u["skills"].items()) or "none fired"
+    never = f"; never fired: {', '.join(u['never'])}" if u["never"] else ""
+    guardian = ", ".join(f"{n} {v}" for n, v in u["guardian"].items()) or "no reviews"
+    return [f"Testing   {d['with_tests']} of {d['sessions']} sessions ran tests; {d['passed']} of {d['test_runs']} runs passed ({_pct(d['passed'], d['test_runs'])})",
+            f"Skills    {skills}{never}",
+            f"Guardian  {guardian}; {u['escalated']} of {u['calls']} calls escalated ({_pct(u['escalated'], u['calls'])})"]
+
+
+def _cost_line(k: dict) -> str:
+    per_commit = f", {k['tokens_per_harness_commit']:,.0f} per harness commit" if k["tokens_per_harness_commit"] else ""
+    return (f"Cost      {k['sessions']} sessions, {k['tokens']:,} tokens ({k['tokens_per_session']:,.0f} per session{per_commit}), "
+            f"cache {100 * k['cache_hit']:.1f}%, {k['compactions']} compactions, median {k['median_minutes']:.0f} min")
+
+
+def render(data: dict) -> list[str]:
+    out = [f"Evidence for the last {data['days']} days (since {data['since']})", ""]
+    for r in data["repos"]:
+        out.append(f"{analyze.printable(r['root'])}  ({r['sessions']} sessions)")
+        out += _group("harness", r["harness"]) + _group("baseline", r["baseline"])
+    out.append("All repos")
+    out += _group("harness", data["totals"]["harness"]) + _group("baseline", data["totals"]["baseline"])
+    out += ["", *_usage_lines(data["discipline"], data["use"]), _cost_line(data["cost"])]
+    if data["unreachable"]:
+        out += ["", "Sessions outside any git repo: " + ", ".join(analyze.printable(p) for p in data["unreachable"])]
+    return out + ["", CAVEAT]
+
+
+def cli(args) -> int:
+    analyze.utf8_stdout()
+    repo = None
+    if args.repo:
+        repo = repo_root(args.repo)
+        if repo is None:
+            print(f"harness: {args.repo} is not a git repository", file=sys.stderr)
+            return 2
+    home = paths.codex_home(args.codex_home)
+    con = collect.connect(collect.db_path(home))
+    try:
+        collect.scan(con, home)
+        now = datetime.now(timezone.utc)
+        data = report(con, now - timedelta(days=args.days), now, repo, args.analyze, timeout=args.timeout)
+    finally:
+        con.close()
+    if args.json:
+        print(json.dumps(data, ensure_ascii=False, indent=1))
+    else:
+        for line in render(data):
+            print(line)
+    return 0

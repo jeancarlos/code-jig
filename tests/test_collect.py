@@ -139,11 +139,11 @@ class Tools(unittest.TestCase):
         collect.scan(self.con, self.home)
 
     def test_exit_codes_from_each_output_shape(self):
-        rows = dict(self.con.execute("SELECT call_id, exit_code FROM calls WHERE thread_id='tools-1'"))
+        rows = dict(self.con.execute("SELECT call_id, exit_code FROM call_view WHERE thread_id='tools-1'"))
         self.assertEqual(rows, {"k1": 0, "k2": 1, "k3": 0, "k4": None})
 
     def test_skills_come_only_from_commands(self):
-        rows = dict(self.con.execute("SELECT call_id, skill FROM calls WHERE thread_id='tools-1'"))
+        rows = dict(self.con.execute("SELECT call_id, skill FROM call_view WHERE thread_id='tools-1'"))
         self.assertEqual(rows, {"k1": "bug-hunt", "k2": None, "k3": None, "k4": "grilling"})
 
     def test_guardian_outcomes_only_from_guardian_threads(self):
@@ -157,11 +157,11 @@ class Tools(unittest.TestCase):
         con = collect.connect(collect.db_path(home))
         self.addCleanup(con.close)
         collect.scan(con, home)
-        self.assertIsNone(con.execute("SELECT exit_code FROM calls WHERE call_id='k2'").fetchone()[0])
+        self.assertIsNone(con.execute("SELECT exit_code FROM call_view WHERE call_id='k2'").fetchone()[0])
         with open(f, "a", encoding="utf-8", newline="\n") as out:
             out.write(lines[6])
         collect.scan(con, home)
-        self.assertEqual(con.execute("SELECT exit_code FROM calls WHERE call_id='k2'").fetchone()[0], 1)
+        self.assertEqual(con.execute("SELECT exit_code FROM call_view WHERE call_id='k2'").fetchone()[0], 1)
 
     def test_exit_code_parsing(self):
         meta = json.dumps({"output": "Process exited with code 3", "metadata": {"exit_code": 0}})
@@ -185,6 +185,15 @@ class Migration(unittest.TestCase):
         old.close()
         con = collect.connect(db)
         self.addCleanup(con.close)
-        self.assertEqual(con.execute("SELECT cmd, exit_code, skill FROM calls").fetchall(), [("git status", None, None)])
+        self.assertEqual(con.execute("SELECT cmd, exit_code, skill FROM call_view").fetchall(), [("git status", None, None)])
         self.assertEqual(con.execute("SELECT COUNT(*) FROM guardian").fetchone()[0], 0)
         collect.connect(db).close()
+
+    def test_older_collectors_can_still_write(self):
+        db = tree(self) / "usage.sqlite3"
+        collect.connect(db).close()
+        old = sqlite3.connect(db)
+        self.addCleanup(old.close)
+        old.execute("INSERT OR IGNORE INTO calls VALUES (?,?,?,?,?,?)", ("t", "c", None, None, "git status", 0))
+        old.execute("INSERT OR IGNORE INTO compactions VALUES (?,?,?)", ("t", 1, None))
+        self.assertEqual(old.execute("SELECT cmd, exit_code, skill FROM call_view").fetchall(), [("git status", None, None)])

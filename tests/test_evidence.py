@@ -1,3 +1,6 @@
+import contextlib
+import io
+import json
 import os
 import shutil
 import subprocess
@@ -9,6 +12,7 @@ from unittest import mock
 from harness import collect, evidence
 from harness.analyze import Finding
 from harness.evidence import Commit, group_stats, in_window, is_test, parse_log, reworked
+from tests.test_collect import home_with
 from tests.util import tree, write
 
 T0 = datetime(2026, 3, 1, 10, 0, tzinfo=timezone.utc)
@@ -141,8 +145,8 @@ def db(test, sessions=(), calls=(), usage=(), guardian=()):
     for tid, kind, parent, started, cwd in sessions:
         con.execute("INSERT INTO threads VALUES (?,?,?,?,?)", (tid, parent, kind, started, cwd))
     for tid, cid, ts, cmd, esc, code, skill in calls:
-        con.execute("INSERT INTO calls (thread_id, call_id, turn_id, ts, cmd, escalated, exit_code, skill) VALUES (?,?,NULL,?,?,?,?,?)",
-                    (tid, cid, ts, cmd, esc, code, skill))
+        con.execute("INSERT INTO calls VALUES (?,?,NULL,?,?,?)", (tid, cid, ts, cmd, esc))
+        con.execute("INSERT INTO call_results VALUES (?,?,?,?)", (tid, cid, code, skill))
     for tid, key, ts, inp, cached, out in usage:
         con.execute("INSERT INTO usage VALUES (?,?,NULL,?,NULL,?,?,?,0)", (tid, key, ts, inp, cached, out))
     for tid, line, ts, outcome in guardian:
@@ -301,3 +305,51 @@ class Quality(unittest.TestCase):
         self.assertEqual(data["repos"][0]["harness"]["quality"]["findings"], {"bug": 1})
         self.assertEqual(data["totals"]["harness"]["quality"]["findings"], {"bug": 1})
         self.assertIsNone(evidence.report(con, datetime(2026, 2, 1, tzinfo=timezone.utc), T0)["repos"][0]["harness"]["quality"])
+
+
+class Cli(unittest.TestCase):
+    def run_cli(self, *argv):
+        from harness.__main__ import main
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main(list(argv))
+        return code, out.getvalue(), err.getvalue()
+
+    def test_json_shape_and_collect_first(self):
+        home = home_with(tree(self), ["main", "guardian", "tools"])
+        code, out, _ = self.run_cli("--codex-home", str(home), "evidence", "--json", "--days", "100000")
+        self.assertEqual(code, 0)
+        data = json.loads(out)
+        self.assertEqual(set(data), {"since", "days", "repos", "totals", "unreachable", "discipline", "use", "cost"})
+        self.assertEqual(data["unreachable"], ["/w"])
+        self.assertEqual(data["use"]["guardian"], {"allow": 1})
+        self.assertEqual(data["use"]["skills"], {"bug-hunt": 1, "grilling": 1})
+        self.assertTrue(collect.db_path(home).is_file())
+
+    def test_text_report_marks_insufficient_and_caveat(self):
+        home = home_with(tree(self), ["main"])
+        code, out, _ = self.run_cli("--codex-home", str(home), "evidence", "--days", "100000")
+        self.assertEqual(code, 0)
+        self.assertIn("insufficient (n=0", out)
+        self.assertIn("correlation, not causation", out)
+        self.assertIn("/w", out)
+
+    def test_repo_that_is_not_git_is_a_usage_error(self):
+        home = home_with(tree(self), [])
+        code, _, err = self.run_cli("--codex-home", str(home), "evidence", "--repo", str(tree(self)))
+        self.assertEqual(code, 2)
+        self.assertIn("not a git repository", err)
+
+    def test_render_rates(self):
+        group = {"commits": 30, "mature": 25, "reworked": 5, "rework_rate": 0.2, "quality": None}
+        data = {"since": "2026-01-01T00:00:00Z", "days": 90, "repos": [], "unreachable": [],
+                "totals": {"harness": group, "baseline": group},
+                "discipline": {"sessions": 4, "with_tests": 3, "test_runs": 10, "passed": 8},
+                "use": {"skills": {"bug-hunt": 2}, "never": ["codegen"], "guardian": {"allow": 3}, "calls": 40, "escalated": 4},
+                "cost": {"sessions": 4, "tokens": 4_000_000, "tokens_per_session": 1_000_000, "tokens_per_harness_commit": 133_333,
+                         "cache_hit": 0.94, "compactions": 2, "median_minutes": 18.0}}
+        text = "\n".join(evidence.render(data))
+        for part in ("rework 20.0% (5 of 25 mature)", "3 of 4 sessions ran tests", "8 of 10 runs passed (80.0%)",
+                     "bug-hunt 2", "never fired: codegen", "allow 3", "4 of 40 calls escalated (10.0%)", "cache 94.0%"):
+            with self.subTest(part=part):
+                self.assertIn(part, text)
