@@ -79,9 +79,13 @@ commands = ["harness trace"]     # substrings of commands that must run
 output = ["REQ-2"]               # patterns the final answer must match
 spawns = 0                       # minimum spawn_agent calls
 sandbox = "read-only"            # or "workspace-write"
-setup = []                       # shell commands run in the repo first
 read_skill = true                # SKILL.md must be read
+
+[[case.commits]]                 # commits made in the repo before the run
+message = "fix: x\n\nCo-authored-by: Codex <noreply@openai.com>"
 ```
+
+A case never runs a command of its own: the prompt goes to Codex on stdin, commits are made with fixed git commands and hooks off, and a fixture is copied without any `.git` folder, so a skill's `evals.toml` cannot run a program on the machine that checks it.
 
 Every case costs one real Codex turn. In this repository a skill is committed only with a current `.skill-check`; see `AGENTS.md`.
 

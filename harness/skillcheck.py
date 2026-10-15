@@ -12,6 +12,8 @@ from pathlib import Path
 from harness import install, paths, probe, skilllint
 
 STAMP = ".skill-check"
+FIXTURE_NAME = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9_.-]*")
+EVAL_EMAIL = "me@example.com"
 SANDBOXES = ("read-only", "workspace-write")
 CLAUDE_ONLY = {
     r"\b(?:Agent|Task) tool\b|\bsubagent_type\b": "Codex spawns subagents with spawn_agent and agent_type (explorer, reviewer, judge, default, worker)",
@@ -55,7 +57,7 @@ class Case:
     spawns: int = 0
     sandbox: str = "read-only"
     fixture: str = ""
-    setup: list[str] = field(default_factory=list)
+    commits: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -93,6 +95,10 @@ def load_cases(skill: Path) -> list[Case]:
             raise ValueError(f"case {i}: {e}") from None
         if case.sandbox not in SANDBOXES:
             raise ValueError(f"case {i}: sandbox must be one of {', '.join(SANDBOXES)}")
+        if case.fixture and (not FIXTURE_NAME.fullmatch(case.fixture) or not (skill / "evals" / case.fixture).is_dir()):
+            raise ValueError(f"case {i}: fixture must name a folder directly inside evals/")
+        if not all(isinstance(c, dict) and isinstance(c.get("message"), str) and set(c) == {"message"} for c in case.commits):
+            raise ValueError(f"case {i}: each commits entry is a table with only a message")
         for pattern in case.output:
             re.compile(pattern)
         out.append(case)
@@ -174,23 +180,39 @@ def review(skill: Path, bin_path: Path, home: Path) -> tuple[bool, str]:
     return bool(verdicts) and verdicts[-1] == "VERDICT: ship", text
 
 
+def copy_fixture(skill: Path, name: str, work: Path) -> None:
+    shutil.copytree(skill / "evals" / name, work, ignore=shutil.ignore_patterns(".git"))
+
+
+def make_commits(work: Path, commits: list[dict]) -> None:
+    """Commits with exactly these messages, made by fixed git commands with no hooks, so a case's
+    data can never run a program."""
+    with tempfile.TemporaryDirectory() as no_hooks:
+        base = ["git", "-C", str(work), "-c", f"core.hooksPath={no_hooks}", "-c", "commit.gpgsign=false"]
+        subprocess.run([*base, "config", "user.email", EVAL_EMAIL], capture_output=True, check=True)
+        subprocess.run([*base, "config", "user.name", "eval"], capture_output=True, check=True)
+        for c in commits:
+            subprocess.run([*base, "commit", "-q", "--allow-empty", "-F", "-"], input=c["message"],
+                           capture_output=True, text=True, encoding="utf-8", check=True)
+
+
 def live(skill: Path, case: Case, bin_path: Path, home: Path, profile: str) -> tuple[list[str], Run]:
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp) / "work"
         if case.fixture:
-            shutil.copytree(skill / "evals" / case.fixture, work)
+            copy_fixture(skill, case.fixture, work)
         else:
             work.mkdir()
         subprocess.run(["git", "init", "-q", str(work)], capture_output=True)
-        for step in case.setup:
-            done = subprocess.run(step, shell=True, cwd=work, capture_output=True, text=True)
-            if done.returncode:
-                return [f"setup step failed: {step}: {done.stderr.strip()}"], Run()
-        cmd = [*probe.command(bin_path), "exec", "--json", "--profile", profile, "--ephemeral", "--sandbox", case.sandbox,
-               "-c", 'approvals_reviewer="user"', "--skip-git-repo-check", "-C", str(work), case.prompt]
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                               env=probe.env_for(home), timeout=900, stdin=subprocess.DEVNULL)
+            make_commits(work, case.commits)
+        except (OSError, subprocess.CalledProcessError) as e:
+            return [f"could not create the case's commits: {e}"], Run()
+        cmd = [*probe.command(bin_path), "exec", "--json", "--profile", profile, "--ephemeral", "--sandbox", case.sandbox,
+               "-c", 'approvals_reviewer="user"', "--skip-git-repo-check", "-C", str(work), "-"]
+        try:
+            r = subprocess.run(cmd, input=case.prompt, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               env=probe.env_for(home), timeout=900)
         except subprocess.TimeoutExpired:
             return ["codex exec timed out after 900s"], Run()
     run = parse_events(r.stdout)

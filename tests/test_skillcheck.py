@@ -1,4 +1,5 @@
 import json
+import subprocess
 import sys
 import types
 import unittest
@@ -61,7 +62,9 @@ class Static(unittest.TestCase):
 
     def test_bad_evals_fail(self):
         d = write(self.root / "demo" / "SKILL.md", SKILL).parent
-        for text in ("[[case]]\n", "[[case]]\nprompt = 'x'\nsandbox = 'danger-full-access'\n", "case = 1\n", "[[case\n"):
+        for text in ("[[case]]\n", "[[case]]\nprompt = 'x'\nsandbox = 'danger-full-access'\n", "case = 1\n", "[[case\n",
+                     "[[case]]\nprompt = 'x'\nfixture = '../../etc'\n", "[[case]]\nprompt = 'x'\nsetup = ['touch pwned']\n",
+                     "[[case]]\nprompt = 'x'\ncommits = ['not a table']\n"):
             write(d / "evals.toml", text)
             with self.subTest(text=text):
                 self.assertIn("FAIL", [lv for lv, _ in skillcheck.static(d)])
@@ -80,6 +83,43 @@ class Events(unittest.TestCase):
         self.assertEqual(skillcheck.judge("demo", case, run), [])
         miss = skillcheck.Case(prompt="p", commands=["harness doctor"], output=["nope"], spawns=2)
         self.assertEqual(len(skillcheck.judge("other", miss, run)), 4)
+
+
+class Inputs(unittest.TestCase):
+    def test_prompt_goes_on_stdin_never_as_an_argument(self):
+        root = tree(self)
+        skill = write(root / "demo" / "SKILL.md", SKILL).parent
+        seen = {}
+
+        def fake_run(cmd, **kw):
+            seen["cmd"], seen["input"] = cmd, kw.get("input")
+            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+        case = skillcheck.Case(prompt="--dangerously-bypass-approvals-and-sandbox do it")
+        with mock.patch.object(skillcheck.subprocess, "run", side_effect=fake_run):
+            skillcheck.live(skill, case, Path("codex"), root, "default")
+        self.assertEqual(seen["cmd"][-1], "-")
+        self.assertNotIn(case.prompt, seen["cmd"])
+        self.assertEqual(seen["input"], case.prompt)
+
+    def test_commits_are_built_without_a_shell_and_keep_their_trailers(self):
+        work = tree(self)
+        subprocess.run(["git", "init", "-q", str(work)], check=True)
+        skillcheck.make_commits(work, [{"message": "first"}, {"message": "second\n\nCo-authored-by: Codex <noreply@openai.com>"},
+                                       {"message": "$(touch pwned); `touch pwned2`"}])
+        log = subprocess.run(["git", "-C", str(work), "log", "--format=%B%x00"], capture_output=True, text=True).stdout
+        self.assertIn("Co-authored-by: Codex", log)
+        self.assertIn("$(touch pwned)", log)
+        self.assertFalse((work / "pwned").exists() or (work / "pwned2").exists())
+
+    def test_a_fixture_never_brings_its_git_directory(self):
+        root = tree(self)
+        skill = write(root / "demo" / "SKILL.md", SKILL).parent
+        write(skill / "evals" / "repo" / ".git" / "config", "[core]\n\tfsmonitor = touch pwned\n")
+        write(skill / "evals" / "repo" / "a.txt", "x\n")
+        work = root / "work"
+        skillcheck.copy_fixture(skill, "repo", work)
+        self.assertTrue((work / "a.txt").is_file())
+        self.assertFalse((work / ".git").exists())
 
 
 class Errors(unittest.TestCase):

@@ -42,7 +42,7 @@ A skill that reads well can still name tools Codex does not have, or never trigg
 harness skill-check path/to/skill-dir --review --live
 ```
 
-It needs an `evals.toml` next to SKILL.md with at least one `[[case]]` (`prompt`, and any of `commands`, `output`, `spawns`, `fixture`, `setup`, `sandbox`). It runs a Codex review on the `review` tier, then each case through `codex exec`, and writes `.skill-check` when everything passes. In the codex-harness repository that stamp is required in the same commit as the skill.
+It needs an `evals.toml` next to SKILL.md with at least one `[[case]]` (`prompt`, and any of `commands`, `output`, `spawns`, `fixture`, `commits`, `sandbox`). It runs a Codex review on the `review` tier, then each case through `codex exec`, and writes `.skill-check` when everything passes. In the codex-harness repository that stamp is required in the same commit as the skill.
 
 ## Report
 
