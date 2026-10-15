@@ -1,4 +1,6 @@
+import json
 import shutil
+import sqlite3
 import unittest
 from pathlib import Path
 
@@ -126,3 +128,63 @@ class Robustness(unittest.TestCase):
         self.assertEqual(totals(con, "poison-1"), (5, 0, 1))
         self.assertEqual(totals(con, "sub-1"), (500, 0, 5))
         self.assertGreaterEqual(summary["quarantined"], 2)
+
+
+class Tools(unittest.TestCase):
+    def setUp(self):
+        self.root = tree(self)
+        self.home = home_with(self.root, ["tools", "guardian", "main"])
+        self.con = collect.connect(collect.db_path(self.home))
+        self.addCleanup(self.con.close)
+        collect.scan(self.con, self.home)
+
+    def test_exit_codes_from_each_output_shape(self):
+        rows = dict(self.con.execute("SELECT call_id, exit_code FROM calls WHERE thread_id='tools-1'"))
+        self.assertEqual(rows, {"k1": 0, "k2": 1, "k3": 0, "k4": None})
+
+    def test_skills_come_only_from_commands(self):
+        rows = dict(self.con.execute("SELECT call_id, skill FROM calls WHERE thread_id='tools-1'"))
+        self.assertEqual(rows, {"k1": "bug-hunt", "k2": None, "k3": None, "k4": "grilling"})
+
+    def test_guardian_outcomes_only_from_guardian_threads(self):
+        self.assertEqual(self.con.execute("SELECT thread_id, outcome FROM guardian").fetchall(), [("g-1", "allow")])
+
+    def test_output_in_a_later_scan_updates_the_call(self):
+        home = home_with(self.root / "late", [])
+        f = home / "sessions" / "rollout-late.jsonl"
+        lines = (FIX / "tools.jsonl").read_text(encoding="utf-8").splitlines(keepends=True)
+        write(f, "".join(lines[:6]))
+        con = collect.connect(collect.db_path(home))
+        self.addCleanup(con.close)
+        collect.scan(con, home)
+        self.assertIsNone(con.execute("SELECT exit_code FROM calls WHERE call_id='k2'").fetchone()[0])
+        with open(f, "a", encoding="utf-8", newline="\n") as out:
+            out.write(lines[6])
+        collect.scan(con, home)
+        self.assertEqual(con.execute("SELECT exit_code FROM calls WHERE call_id='k2'").fetchone()[0], 1)
+
+    def test_exit_code_parsing(self):
+        meta = json.dumps({"output": "Process exited with code 3", "metadata": {"exit_code": 0}})
+        self.assertEqual(collect.exit_code({"output": meta}), 0)
+        self.assertEqual(collect.exit_code({"output": "Script running with cell ID 3\nWall time 31.0 seconds"}), None)
+        self.assertEqual(collect.exit_code({"output": "Process exited with code -1"}), -1)
+        self.assertEqual(collect.exit_code({"output": None}), None)
+
+    def test_rescan_clears_guardian(self):
+        collect.scan(self.con, self.home, rescan=True)
+        self.assertEqual(self.con.execute("SELECT COUNT(*) FROM guardian").fetchone()[0], 1)
+
+
+class Migration(unittest.TestCase):
+    def test_old_database_gains_columns_and_table(self):
+        db = tree(self) / "usage.sqlite3"
+        old = sqlite3.connect(db)
+        old.execute("CREATE TABLE calls (thread_id TEXT NOT NULL, call_id TEXT NOT NULL, turn_id TEXT, ts TEXT, cmd TEXT, escalated INTEGER NOT NULL, PRIMARY KEY (thread_id, call_id))")
+        old.execute("INSERT INTO calls VALUES ('t', 'c', NULL, NULL, 'git status', 0)")
+        old.commit()
+        old.close()
+        con = collect.connect(db)
+        self.addCleanup(con.close)
+        self.assertEqual(con.execute("SELECT cmd, exit_code, skill FROM calls").fetchall(), [("git status", None, None)])
+        self.assertEqual(con.execute("SELECT COUNT(*) FROM guardian").fetchone()[0], 0)
+        collect.connect(db).close()

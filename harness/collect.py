@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS usage (thread_id TEXT NOT NULL, key TEXT NOT NULL, tu
 CREATE TABLE IF NOT EXISTS calls (thread_id TEXT NOT NULL, call_id TEXT NOT NULL, turn_id TEXT, ts TEXT, cmd TEXT, escalated INTEGER NOT NULL, PRIMARY KEY (thread_id, call_id));
 CREATE TABLE IF NOT EXISTS compactions (thread_id TEXT NOT NULL, line INTEGER NOT NULL, ts TEXT, PRIMARY KEY (thread_id, line));
 CREATE TABLE IF NOT EXISTS quarantine (path TEXT NOT NULL, line INTEGER NOT NULL, reason TEXT, PRIMARY KEY (path, line));
+CREATE TABLE IF NOT EXISTS guardian (thread_id TEXT NOT NULL, line INTEGER NOT NULL, ts TEXT, outcome TEXT NOT NULL, PRIMARY KEY (thread_id, line));
 CREATE VIEW IF NOT EXISTS turn_usage AS
   SELECT u.*, COALESCE(t.kind, 'main') AS kind, t.parent_id AS parent_id
   FROM usage u LEFT JOIN threads t ON t.id = u.thread_id
@@ -18,6 +19,10 @@ CREATE VIEW IF NOT EXISTS turn_usage AS
 """
 USAGE_KEYS = ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens")
 CMD = re.compile(r'\bcmd:\s*"((?:[^"\\]|\\.)*)"')
+EXIT = re.compile(r'"exit_code"\s*:\s*(-?\d+)|Exit code:\s*(-?\d+)|exited with code\s+(-?\d+)')
+SKILL = re.compile(r"skills[/\\]+([A-Za-z0-9_.-]+)[/\\]+SKILL\.md")
+OUTPUTS = ("function_call_output", "custom_tool_call_output")
+COLUMNS = {"calls": (("exit_code", "INTEGER"), ("skill", "TEXT"))}
 
 
 def db_path(home: Path) -> Path:
@@ -28,6 +33,11 @@ def connect(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(path, timeout=30)
     con.executescript(SCHEMA)
+    for table, columns in COLUMNS.items():
+        have = {row[1] for row in con.execute(f"PRAGMA table_info({table})")}
+        for name, kind in columns:
+            if name not in have:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
     return con
 
 
@@ -82,6 +92,49 @@ def tool_call(payload: dict) -> tuple[str, str, bool] | None:
             return None
         return call_id, cmd, args.get("sandbox_permissions") == "require_escalated"
     return None
+
+
+def _output_text(payload: dict) -> str:
+    out = payload.get("output")
+    if isinstance(out, list):
+        return "\n".join(o["text"] for o in out if isinstance(o, dict) and isinstance(o.get("text"), str))
+    return out if isinstance(out, str) else ""
+
+
+def exit_code(payload: dict) -> int | None:
+    text = _output_text(payload)
+    try:
+        meta = json.loads(text).get("metadata")
+    except (ValueError, AttributeError):
+        meta = None
+    if isinstance(meta, dict) and isinstance(meta.get("exit_code"), int):
+        return meta["exit_code"]
+    m = EXIT.search(text)
+    return int(next(g for g in m.groups() if g is not None)) if m else None
+
+
+def skill_of(cmd: str) -> str | None:
+    m = SKILL.search(cmd)
+    return m.group(1) if m else None
+
+
+def guardian_outcome(payload: dict) -> str | None:
+    try:
+        msg = json.loads(payload.get("last_agent_message") or "")
+    except (TypeError, ValueError):
+        return None
+    return msg["outcome"] if isinstance(msg, dict) and isinstance(msg.get("outcome"), str) else None
+
+
+def _response_item(con: sqlite3.Connection, thread: str, turn: str | None, ts: str | None, p: dict) -> None:
+    call = tool_call(p)
+    if call:
+        con.execute("INSERT OR IGNORE INTO calls (thread_id, call_id, turn_id, ts, cmd, escalated, skill) VALUES (?,?,?,?,?,?,?)",
+                    (thread, call[0], turn, ts, call[1], int(call[2]), skill_of(call[1])))
+    elif p.get("type") in OUTPUTS and isinstance(p.get("call_id"), str):
+        code = exit_code(p)
+        if code is not None:
+            con.execute("UPDATE calls SET exit_code=? WHERE thread_id=? AND call_id=? AND exit_code IS NULL", (code, thread, p["call_id"]))
 
 
 def _scan_file(con: sqlite3.Connection, path: Path) -> tuple[int, int]:
@@ -151,9 +204,11 @@ def _scan_file(con: sqlite3.Connection, path: Path) -> tuple[int, int]:
             elif t == "compacted":
                 con.execute("INSERT OR IGNORE INTO compactions VALUES (?,?,?)", (thread, line, _s(ts)))
             elif t == "response_item":
-                call = tool_call(p)
-                if call:
-                    con.execute("INSERT OR IGNORE INTO calls VALUES (?,?,?,?,?,?)", (thread, call[0], turn, _s(ts), call[1], int(call[2])))
+                _response_item(con, thread, turn, _s(ts), p)
+            elif t == "event_msg" and p.get("type") == "task_complete":
+                outcome = guardian_outcome(p)
+                if outcome and con.execute("SELECT 1 FROM threads WHERE id=? AND kind='guardian'", (thread,)).fetchone():
+                    con.execute("INSERT OR IGNORE INTO guardian VALUES (?,?,?,?)", (thread, line, _s(ts), outcome))
         except Exception as e:
             quarantine(type(e).__name__)
     con.execute("INSERT OR REPLACE INTO files VALUES (?,?,?,?,?,?,?,?)",
@@ -164,7 +219,7 @@ def _scan_file(con: sqlite3.Connection, path: Path) -> tuple[int, int]:
 def scan(con: sqlite3.Connection, home: Path, rescan: bool = False) -> dict[str, int]:
     if rescan:
         with con:
-            for table in ("files", "threads", "usage", "calls", "compactions", "quarantine"):
+            for table in ("files", "threads", "usage", "calls", "compactions", "quarantine", "guardian"):
                 con.execute(f"DELETE FROM {table}")
     summary = {"files": 0, "lines": 0, "quarantined": 0}
     for path in rollout_files(home):

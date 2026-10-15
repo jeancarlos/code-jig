@@ -1,3 +1,4 @@
 {"timestamp":"2026-10-10T10:01:01.500Z","ordinal":1,"type":"session_meta","payload":{"id":"g-1","parent_thread_id":"main-1","source":{"subagent":{"other":"guardian"}},"thread_source":"guardian_review","cwd":"/w","timestamp":"2026-10-10T10:01:01.500Z"}}
 {"timestamp":"2026-10-10T10:01:01.600Z","ordinal":2,"type":"turn_context","payload":{"turn_id":"gt1","model":"codex-auto-review","effort":"low"}}
 {"timestamp":"2026-10-10T10:01:01.900Z","ordinal":3,"type":"token_usage_record","payload":{"thread_id":"g-1","turn_id":"gt1","response_id":"gr1","usage":{"input_tokens":7000,"cached_input_tokens":6000,"cache_write_input_tokens":0,"output_tokens":100,"reasoning_output_tokens":90,"total_tokens":7100}}}
+{"timestamp":"2026-10-10T10:01:02.000Z","type":"event_msg","payload":{"type":"task_complete","last_agent_message":"{\"outcome\":\"allow\",\"rationale\":\"user asked\"}"}}

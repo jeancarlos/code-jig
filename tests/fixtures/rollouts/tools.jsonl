@@ -1,0 +1,12 @@
+{"timestamp":"2026-10-10T11:00:00.000Z","type":"session_meta","payload":{"id":"tools-1","source":"exec","thread_source":"user","cwd":"/w","timestamp":"2026-10-10T11:00:00.000Z"}}
+{"timestamp":"2026-10-10T11:00:01.000Z","type":"turn_context","payload":{"turn_id":"u1","model":"m-a"}}
+{"timestamp":"2026-10-10T11:00:02.000Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"Skills: /home/u/.agents/skills/pdf/SKILL.md"}]}}
+{"timestamp":"2026-10-10T11:00:03.000Z","type":"response_item","payload":{"type":"function_call","call_id":"k1","name":"exec_command","arguments":"{\"cmd\":\"cat /home/u/.agents/skills/bug-hunt/SKILL.md\"}"}}
+{"timestamp":"2026-10-10T11:00:04.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"k1","output":"{\"output\":\"Process exited with code 3\\n\",\"metadata\":{\"exit_code\":0,\"duration_seconds\":0.1}}"}}
+{"timestamp":"2026-10-10T11:00:05.000Z","type":"response_item","payload":{"type":"function_call","call_id":"k2","name":"exec_command","arguments":"{\"cmd\":\"python -m unittest\"}"}}
+{"timestamp":"2026-10-10T11:00:06.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"k2","output":"Process exited with code 1\nFAILED (failures=1)"}}
+{"timestamp":"2026-10-10T11:00:07.000Z","type":"response_item","payload":{"type":"custom_tool_call","call_id":"k3","name":"exec","input":"text(await tools.exec_command({cmd:\"pytest -q\"}));"}}
+{"timestamp":"2026-10-10T11:00:08.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"k3","output":[{"type":"input_text","text":"Script completed\nOutput:\n"},{"type":"input_text","text":"Exit code: 0\n3 passed"}]}}
+{"timestamp":"2026-10-10T11:00:09.000Z","type":"response_item","payload":{"type":"custom_tool_call","call_id":"k4","name":"exec","input":"text(await tools.exec_command({cmd:\"type C:\\\\Users\\\\u\\\\.agents\\\\skills\\\\grilling\\\\SKILL.md\"}));"}}
+{"timestamp":"2026-10-10T11:00:10.000Z","type":"token_usage_record","payload":{"thread_id":"tools-1","turn_id":"u1","response_id":"ur1","usage":{"input_tokens":500,"cached_input_tokens":400,"cache_write_input_tokens":0,"output_tokens":20,"reasoning_output_tokens":0}}}
+{"timestamp":"2026-10-10T11:00:11.000Z","type":"event_msg","payload":{"type":"task_complete","last_agent_message":"{\"outcome\":\"allow\"}"}}

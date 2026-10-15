@@ -40,17 +40,7 @@ def run_case(codex: str, repo: Path, home: Path, profile: str, overrides: list[s
 
 
 def outcomes(con, thread: str) -> list[str]:
-    out = []
-    for (path,) in con.execute("SELECT path FROM files WHERE thread_id = ?", (thread,)):
-        for line in Path(path).read_text(encoding="utf-8").splitlines():
-            o = json.loads(line)
-            p = o.get("payload") or {}
-            if o.get("type") == "event_msg" and p.get("type") == "task_complete":
-                try:
-                    out.append(json.loads(p.get("last_agent_message") or "{}").get("outcome", "?"))
-                except ValueError:
-                    out.append("?")
-    return out
+    return [o for (o,) in con.execute("SELECT outcome FROM guardian WHERE thread_id = ? ORDER BY line", (thread,))]
 
 
 def report(con, session: str) -> dict:
