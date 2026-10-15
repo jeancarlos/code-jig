@@ -61,6 +61,26 @@ class PreCommit(unittest.TestCase):
         self.assertIn("Co-authored-by", git(self.repo, "show", ":Co.py"))
         self.assertIn("a.py", err)
 
+    @unittest.skipIf(os.name == "nt", "? is not a valid Windows file name")
+    def test_a_file_named_like_a_pathspec_keeps_its_own_content(self):
+        self.stage({"a?": f"glob{ZWSP}\n", "a!": "bang\n"})
+        in_repo(self.repo, gitgate.pre_commit, False)
+        self.assertEqual(git(self.repo, "show", ":a?"), "glob")
+        self.assertEqual(git(self.repo, "show", ":a!"), "bang")
+
+    def test_a_rename_into_prose_is_refused_and_cleaned(self):
+        commit(self.repo, "add\n", ME, {"notes.py": f"x{ZWSP}\n"}, 1_700_000_100)
+        git(self.repo, "mv", "notes.py", "README.md")
+        code, err = in_repo(self.repo, gitgate.pre_commit, True, env={"CODEX_THREAD_ID": "t"})
+        self.assertEqual(code, 1)
+        self.assertIn("README.md", err)
+        self.assertEqual(git(self.repo, "show", ":README.md"), "x")
+
+    def test_command_line_config_cannot_allow_prose(self):
+        self.stage({"README.md": "# Hi\n"})
+        env = {"CODEX_THREAD_ID": "t", "GIT_CONFIG_PARAMETERS": "'codexharness.allowprose'='true'"}
+        self.assertEqual(in_repo(self.repo, gitgate.pre_commit, True, env=env)[0], 1)
+
     def test_prose_from_an_agent_session_is_refused(self):
         self.stage({"README.md": "# Hi\n", "docs/guide.rst": "x\n", "src/app.py": "y = 2\n"})
         code, err = in_repo(self.repo, gitgate.pre_commit, True, env={"CODEX_THREAD_ID": "t"})

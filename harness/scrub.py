@@ -1,5 +1,6 @@
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -163,7 +164,8 @@ def _report(repo: Path, before: dict[str, str]) -> list[str]:
             lines.append(f"  {branch}: no upstream")
             continue
         remote, _, rbranch = upstream.partition("/")
-        lines.append(f"  {branch}: git push --force-with-lease={rbranch}:{old} {remote} {branch}:{rbranch}")
+        cmd = ["git", "push", f"--force-with-lease={rbranch}:{old}", remote, f"{branch}:{rbranch}"]
+        lines.append(f"  {branch}: {shlex.join(cmd)}")
     return lines
 
 

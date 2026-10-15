@@ -20,6 +20,7 @@ PAGES = {
     "/gone": (404, "text/html", "missing"),
     "/pdf": (200, "application/pdf", "%PDF-1.7"),
     "/moved": (301, "text/html", ""),
+    "/to-private": (301, "text/html", ""),
 }
 
 
@@ -28,7 +29,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         status, ctype, body = PAGES.get(self.path, (404, "text/plain", ""))
         self.send_response(status)
         if status == 301:
-            self.send_header("Location", "/doc")
+            self.send_header("Location", "http://10.0.0.1/secret" if self.path == "/to-private" else "/doc")
         self.send_header("Content-Type", ctype)
         self.end_headers()
         self.wfile.write(body.encode("utf-8"))
@@ -47,6 +48,22 @@ class Sources(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
+
+    def setUp(self):
+        real = sources.is_public
+        patcher = mock.patch.object(sources, "is_public", lambda host: host == "127.0.0.1" or real(host))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_private_and_local_addresses_are_refused(self):
+        for url in ("http://10.0.0.1/x", "http://169.254.169.254/latest/meta-data/", "http://localhost:1/x", "http://[::1]/x"):
+            with self.subTest(url=url):
+                self.assertEqual(sources.fetch(url)[0], "bad-url")
+
+    def test_a_redirect_to_a_private_address_is_refused(self):
+        verdict, detail = sources.fetch(f"{self.base}/to-private")
+        self.assertEqual(verdict, "dead")
+        self.assertIn("private", detail)
 
     def evidence(self, rows: list[dict]) -> str:
         return str(write(tree(self) / "evidence.jsonl", "\n".join(json.dumps(r) for r in rows) + "\n"))

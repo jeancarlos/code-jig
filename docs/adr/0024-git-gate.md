@@ -24,6 +24,9 @@ The personal setup ran an equivalent gate (`ai-gate.py`) from `~/.config/git/hoo
 - Git for Windows runs hooks with its bundled `sh`, so the same POSIX scripts serve both systems; paths are written with forward slashes.
 - The gate's own failures (git missing, unreadable file) print a note and let the commit through: a gate bug must not block work. Only the prose and push refusals exit 1.
 
+- Staged files are read from one `git diff --cached --raw -z --no-renames --no-abbrev`, never with a path passed to `ls-files`: a file named like a pathspec (`a?`) matched another file there and the gate wrote that file's content into its index entry. `--no-renames` makes a rename into `README.md` an addition, so it is cleaned and gated (security review, v0.9.1).
+- `codexharness.allowProse` is read with `git config --local`, which ignores `git -c` and `GIT_CONFIG_PARAMETERS`; a plain read let `git -c codexharness.allowProse=true commit` pass the gate.
+
 ## Cost
 
 About 170 lines, sixteen tests including a real commit through the generated hooks, two overlay flags, one doctor check.

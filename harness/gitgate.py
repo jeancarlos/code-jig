@@ -66,7 +66,7 @@ def _from_agent() -> bool:
 
 
 def _prose_allowed() -> bool:
-    return _git("config", "--bool", "codexharness.allowProse", check=False).strip() == b"true"
+    return _git("config", "--local", "--bool", "codexharness.allowProse", check=False).strip() == b"true"
 
 
 def _fix_staged(path: str, mode: str, sha: str) -> bool:
@@ -83,12 +83,15 @@ def _fix_staged(path: str, mode: str, sha: str) -> bool:
 
 
 def _staged() -> list[tuple[str, str, str]]:
+    """(path, mode, blob) of every added or modified regular file, renames counted as additions.
+
+    Read from one raw diff, so a file name is never interpreted as a pathspec."""
+    fields = _git("diff", "--cached", "--raw", "-z", "--no-renames", "--no-abbrev", "--diff-filter=AM").split(b"\0")
     out = []
-    for p in _git("diff", "--cached", "--name-only", "--diff-filter=AM", "-z").split(b"\0"):
-        path = os.fsdecode(p)
-        entry = _git("ls-files", "-s", "--", path).split() if p else []
-        if len(entry) >= 2 and entry[0] in (b"100644", b"100755"):
-            out.append((path, entry[0].decode(), entry[1].decode()))
+    for meta, path in zip(fields[0::2], fields[1::2]):
+        parts = meta.decode().lstrip(":").split()
+        if len(parts) == 5 and parts[1] in ("100644", "100755"):
+            out.append((os.fsdecode(path), parts[1], parts[3]))
     return out
 
 

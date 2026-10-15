@@ -17,6 +17,8 @@ The user asked that web-consensus use subagents, each on the best model for its 
 - Codex sets `CODEX_SANDBOX_NETWORK_DISABLED=1` in a sandbox without network; the command stops at once and asks for an escalated run, so one Guardian review covers every URL instead of each fetch timing out.
 - `urllib` honours the proxy variables and, on Windows, the system certificate store, which a TLS-inspecting corporate network needs.
 
+- Evidence URLs come from web pages, and `check-sources` runs escalated outside the sandbox, so it refuses any host that resolves to a non-public address (loopback, private, link-local such as cloud metadata, reserved), before the request and on every redirect (security review, v0.9.1). A host whose DNS answer changes between the check and the connection (DNS rebinding) is the remaining ceiling.
+
 ## Cost
 
 About 130 lines, seven tests against a local HTTP server, one role file, a rewritten skill.

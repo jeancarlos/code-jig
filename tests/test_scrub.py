@@ -126,6 +126,20 @@ class Scrub(unittest.TestCase):
         self.assertIn("ABORT", out)
         self.assertEqual(git(self.repo, "for-each-ref", "--format=%(refname) %(objectname)"), before)
 
+    def test_printed_push_commands_are_shell_safe(self):
+        import shlex
+        git(self.repo, "branch", "x;touch$(pwned)", "main")
+        clone = self.repo.parent / "clone"
+        subprocess.run(["git", "clone", "-q", "--no-local", str(self.repo), str(clone)], check=True, env={**os.environ, **ENV})
+        git(clone, "config", "user.email", ME)
+        git(clone, "checkout", "-q", "-b", "x;touch$(pwned)", "--track", "origin/x;touch$(pwned)")
+        code, out = run(clone)
+        cmd = next(ln for ln in out.splitlines() if "pwned" in ln).split(": ", 1)[1]
+        args = shlex.split(cmd)
+        self.assertEqual(cmd, shlex.join(args))
+        self.assertEqual(args[:2], ["git", "push"])
+        self.assertIn("x;touch$(pwned):x;touch$(pwned)", args)
+
     def test_not_a_repo_exits_2(self):
         code, out = run(tree(self))
         self.assertEqual(code, 2)

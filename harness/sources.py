@@ -1,12 +1,15 @@
+import ipaddress
 import json
 import os
 import re
+import socket
 import sys
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from html.parser import HTMLParser
+from urllib.parse import urlsplit
 
 MAX_BYTES = 3_000_000
 TIMEOUT = 20
@@ -61,13 +64,45 @@ def page_text(body: bytes, ctype: str) -> str:
     return normalize(text)
 
 
+def is_public(host: str) -> bool:
+    """True when every address the host resolves to is a public one; a host that does not resolve passes,
+    so the request itself reports it."""
+    try:
+        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    except (OSError, UnicodeError):
+        return True
+    return all(ipaddress.ip_address(info[4][0].split("%")[0]).is_global for info in infos)
+
+
+def refused(url: str) -> str | None:
+    parts = urlsplit(url)
+    if parts.scheme.lower() not in ("http", "https") or not parts.hostname:
+        return "only http and https are checked"
+    if not is_public(parts.hostname):
+        return f"{parts.hostname} is a private or local address"
+    return None
+
+
+class _Redirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        reason = refused(newurl)
+        if reason:
+            raise urllib.error.URLError(f"redirect refused: {reason}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+OPENER = urllib.request.build_opener(_Redirects)
+
+
 def fetch(url: str) -> tuple[str, str]:
-    """(verdict, page text or detail) for one URL. Only http and https are ever requested."""
-    if not url.lower().startswith(("http://", "https://")):
-        return "bad-url", "only http and https are checked"
+    """(verdict, page text or detail) for one URL. Only public http and https addresses are requested,
+    redirects included."""
+    reason = refused(url)
+    if reason:
+        return "bad-url", reason
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "text/html,text/plain;q=0.9,*/*;q=0.5"})
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        with OPENER.open(req, timeout=TIMEOUT) as r:
             ctype = r.headers.get("Content-Type", "")
             if not ctype.startswith(TEXT_TYPES):
                 return "unreadable", ctype or "unknown type"

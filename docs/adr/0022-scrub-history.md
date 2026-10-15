@@ -19,6 +19,8 @@ Codex adds `Co-authored-by: Codex` when the account's attribution setting is on,
 - Signatures cannot survive a message change, and every descendant of a rewritten commit changes too; the verification ignores signature headers for that reason.
 - The attribution patterns are `ATTRIBUTION_LINES` in `watermark.py`, shared with the write hook and the git gate (0024); this change added `Claude-Session:`.
 
+- The printed push commands are built with `shlex.join`: git allows `;`, `$` and backticks in branch names, and the skill tells the agent to run the commands as printed (security review, v0.9.1).
+
 ## Cost
 
 About 200 lines and nine tests against real repositories. No dependency beyond git.
