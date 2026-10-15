@@ -123,6 +123,87 @@
           "rawQueryText": "SELECT COALESCE(model, '(unknown)') AS model, SUM(input) AS input, SUM(output) AS output FROM turn_usage WHERE ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') AND ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch') GROUP BY 1 ORDER BY 2 DESC"
         }
       ]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Skill use (sessions)",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "${DS}"
+          },
+          "queryType": "table",
+          "queryText": "SELECT skill, COUNT(DISTINCT thread_id) AS sessions FROM call_view WHERE skill IS NOT NULL AND ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') AND ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch') GROUP BY skill ORDER BY sessions DESC, skill",
+          "rawQueryText": "SELECT skill, COUNT(DISTINCT thread_id) AS sessions FROM call_view WHERE skill IS NOT NULL AND ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') AND ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch') GROUP BY skill ORDER BY sessions DESC, skill"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Test pass rate (%)",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 16,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "${DS}"
+          },
+          "queryType": "table",
+          "queryText": "SELECT 100.0 * SUM(CASE WHEN exit_code = 0 THEN 1 ELSE 0 END) / MAX(COUNT(exit_code), 1) AS value FROM call_view WHERE (cmd LIKE '%pytest%' OR cmd LIKE '%unittest%' OR cmd LIKE '%dotnet test%' OR cmd LIKE '%npm test%' OR cmd LIKE '%pnpm test%' OR cmd LIKE '%yarn test%' OR cmd LIKE '%run test%' OR cmd LIKE '%vitest%' OR cmd LIKE '%jest%') AND ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') AND ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch')",
+          "rawQueryText": "SELECT 100.0 * SUM(CASE WHEN exit_code = 0 THEN 1 ELSE 0 END) / MAX(COUNT(exit_code), 1) AS value FROM call_view WHERE (cmd LIKE '%pytest%' OR cmd LIKE '%unittest%' OR cmd LIKE '%dotnet test%' OR cmd LIKE '%npm test%' OR cmd LIKE '%pnpm test%' OR cmd LIKE '%yarn test%' OR cmd LIKE '%run test%' OR cmd LIKE '%vitest%' OR cmd LIKE '%jest%') AND ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') AND ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch')"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Guardian outcomes",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "${DS}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 16,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "${DS}"
+          },
+          "queryType": "table",
+          "queryText": "SELECT outcome, COUNT(*) AS n FROM guardian WHERE ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') AND ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch') GROUP BY outcome ORDER BY n DESC, outcome",
+          "rawQueryText": "SELECT outcome, COUNT(*) AS n FROM guardian WHERE ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') AND ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch') GROUP BY outcome ORDER BY n DESC, outcome"
+        }
+      ]
     }
   ]
 }
