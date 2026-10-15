@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from harness import collect, evidence
+from harness.analyze import Finding
 from harness.evidence import Commit, group_stats, in_window, is_test, parse_log, reworked
 from tests.util import tree, write
 
@@ -261,3 +262,42 @@ class FromDatabase(unittest.TestCase):
         (root / "not-a-skill").mkdir()
         with mock.patch("harness.paths.agents_skills", return_value=root):
             self.assertEqual(evidence.installed_skills(), ["a", "b"])
+
+
+class Quality(unittest.TestCase):
+    def test_sample_is_even_and_bounded(self):
+        group = [c(str(i), i) for i in range(10)]
+        self.assertEqual([x.sha for x in evidence.sample(group, 3)], ["0", "3", "6"])
+        self.assertEqual(len(evidence.sample(group, 50)), 10)
+        self.assertEqual(evidence.sample(group, 0), [])
+
+    def test_quality_counts_per_100_changed_lines(self):
+        group = [c("a", 0, hunks={"x.py": [(0, 0, 1, 30)]}), c("b", 1, hunks={"y.py": [(0, 0, 1, 20)]})]
+        found = {"a": [Finding("security", "ruff", "S1", "x.py", 1, "m")], "b": [Finding("complexity", "lizard", "c", "y.py", 1, "m")] * 2}
+        q = evidence.quality(Path("."), group, 5, lambda root, commit: found[commit.sha])
+        self.assertEqual(q, {"sampled": 2, "changed_lines": 50, "findings": {"security": 1, "complexity": 2},
+                             "per_100_lines": {"security": 2.0, "complexity": 4.0}})
+        self.assertIsNone(evidence.quality(Path("."), group, 0, None))
+
+    @unittest.skipIf(shutil.which("git") is None, "git not installed")
+    def test_analyze_commit_cleans_its_worktree(self):
+        root = new_repo(self)
+        write(root / "pyproject.toml", "[project]\nname='x'\n")
+        commit(root, "a.py", "x = 1\n", "2026-03-01T10:00:00Z")
+        [c0] = evidence.git_log(root, datetime(2026, 1, 1, tzinfo=timezone.utc))
+        empty = tree(self)
+        self.assertEqual(evidence.analyze_commit(root, c0, path=str(empty)), [])
+        listed = subprocess.run(["git", "-C", str(root), "worktree", "list"], capture_output=True, text=True, encoding="utf-8").stdout
+        self.assertEqual(len(listed.strip().splitlines()), 1)
+
+    @unittest.skipIf(shutil.which("git") is None, "git not installed")
+    def test_report_carries_quality_when_asked(self):
+        root = new_repo(self)
+        commit(root, "a.py", "1\n", "2026-03-01T10:30:00Z")
+        con = db(self, sessions=[("s1", "main", None, "2026-03-01T10:00:00Z", str(root))],
+                 usage=[("s1", "r1", "2026-03-01T11:00:00Z", 1, 0, 1)])
+        runner = lambda r, commit: [Finding("bug", "ruff", "B1", "a.py", 1, "m")]
+        data = evidence.report(con, datetime(2026, 2, 1, tzinfo=timezone.utc), T0 + timedelta(days=30), analyze_n=1, runner=runner)
+        self.assertEqual(data["repos"][0]["harness"]["quality"]["findings"], {"bug": 1})
+        self.assertEqual(data["totals"]["harness"]["quality"]["findings"], {"bug": 1})
+        self.assertIsNone(evidence.report(con, datetime(2026, 2, 1, tzinfo=timezone.utc), T0)["repos"][0]["harness"]["quality"])

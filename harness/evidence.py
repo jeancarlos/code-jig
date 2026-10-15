@@ -1,12 +1,14 @@
 import re
 import statistics
 import subprocess
-from collections import defaultdict
+import tempfile
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from pathlib import Path
 
-from harness import paths
+from harness import analyze, paths
 
 TEST_MARKERS = ("pytest", "unittest", "dotnet test", "npm test", "pnpm test", "yarn test", "run test", "vitest", "jest")
 GRACE = timedelta(hours=2)
@@ -231,28 +233,87 @@ def cost(con, since: str, sess: list[Session], in_repos: list[Session], harness_
             "median_minutes": statistics.median(minutes) if minutes else 0}
 
 
+def sample(commits: list[Commit], n: int) -> list[Commit]:
+    if n <= 0 or not commits:
+        return []
+    if n >= len(commits):
+        return list(commits)
+    step = len(commits) / n
+    return [commits[int(i * step)] for i in range(n)]
+
+
+def changed_lines(c: Commit) -> int:
+    return sum(d for hunks in c.hunks.values() for _, _, _, d in hunks)
+
+
+def analyze_commit(root: Path, c: Commit, timeout: int = 600, path: str | None = None) -> list:
+    tools = [t for t in analyze.TOOLS if t.name != "gitleaks-history"]
+    with tempfile.TemporaryDirectory() as tmp:
+        hooks = Path(tmp) / "hooks"
+        hooks.mkdir()
+        wt = Path(tmp) / "wt"
+        g = ("-c", f"core.hooksPath={hooks}", "-C", str(root))
+        made = _git(*g, "worktree", "add", "--detach", "--quiet", str(wt), c.sha)
+        if not made or made.returncode != 0:
+            return []
+        try:
+            found = analyze.run_tools(tools, wt, analyze.detect(wt), path=path, timeout=timeout).findings
+            return [f for f in found if f.path in c.hunks]
+        finally:
+            _git(*g, "worktree", "remove", "--force", str(wt))
+
+
+def _quality(cats: Counter, lines: int, sampled: int) -> dict:
+    return {"sampled": sampled, "changed_lines": lines, "findings": dict(cats),
+            "per_100_lines": {k: v * 100 / lines for k, v in cats.items()} if lines else {}}
+
+
+def quality(root: Path, group: list[Commit], n: int, runner) -> dict | None:
+    if n <= 0:
+        return None
+    picked = sample(group, n)
+    cats: Counter = Counter()
+    for c in picked:
+        cats.update(f.category for f in runner(root, c))
+    return _quality(cats, sum(changed_lines(c) for c in picked), len(picked))
+
+
+def _total_quality(items: list[dict | None]) -> dict | None:
+    items = [q for q in items if q]
+    if not items:
+        return None
+    cats: Counter = Counter()
+    for q in items:
+        cats.update(q["findings"])
+    return _quality(cats, sum(q["changed_lines"] for q in items), sum(q["sampled"] for q in items))
+
+
 def repo_report(root: Path, sess: list[Session], since: datetime, now: datetime, analyze_n: int = 0, runner=None) -> dict:
     every = git_log(root, since)
     windows = [(s.start, s.end) for s in sess]
-    harness = [c for c in every if in_window(c.when, windows)]
-    baseline = [c for c in every if not in_window(c.when, windows)]
-    return {"root": str(root), "sessions": len(sess),
-            "harness": group_stats(harness, every, now), "baseline": group_stats(baseline, every, now)}
+    groups = {"harness": [c for c in every if in_window(c.when, windows)],
+              "baseline": [c for c in every if not in_window(c.when, windows)]}
+    runner = runner or analyze_commit
+    out = {"root": str(root), "sessions": len(sess)}
+    for name, group in groups.items():
+        out[name] = group_stats(group, every, now) | {"quality": quality(root, group, analyze_n, runner)}
+    return out
 
 
 def _total(groups: list[dict]) -> dict:
     return rate(sum(g["commits"] for g in groups), sum(g["mature"] for g in groups), sum(g["reworked"] for g in groups))
 
 
-def report(con, since: datetime, now: datetime, repo: Path | None = None, analyze_n: int = 0, runner=None) -> dict:
+def report(con, since: datetime, now: datetime, repo: Path | None = None, analyze_n: int = 0, runner=None, timeout: int = 600) -> dict:
     iso = _iso(since)
     sess = sessions(con, iso)
     repos, unreachable = by_repo(sess)
     if repo is not None:
         root = repo_root(str(repo))
         repos = {root: repos.get(root, [])} if root else {}
+    runner = runner or partial(analyze_commit, timeout=timeout)
     per = [repo_report(root, s, since, now, analyze_n, runner) for root, s in sorted(repos.items())]
-    totals = {g: _total([r[g] for r in per]) for g in ("harness", "baseline")}
+    totals = {g: _total([r[g] for r in per]) | {"quality": _total_quality([r[g]["quality"] for r in per])} for g in ("harness", "baseline")}
     in_repos = [s for group in repos.values() for s in group]
     return {"since": iso, "days": (now - since).days, "repos": per, "totals": totals, "unreachable": unreachable,
             "discipline": discipline(con, {s.id for s in in_repos}),
