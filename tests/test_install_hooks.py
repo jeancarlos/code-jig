@@ -1,4 +1,6 @@
 import json
+import os
+import stat
 import unittest
 
 from harness.install import CLAUDE_CODE_WATERMARK_STATUS, HOOK_STATUS, hook_commands, merged_claude_code_hooks, merged_hooks, run, write_merged
@@ -118,6 +120,29 @@ class HookInterpreter(unittest.TestCase):
             self.assertEqual(install.interpreter(), "/opt/base/python3")
 
 
+class CodexWatermarkHook(unittest.TestCase):
+    def setUp(self):
+        self.root = tree(self)
+        self.path = self.root / "hooks.json"
+
+    def test_codex_gets_one_posttooluse_watermark_hook_next_to_collect(self):
+        write(self.path, json.dumps({"hooks": {"PostToolUse": [{"hooks": [{"type": "command", "command": "mine"}]}]}}))
+        once = merged_hooks(self.path, "p", "w", watermark=("wp", "ww"))
+        write(self.path, once)
+        data = json.loads(merged_hooks(self.path, "p", "w", watermark=("wp2", "ww2")))
+        commands = [h["command"] for g in data["hooks"]["PostToolUse"] for h in g["hooks"]]
+        self.assertEqual(commands, ["mine", "wp2"])
+        self.assertEqual(len(data["hooks"]["Stop"]), 1)
+
+    def test_settings_keep_their_permissions(self):
+        settings = self.root / "settings.json"
+        write(settings, "{}\n")
+        os.chmod(settings, 0o600)
+        write_merged(settings, '{"hooks": {}}\n')
+        self.assertEqual(stat.S_IMODE(os.stat(settings).st_mode), 0o600)
+        self.assertEqual(sorted(p.name for p in self.root.iterdir() if p.name.endswith(".tmp")), [])
+
+
 class ClaudeCodeHooks(unittest.TestCase):
     def setUp(self):
         self.root = tree(self)
@@ -126,9 +151,9 @@ class ClaudeCodeHooks(unittest.TestCase):
     def test_absent_file_gets_posttooluse_hooks(self):
         data = json.loads(merged_claude_code_hooks(self.path, "cmd"))
         self.assertIn("PostToolUse", data["hooks"])
-        self.assertEqual(len(data["hooks"]["PostToolUse"]), 4)
-        matchers = [g.get("matcher") for g in data["hooks"]["PostToolUse"]]
-        self.assertEqual(sorted(matchers), ["Edit", "MultiEdit", "NotebookEdit", "Write"])
+        [group] = data["hooks"]["PostToolUse"]
+        self.assertEqual(group["matcher"], "Write|Edit|MultiEdit|NotebookEdit")
+        self.assertEqual(group["hooks"][0]["timeout"], 10)
 
     def test_user_hooks_survive_and_ours_are_replaced(self):
         user = {"hooks": {"PostToolUse": [
@@ -141,7 +166,8 @@ class ClaudeCodeHooks(unittest.TestCase):
         data = json.loads(merged_claude_code_hooks(self.path, "cmd2"))
         watermarks = [g for g in data["hooks"]["PostToolUse"] if any(
             h.get("statusMessage") == CLAUDE_CODE_WATERMARK_STATUS for h in g.get("hooks") or [])]
-        self.assertEqual(len(watermarks), 4)
+        self.assertEqual(len(watermarks), 1)
+        self.assertEqual(watermarks[0]["hooks"][0]["command"], "cmd2")
         other = [g for g in data["hooks"]["PostToolUse"] if g.get("matcher") == "OtherTool"]
         self.assertEqual(len(other), 1)
         notify = [g for g in data["hooks"]["PostToolUse"] if not g.get("matcher") and not any(

@@ -7,6 +7,7 @@ import sys
 import time
 from pathlib import Path
 
+from harness.atomicwrite import atomic_write
 from harness import paths, tiers
 from harness.overlay import Overlay, load
 
@@ -87,12 +88,22 @@ def hook_commands(lib: Path, home: Path, python: str) -> tuple[str, str]:
     return posix, windows
 
 
+def watermark_commands(lib: Path, python: str, agent: str) -> tuple[str, str]:
+    posix = f"PYTHONPATH={shlex.quote(str(lib))} {shlex.quote(python)} -P -s -m harness hooks --hook-type {agent}"
+    windows = f'set "PYTHONPATH={lib}" && "{python}" -P -s -m harness hooks --hook-type {agent}'
+    return posix, windows
+
+
 def claude_code_watermark_hook(lib: Path, python: str) -> str:
-    cmd = f"PYTHONPATH={shlex.quote(str(lib))} {shlex.quote(python)} -P -s -m harness hooks --hook-type claude-code"
-    return cmd
+    return watermark_commands(lib, python, "claude-code")[0]
 
 
-def merged_hooks(path: Path, posix: str, windows: str) -> str:
+def _without_status(groups: list, status: str) -> list:
+    return [g for g in groups if not (isinstance(g, dict) and any(
+        isinstance(h, dict) and h.get("statusMessage") == status for h in g.get("hooks") or []))]
+
+
+def merged_hooks(path: Path, posix: str, windows: str, watermark: tuple[str, str] | None = None) -> str:
     try:
         data = json.loads(path.read_text(encoding="utf-8-sig")) if path.is_file() else {"hooks": {}}
     except (OSError, ValueError) as e:
@@ -100,10 +111,17 @@ def merged_hooks(path: Path, posix: str, windows: str) -> str:
     hooks = data.setdefault("hooks", {}) if isinstance(data, dict) else None
     if not isinstance(hooks, dict) or not isinstance(hooks.setdefault("Stop", []), list):
         raise ValueError(f'{path}: expected {{"hooks": {{"Stop": [...]}}}}')
-    hooks["Stop"] = [g for g in hooks["Stop"] if not (isinstance(g, dict) and any(
-        isinstance(h, dict) and h.get("statusMessage") == HOOK_STATUS for h in g.get("hooks") or []))]
+    hooks["Stop"] = _without_status(hooks["Stop"], HOOK_STATUS)
     hooks["Stop"].append({"hooks": [{"type": "command", "command": posix, "commandWindows": windows,
                                      "timeout": 60, "statusMessage": HOOK_STATUS}]})
+    if watermark is not None:
+        post = hooks.setdefault("PostToolUse", [])
+        if not isinstance(post, list):
+            raise ValueError(f'{path}: expected {{"hooks": {{"PostToolUse": [...]}}}}')
+        hooks["PostToolUse"] = _without_status(post, CLAUDE_CODE_WATERMARK_STATUS)
+        hooks["PostToolUse"].append({"hooks": [{"type": "command", "command": watermark[0],
+                                                "commandWindows": watermark[1], "timeout": 10,
+                                                "statusMessage": CLAUDE_CODE_WATERMARK_STATUS}]})
     return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
 
 
@@ -111,17 +129,11 @@ def write_merged(path: Path, text: str) -> Path | None:
     if path.is_file() and path.read_bytes() == text.encode("utf-8"):
         return None
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8", newline="\n")
     backup = None
-    mode = None
     if path.exists():
-        mode = path.stat().st_mode
         backup = _backup_name(path)
         shutil.copy2(path, backup)
-    os.replace(tmp, path)
-    if mode is not None:
-        path.chmod(mode)
+    atomic_write(path, text.encode("utf-8"))
     return backup
 
 
@@ -133,19 +145,12 @@ def merged_claude_code_hooks(path: Path, command: str) -> str:
     hooks = data.setdefault("hooks", {}) if isinstance(data, dict) else None
     if not isinstance(hooks, dict) or not isinstance(hooks.setdefault("PostToolUse", []), list):
         raise ValueError(f'{path}: expected {{"hooks": {{"PostToolUse": [...]}}}}')
-    posttooluse = hooks["PostToolUse"]
-    posttooluse[:] = [g for g in posttooluse if not (isinstance(g, dict) and any(
-        isinstance(h, dict) and h.get("statusMessage") == CLAUDE_CODE_WATERMARK_STATUS for h in g.get("hooks") or []))]
-    for tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
-        posttooluse.append({
-            "matcher": tool,
-            "hooks": [{
-                "type": "command",
-                "command": command,
-                "timeout": 5000,
-                "statusMessage": CLAUDE_CODE_WATERMARK_STATUS
-            }]
-        })
+    hooks["PostToolUse"] = _without_status(hooks["PostToolUse"], CLAUDE_CODE_WATERMARK_STATUS)
+    hooks["PostToolUse"].append({
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [{"type": "command", "command": command, "timeout": 10,
+                   "statusMessage": CLAUDE_CODE_WATERMARK_STATUS}],
+    })
     return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
 
 
@@ -237,7 +242,8 @@ def plan(core: Path, ov: Overlay, home: Path, claude_code_settings: Path | None 
     outputs += [(home / "rules" / name, text) for name, text in rule_files(ov.root).items()]
     lib = home / "codex-harness" / "lib"
     outputs += [(lib / "harness" / p.name, stamp(p.read_text(encoding="utf-8"), "hash")) for p in sorted((core / "harness").glob("*.py"))]
-    outputs.append((home / "hooks.json", merged_hooks(home / "hooks.json", *hook_commands(lib, home, interpreter()))))
+    outputs.append((home / "hooks.json", merged_hooks(home / "hooks.json", *hook_commands(lib, home, interpreter()),
+                                                      watermark=watermark_commands(lib, interpreter(), "codex"))))
     if claude_code_settings and claude_code_settings.is_file():
         outputs.append((claude_code_settings, merged_claude_code_hooks(claude_code_settings, claude_code_watermark_hook(lib, interpreter()))))
     return outputs

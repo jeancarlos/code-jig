@@ -57,6 +57,7 @@ Edit `~/codex-overlay/profiles.toml` to pick your models; `doctor` lists the one
 | [Network and certificates](docs/runbooks/network-and-certificates.md) | TLS-inspecting networks, git and CLI tools in the sandbox |
 | [Circuit breaker](docs/runbooks/circuit-breaker.md) | When Guardian stops a turn |
 | [Commit attribution](docs/runbooks/commit-attribution.md) | Codex's co-author trailer and how to turn it off |
+| [Watermarks and humanizing](docs/runbooks/watermark-and-humanize.md) | What the write hook strips from agent output, and how to run or disable it |
 | [Upgrade and rollback](docs/runbooks/upgrade-and-rollback.md) | Updates, rollbacks, uninstalling |
 | [Personalizing](docs/personalizing.md) | Overlay slots, pinning, the clean-room rule |
 | [Decisions](docs/adr/) | Why each design choice was made, and what was rejected |

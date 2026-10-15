@@ -1,58 +1,49 @@
+import contextlib
 import os
 import stat
 import tempfile
 from pathlib import Path
 
 
-def safe_write_file(path: str, data: bytes) -> bool:
-    """Atomic write with symlink and boundary checks.
+def resolve_inside(path: str, root: str | os.PathLike[str] | None = None) -> Path | None:
+    """The real path of `path` when it is a regular file, not a symlink, inside `root`.
 
-    Creates temp with mkstemp (O_EXCL, unpredictable name), fchmod to original mode,
-    writes, fsyncs, os.replace onto resolved target. Refuses symlinks and paths
-    outside cwd. Returns True on success, False on error (logged to stderr).
+    `root` defaults to the working directory; a relative `path` is taken from it.
+    Anything else (symlink, directory, device, missing file, a path that escapes
+    the root) gives None, so callers never touch files they were not handed.
     """
+    base = Path(os.path.realpath(root if root is not None else os.getcwd()))
+    p = Path(path)
+    if not p.is_absolute():
+        p = base / p
     try:
-        p = Path(path)
-        try:
-            s = os.lstat(str(p))
-            if stat.S_ISLNK(s.st_mode):
-                return False
-        except (OSError, FileNotFoundError):
-            pass
+        st = os.lstat(p)
+    except OSError:
+        return None
+    if not stat.S_ISREG(st.st_mode):
+        return None
+    real = Path(os.path.realpath(p))
+    return real if real.is_relative_to(base) else None
 
-        resolved = Path(os.path.realpath(str(p)))
-        cwd = Path(os.getcwd()).resolve()
-        if not str(resolved).startswith(str(cwd)):
-            return False
 
-        mode = None
-        if p.exists():
-            try:
-                mode = p.stat().st_mode
-            except (OSError, PermissionError):
-                pass
+def atomic_write(target: Path, data: bytes, mode: int | None = None) -> None:
+    """Replace `target` with `data` without a window where it is partial or wider-permissioned.
 
-        parent = resolved.parent
-        parent.mkdir(parents=True, exist_ok=True)
-
-        fd, tmp_path = tempfile.mkstemp(dir=str(parent), prefix='.', suffix='.tmp')
-        try:
-            if mode is not None:
-                os.fchmod(fd, mode)
-            os.write(fd, data)
-            os.fsync(fd)
-            os.close(fd)
-            os.replace(tmp_path, str(p))
-            return True
-        except Exception:
-            try:
-                os.close(fd)
-            except Exception:
-                pass
-            try:
-                os.unlink(tmp_path)
-            except Exception:
-                pass
-            return False
-    except Exception:
-        return False
+    The temp file gets an unpredictable name (mkstemp, O_EXCL) in the target's own
+    directory, so os.replace stays on one filesystem and nobody can pre-plant it.
+    It keeps the target's permission bits, or `mode` for a new file.
+    """
+    if mode is None:
+        mode = stat.S_IMODE(os.stat(target).st_mode) if target.exists() else 0o600
+    fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, mode)
+        os.replace(tmp, target)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise

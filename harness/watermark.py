@@ -1,9 +1,7 @@
-import json
-import os
 import re
-import stat
 import sys
-from pathlib import Path
+
+from harness.atomicwrite import atomic_write, resolve_inside
 
 _CHAR_CODES = [
     (0x200b, "ZERO WIDTH SPACE"),
@@ -44,6 +42,7 @@ BOM = b"\xef\xbb\xbf"
 _NO_BREAK_SPACE = chr(0x00a0)
 _NARROW_NO_BREAK_SPACE = chr(0x202f)
 _SOFT_HYPHEN = chr(0x00ad)
+_BIDI = {chr(c) for c in (*range(0x202A, 0x202F), *range(0x2066, 0x206A))}
 
 
 def is_binary(data: bytes) -> bool:
@@ -54,94 +53,62 @@ def is_binary(data: bytes) -> bool:
         return True
 
 
-def safe_open_path(path_str: str) -> Path | None:
-    try:
-        p = Path(path_str)
-        try:
-            s = os.lstat(str(p))
-            if stat.S_ISLNK(s.st_mode):
-                resolved = Path(os.path.realpath(str(p)))
-                cwd = Path(os.getcwd()).resolve()
-                if not str(resolved).startswith(str(cwd)):
-                    return None
-                return None
-        except (OSError, FileNotFoundError):
-            pass
-        return p
-    except Exception:
-        return None
+def strip_bytes(original: bytes) -> tuple[bytes, dict]:
+    """Watermark-free bytes and how many of each kind were removed."""
+    counts = {"zero_width": 0, "directional": 0, "attribution_lines": 0}
+    text = original.decode("utf-8")
+    had_bom = text.startswith("\ufeff")
+    if had_bom:
+        text = text[1:]
+    out = []
+    for ch in text:
+        if ch in (_NO_BREAK_SPACE, _NARROW_NO_BREAK_SPACE):
+            out.append(" ")
+            counts["zero_width"] += 1
+        elif ch in INVISIBLE_CHARS:
+            counts["directional" if ch in _BIDI else "zero_width"] += 1
+        else:
+            out.append(ch)
+    data = "".join(out).encode("utf-8")
+    counts["attribution_lines"] = len(ATTRIBUTION_LINES.findall(data))
+    data = ATTRIBUTION_LINES.sub(b"", data)
+    return (BOM + data if had_bom else data), counts
 
 
-def strip_watermark(path: str) -> dict:
+def strip_watermark(path: str, root: str | None = None) -> dict:
     result = {"file": path, "zero_width": 0, "directional": 0, "attribution_lines": 0}
+    target = resolve_inside(path, root)
+    if target is None:
+        return result
     try:
-        p = safe_open_path(path)
-        if p is None:
-            return result
-        if not p.is_file():
-            return result
-        try:
-            original = p.read_bytes()
-        except (OSError, PermissionError):
-            return result
+        original = target.read_bytes()
         if is_binary(original):
             return result
-        text = original.decode("utf-8")
-        had_bom = original.startswith(BOM)
-        cleaned = text
-        old_cleaned = cleaned
-        cleaned = cleaned.replace(_NO_BREAK_SPACE, " ")
-        cleaned = cleaned.replace(_NARROW_NO_BREAK_SPACE, " ")
-        invisible_chars = "".join(k for k in INVISIBLE_CHARS.keys() if k not in (_NO_BREAK_SPACE, _NARROW_NO_BREAK_SPACE))
-        for char in invisible_chars:
-            count = cleaned.count(char)
-            if count > 0:
-                result["zero_width"] += count
-            cleaned = cleaned.replace(char, "")
-        cleaned = cleaned.replace(_SOFT_HYPHEN, "")
-        if old_cleaned != cleaned:
-            result["zero_width"] = len(old_cleaned) - len(cleaned.replace(_NO_BREAK_SPACE, " ").replace(_NARROW_NO_BREAK_SPACE, " "))
-        old_bytes = cleaned.encode("utf-8")
-        cleaned = re.sub(ATTRIBUTION_LINES, b"", old_bytes)
-        if old_bytes != cleaned:
-            result["attribution_lines"] = (len(old_bytes) - len(cleaned)) // 20
-        cleaned = cleaned.decode("utf-8")
-        new_bytes = cleaned.encode("utf-8")
-        if had_bom and not new_bytes.startswith(BOM):
-            new_bytes = BOM + new_bytes
-        if original == new_bytes:
-            return result
-        mode = p.stat().st_mode
-        tmp = p.with_name(p.name + ".tmp")
-        tmp.write_bytes(new_bytes)
-        os.replace(str(tmp), str(p))
-        p.chmod(mode)
-        result["changed"] = True
-        return result
+        cleaned, counts = strip_bytes(original)
+        result.update(counts)
+        if cleaned != original:
+            atomic_write(target, cleaned)
+            result["changed"] = True
     except Exception as e:
         print(f"watermark: error processing {path}: {e}", file=sys.stderr)
-        return result
+    return result
 
 
-def report_result(result: dict, hook_type: str = "posttooluse") -> None:
+def report_result(result: dict, hook_type: str = "cli") -> str | None:
     if not result.get("changed"):
-        return
-    total_changes = result.get("zero_width", 0) + result.get("attribution_lines", 0)
-    msg = f"watermark: {result['file']}: stripped {total_changes} watermark items"
-    if result.get("zero_width"):
-        msg += f" ({result['zero_width']} invisible chars"
-        if result.get("attribution_lines"):
-            msg += f", {result['attribution_lines']} attribution lines)"
-        else:
-            msg += ")"
-    elif result.get("attribution_lines"):
-        msg += f" ({result['attribution_lines']} attribution lines)"
+        return None
+    parts = [
+        f"{result[k]} {label}"
+        for k, label in (
+            ("zero_width", "invisible chars"),
+            ("directional", "bidi controls"),
+            ("attribution_lines", "attribution lines"),
+        )
+        if result.get(k)
+    ]
+    msg = f"watermark: {result['file']}: stripped {', '.join(parts)}"
     print(msg, file=sys.stderr)
-    if hook_type == "claude-code":
-        sys.stdout.write(json.dumps({
-            "systemMessage": msg,
-            "hookSpecificOutput": {"additionalContext": msg}
-        }) + "\n")
+    return msg
 
 
 def cli(args) -> int:

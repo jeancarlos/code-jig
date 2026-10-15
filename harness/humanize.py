@@ -3,6 +3,8 @@ import re
 import sys
 from pathlib import Path
 
+from harness.atomicwrite import atomic_write, resolve_inside
+
 DASHES = str.maketrans({"—": "-", "–": "-", "―": "-"})
 CURLY_QUOTES = str.maketrans({
     "‘": "'", "’": "'",
@@ -11,7 +13,6 @@ CURLY_QUOTES = str.maketrans({
 ELLIPSIS = "…"
 
 LLM_BOILERPLATE = [
-    "Certainly",
     "Here's the updated",
     "Here is the updated",
     "I hope this helps",
@@ -25,6 +26,11 @@ LLM_BOILERPLATE = [
     "... your code ...",
     "Your code here",
 ]
+
+BOILERPLATE_PATTERN = re.compile(
+    r"(?:certainly[!.,]?\s*$|(?:" + "|".join(re.escape(p) for p in LLM_BOILERPLATE) + r")(?![\w']))",
+    re.IGNORECASE,
+)
 
 COMMENT_MARKERS = {
     ".py": "#",
@@ -85,85 +91,55 @@ def is_boilerplate_line(line: str, markers=None) -> bool:
                     comment_text = comment_text[len(m):].lstrip()
                     break
 
-    comment_lower = comment_text.lower()
-    for phrase in LLM_BOILERPLATE:
-        if comment_lower == phrase.lower() or comment_lower == phrase.rstrip(':').lower():
-            return True
-    return False
+    return BOILERPLATE_PATTERN.match(comment_text) is not None
 
 
-def humanize_file(path: str) -> dict:
+def humanize_text(text: str, markers) -> tuple[str, dict]:
+    counts = {"dashes": 0, "quotes": 0, "ellipsis": 0, "emoji": 0, "boilerplate": 0}
+    kept = []
+    for line in text.split("\n"):
+        if not is_comment_line(line, markers):
+            kept.append(line)
+            continue
+        if is_boilerplate_line(line, markers):
+            counts["boilerplate"] += 1
+            continue
+        counts["dashes"] += sum(line.count(d) for d in "—–―")
+        counts["quotes"] += sum(1 for c in line if c in "‘’“”")
+        counts["ellipsis"] += line.count(ELLIPSIS)
+        counts["emoji"] += len(EMOJI_PATTERN.findall(line))
+        line = EMOJI_PATTERN.sub("", line.translate(DASHES).translate(CURLY_QUOTES).replace(ELLIPSIS, "..."))
+        kept.append(line)
+    return "\n".join(kept), counts
+
+
+def humanize_file(path: str, root: str | None = None, write: bool = True) -> dict:
     result = {"file": path, "dashes": 0, "quotes": 0, "ellipsis": 0, "emoji": 0, "boilerplate": 0}
+    markers = COMMENT_MARKERS.get(get_file_extension(path))
+    target = resolve_inside(path, root)
+    if markers is None or target is None:
+        return result
     try:
-        p = Path(path)
-        if p.is_symlink():
-            return result
-        if not p.is_file():
-            return result
-        try:
-            original = p.read_bytes()
-        except (OSError, PermissionError):
-            return result
-
+        original = target.read_bytes()
         if b"\0" in original[:8192]:
             return result
-
-        try:
-            text = original.decode("utf-8")
-        except UnicodeDecodeError:
-            return result
-
-        ext = get_file_extension(path)
-        markers = COMMENT_MARKERS.get(ext)
-        if markers is None:
-            return result
-
-        lines = text.split("\n")
-        new_lines = []
-
-        for line in lines:
-            new_line = line
-            is_comment = is_comment_line(line, markers)
-
-            if is_comment:
-                if is_boilerplate_line(new_line, markers):
-                    new_line = ""
-                    result["boilerplate"] += 1
-                else:
-                    result["dashes"] += line.count("—") + line.count("–") + line.count("―")
-                    new_line = new_line.translate(DASHES)
-
-                    result["quotes"] += sum(1 for c in line if c in "‘’“”")
-                    new_line = new_line.translate(CURLY_QUOTES)
-
-                    result["ellipsis"] += line.count(ELLIPSIS)
-                    new_line = new_line.replace(ELLIPSIS, "...")
-
-                    result["emoji"] += len(EMOJI_PATTERN.findall(line))
-                    new_line = EMOJI_PATTERN.sub("", new_line)
-
-            new_lines.append(new_line)
-
-        new_text = "\n".join(new_lines)
-        if new_text == text:
-            return result
-
-        mode = p.stat().st_mode
-        tmp = p.with_name(p.name + ".tmp")
-        tmp.write_bytes(new_text.encode("utf-8"))
-        os.replace(str(tmp), str(p))
-        p.chmod(mode)
-
-        result["changed"] = True
+        text = original.decode("utf-8")
+        new_text, counts = humanize_text(text, markers)
+        result.update(counts)
+        if new_text != text:
+            result["changed"] = True
+            if write:
+                atomic_write(target, new_text.encode("utf-8"))
+    except UnicodeDecodeError:
         return result
     except Exception as e:
         print(f"humanize: error processing {path}: {e}", file=sys.stderr)
-        return result
+    return result
 
 
-def report_result(result: dict) -> None:
+def report_result(result: dict) -> str | None:
     if not result.get("changed"):
-        return
+        return None
     parts = []
     if result.get("boilerplate"):
         parts.append(f"{result['boilerplate']} boilerplate")
@@ -178,22 +154,30 @@ def report_result(result: dict) -> None:
 
     msg = f"humanize: {result['file']}: fixed {', '.join(parts)}"
     print(msg, file=sys.stderr)
+    return msg
+
+
+SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build"}
+
+
+def _files(root: Path):
+    if root.is_file():
+        yield root
+        return
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
+        for name in filenames:
+            yield Path(dirpath) / name
 
 
 def cli(args) -> int:
-    if not args.path:
-        return 0
-
-    for path_str in args.path:
-        p = Path(path_str)
-        if p.is_dir():
-            for f in p.rglob("*"):
-                if f.is_file() and not f.is_symlink():
-                    result = humanize_file(str(f))
-                    if args.check and result.get("changed"):
-                        report_result(result)
-        else:
-            result = humanize_file(path_str)
-            if args.check and result.get("changed"):
+    changed = 0
+    for path_str in args.path or []:
+        start = Path(path_str).resolve()
+        root = start if start.is_dir() else start.parent
+        for f in _files(start):
+            result = humanize_file(str(f), root=str(root), write=not args.check)
+            if result.get("changed"):
+                changed += 1
                 report_result(result)
-    return 0
+    return 1 if args.check and changed else 0
