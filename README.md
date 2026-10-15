@@ -18,7 +18,8 @@ I use coding agents every day, and I kept running into the same four problems.
 
 ## What you get
 
-- **Tiers**: `default`, `deep`, `bulk`, `review`, each a generated Codex profile with its own model and reasoning effort. Pick the right brain for the job.
+- **Tiers**: `default`, `deep`, `bulk`, `review`, each a generated Codex profile with its own model and reasoning effort. Pick the right brain for the job; [daily use](docs/runbooks/daily-use.md#which-model-for-which-job) maps jobs and skills to models for a public and an enterprise catalog.
+- **Cheap subagents**: an `explorer` role on the `bulk` model answers lookups with line ranges instead of file dumps, and a `reviewer` role on the `review` model attacks plans and findings. Code-writing subagents keep the session's model.
 - **Guardian everywhere**, with your additions layered on the upstream policy.
 - **Token tracker**: `harness tokens` shows input, cache hit, Guardian share, escalated commands, the heaviest sessions and per-model usage. All local.
 - **Evidence**: `harness evidence` compares commits made in Codex sessions with the same repos' other commits (rework, `analyze` findings) and reports test runs, skill use, Guardian decisions and cost. Local data only.
@@ -27,7 +28,8 @@ I use coding agents every day, and I kept running into the same four problems.
 - **Requirement tracing**: `harness trace` checks which requirement IDs (from Azure DevOps, GitHub issues or a Markdown design) have tests, and which tests cite IDs that no longer exist.
 - **Skills**: `cross-review`, `grilling` (stress-test a decision), `web-consensus` (settle facts against live sources), `improve` (turn a lesson into a durable change), and the deterministic toolbox: `code-analysis`, `regression-tests`, `hld-trace`, `bug-hunt` (property tests, fuzzing, mutation testing), `codegen` (OpenAPI clients, codemods). Plus [superpowers](https://github.com/obra/superpowers) in one command.
 - **Knowledge base**: one fact per file, indexed, pointed at by the generated AGENTS.md.
-- **Doctor**: checks the binary, the pins, every tier's model against your account's catalog, managed requirements and the AGENTS.md budget, and probes each tier for free.
+- **Edit feedback**: after every agent write, syntax errors and undefined names in Python, JSON and TOML, and a notice when a test is deleted or skipped, go straight back to the model. Nothing blocks.
+- **Doctor**: checks the binary, the pins, every tier's model against your account's catalog, the subagent roles, managed requirements, the AGENTS.md budget and the size of the skills list sent with every request, and probes each tier for free.
 - **Works on locked-down machines**: native Windows support, no scripts required, respects administrator-managed Codex config and tells you how it differs from what was tested.
 
 ## Quick start
@@ -59,7 +61,7 @@ Edit `~/codex-overlay/profiles.toml` to pick your models; `doctor` lists the one
 | [Network and certificates](docs/runbooks/network-and-certificates.md) | TLS-inspecting networks, git and CLI tools in the sandbox |
 | [Circuit breaker](docs/runbooks/circuit-breaker.md) | When Guardian stops a turn |
 | [Commit attribution](docs/runbooks/commit-attribution.md) | Codex's co-author trailer and how to turn it off |
-| [Watermarks and humanizing](docs/runbooks/watermark-and-humanize.md) | What the write hook strips from agent output, and how to run or disable it |
+| [Watermarks, humanizing and edit feedback](docs/runbooks/watermark-and-humanize.md) | What the write hook strips from agent output, what it reports back to the model, and how to run or disable it |
 | [Upgrade and rollback](docs/runbooks/upgrade-and-rollback.md) | Updates, rollbacks, uninstalling |
 | [Personalizing](docs/personalizing.md) | Overlay slots, pinning, the clean-room rule |
 | [Decisions](docs/adr/) | Why each design choice was made, and what was rejected |

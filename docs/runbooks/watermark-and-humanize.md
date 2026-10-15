@@ -1,4 +1,4 @@
-# Runbook: watermark stripping and humanizing
+# Runbook: watermark stripping, humanizing and edit feedback
 
 After every file Claude Code or Codex writes, the harness cleans that file and tells you, and the agent, what it changed. Nothing runs on files the agent did not just write.
 
@@ -28,6 +28,26 @@ Only whole-line comments, in `.py .js .mjs .ts .tsx .jsx .sh .bash .css .go .rs 
 
 - Em dash, en dash and horizontal bar become `-`; curly quotes become ASCII quotes; `…` becomes `...`; emoji are removed.
 - A comment line is deleted when it is a conversational or placeholder line: `Here's the updated`, `Here is the updated`, `I hope this helps`, `Let me know if`, `Feel free to`, `As an AI`, `As an assistant`, `Add more as needed`, `Rest of the code`, `... existing code ...`, `... your code ...`, `Your code here`, or a comment that is only `Certainly`. The match is case-insensitive and anchored at the start of the comment. The list is `LLM_BOILERPLATE` in `harness/humanize.py`.
+
+## Edit feedback
+
+After cleaning, the same hook tells the model about two kinds of problems in what it just wrote. It never blocks or undoes anything; the agent decides what to do with the note.
+
+**Errors in the file.** Only checks that never run repository code, because hooks run outside the sandbox:
+
+| Files | Check |
+|---|---|
+| `.py` | `ruff check --isolated --no-cache --select E9,F63,F7,F82`: syntax errors and undefined names. `--isolated` ignores the repo's ruff config, so a project with hundreds of rules does not flood the model. Without ruff on `PATH`, a standard-library parse catches syntax errors only. A `ruff` that resolves inside the workspace is never run. |
+| `.json`, `.toml` | Standard-library parse. |
+
+At most 10 lines per file reach the model, for example `lint: src/app.py` followed by `src/app.py:12:5: F821 Undefined name 'cfg'`. TypeScript, C# and other stacks get nothing here: every checker for them executes repository code (eslint configs, tsc plugins, `dotnet build`, `node_modules/.bin`) or takes longer than the hook's 10 seconds. Run them through `harness analyze` or the repo's own commands instead.
+
+**Test tampering.** A write that deletes a test file or adds a skip marker gets a notice, for example `tests: tests/test_api.py: added @pytest.mark.skip. Unless the user asked for this, restore the test and fix the code instead.` Agents under pressure to make tests pass sometimes skip or delete them; the notice puts the question back in front of the model. It looks at:
+
+- Codex `apply_patch`: `*** Delete File:` lines naming a test file, and added `+` lines with a skip marker.
+- Claude Code `Edit` and `MultiEdit`: skip markers in the new text that were not in the old text. A full-file `Write` is not compared, because the hook only sees the result.
+
+Test files are recognised by path: a `test`, `tests`, `__tests__`, `spec` or `specs` folder, `test_*.py`, `*_test.py`, `*_test.go`, `*.test.ts`, `*.spec.js` and their variants, `*Tests.cs`, and `.Tests/` projects. The skip markers are `SKIP_MARKER` in `harness/feedback.py` (pytest, unittest, Jest, Mocha and Vitest, xUnit, NUnit and MSTest, JUnit, Go). A test deleted with `rm` from the shell is not seen.
 
 ## Run it by hand
 

@@ -2,7 +2,7 @@
 
 ## Core vs overlay
 Core is shared and pinned. The overlay is a separate directory with fixed slots:
-- `overlay.toml`: `core_version`, `core_writable`.
+- `overlay.toml`: `core_version`, `core_writable`, and optionally `auto_compact_token_limit`, a positive integer that every tier profile receives as `model_auto_compact_token_limit`. Unset, Codex compacts at 90% of the model's context window. A lower value trades re-reading a long history on every request for a summary that may lose detail; measure with `harness tokens` and `harness evidence` before and after setting it.
 - `profiles.toml`: one model ID per tier (`default`, `deep`, `bulk`, `review`). `doctor` lists the models your account has.
 - `AGENTS.overlay.md`: appended to the core rules.
 - `guardian-policy.md`: added to the upstream Guardian policy, never replacing it.
@@ -18,7 +18,7 @@ Keep your overlay in its own private repo. Never put it inside the core checkout
 `core_writable = false` means nothing may edit the core; `doctor` checks the core tree is unchanged. Set it to true only if you intend to change the core; the `improve` skill honours it.
 
 ## Pinning core_version
-Pin `core_version` to a tag (for example v0.6.0). `doctor` reports `ok core pin: v0.6.0`, and FAILs a core that is not a git checkout.
+Pin `core_version` to a tag (for example v0.8.0). `doctor` reports `ok core pin: v0.8.0`, and FAILs a core that is not a git checkout.
 
 ## Clean-room rule
 Contribute upstream only what you wrote without copying from private overlays or employer material. No corporate measurements anywhere in the core.
