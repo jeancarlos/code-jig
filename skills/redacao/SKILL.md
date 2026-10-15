@@ -16,6 +16,8 @@ Output in Brazilian Portuguese. The rules for the language, the AI tells and the
 - No fact without a source. Every number, version, file name and claim comes from a command you ran, a file you read or a URL you opened. Write it to the fact sheet before it enters the text. A fact you could not check is cut or flagged to the editor, never softened into a vague sentence.
 - Never commit or `git add` the article. The editor publishes. Code examples, configs and fixes found along the way follow the repo's normal rules.
 - Voice comes from the author's own text, in this order: the guide the `style-guide` skill generates (it refuses below 5,000 words of corpus in `05 - Areas/JeanSouza.DEV/style-guide-respostas.md`), then the entrevista answers, then anything the author wrote by hand (an earlier version of the article in git history, a vault note). It wins over reference.md where they disagree. Never fall back to your default voice.
+- Text an AI wrote (old drafts, vault notes, specs, an earlier version of the post) is a source of facts and links only. Re-check every fact you take from it and never reuse its sentences, headings or structure: that is how the old voice leaks back in.
+- Personal details (health, family, money) enter only when the author wrote them for this article, even if the vault has more.
 - The author's idea sets the scope. When the apuração turns up a better story, it goes to `Fica de fora` as its own pauta; it does not take over this article.
 - Never present the AI tells checklist as a detector. It is a list of habits that make prose worse, whoever wrote it.
 
@@ -32,11 +34,15 @@ Before the apuração, ask the author up to six questions, in one message:
 
 Ask for answers typed fast or dictated, without revising; typos stay. Save them verbatim in `entrevista-<slug>.md`. These answers are the raw material: keep their words, their order and their slang in the text, and take the tese from them. If the author declines, use their hand-written text from the voice list above and say so in the pauta.
 
+When the author hands raw text instead, it is the spine of the article. Keep their sentences and their order; fix only spelling, agreement and punctuation, and list every fix in `Mudanças`. Build the rest around it from facts. Every bridging sentence they did not write is marked `⚠` in the draft until they confirm, rewrite or cut it. If they also ask for the full piece, present the pauta and the whole draft in the same round, and run the next rounds on the draft.
+
 ## 2. Apuração
 
 Before writing a word, gather the facts yourself. Read the code, run the tests, the build and the linters, read the git log and any specs. Measure the published state, not a dirty working tree: a detached worktree of `HEAD` gives clean numbers.
 
 Write `apuracao-<slug>.md` in a scratch directory: one line per fact, with its source (`command`, `path:line` or URL). Mark the gaps and the things that contradict the story you expected. Those are often the best material.
+
+For links, start from what the project actually used: the specs, design docs and READMEs behind it. Open every URL before citing it and quote what it says in the fact sheet. A link earns its place by backing a sentence the reader cares about.
 
 The fact sheet is a quarry, not the outline. Most facts stay out of the text. A fact enters when the story needs it at that point, not because it was checked.
 
@@ -97,7 +103,7 @@ Keep the state in `redacao-<slug>.md` next to the fact sheet and update it every
 When every section is approved:
 
 1. Assemble the full text. Write the title, the description (frontmatter) and the first paragraph last, now that you know what the article proves.
-2. Run the checklist in reference.md over the whole text. Read it aloud in your head; a sentence you would not say to a colleague gets rewritten.
+2. Run `python3 checar.py <article.md>` from this skill's directory. It prints the rhythm numbers and the LanguageTool pt-BR matches; it starts nothing, and tells you the `podman run` line when LanguageTool is down. Fix real spelling, agreement and crase errors. Ignore matches on English technical terms, and never take a suggestion that flattens the author's register. LanguageTool misses agreement errors ("nossas vida"), so it is not a substitute for reading. Then run the checklist in reference.md over the whole text. Read it aloud in your head; a sentence you would not say to a colleague gets rewritten.
 3. Present the full text with a final `Mudanças` list for anything the assembly changed, then ask for the last `aprova`.
 4. After approval, write it to the target file. Do not commit it. Say where it is and what the editor still has to do (translation, images, publishing).
 
