@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import textwrap
+import time
 import types
 import unittest
 from pathlib import Path
@@ -29,21 +30,25 @@ LIZARD_CSV = textwrap.dedent('''\
 ''')
 
 
-def fake_tool(bindir: Path, name: str, stdout: str = "", code: int = 0, sleep: float = 0) -> None:
+def launcher(bindir: Path, name: str, argv: list[str]) -> None:
+    if os.name == "nt":
+        (bindir / f"{name}.cmd").write_text("@" + " ".join(f'"{a}"' for a in argv) + " %*\r\n", encoding="utf-8")
+    else:
+        path = bindir / name
+        path.write_text("#!/bin/sh\nexec " + " ".join(f'"{a}"' for a in argv) + ' "$@"\n', encoding="utf-8")
+        path.chmod(0o755)
+
+
+def fake_tool(bindir: Path, name: str, stdout: str = "", code: int = 0, sleep: float = 0, body: str | None = None) -> None:
     script = bindir / f"{name}_impl.py"
-    script.write_text(textwrap.dedent(f'''\
+    script.write_text(body or textwrap.dedent(f'''\
         import sys, time
         time.sleep({sleep!r})
         sys.stdout.write({stdout!r})
         sys.stderr.write("stderr of {name}\\n")
         sys.exit({code})
     '''), encoding="utf-8")
-    if os.name == "nt":
-        (bindir / f"{name}.cmd").write_text(f'@"{sys.executable}" "{script}" %*\r\n', encoding="utf-8")
-    else:
-        launcher = bindir / name
-        launcher.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{script}" "$@"\n', encoding="utf-8")
-        launcher.chmod(0o755)
+    launcher(bindir, name, [sys.executable, str(script)])
 
 
 def git(cwd, *args):
@@ -132,6 +137,10 @@ class Parsers(unittest.TestCase):
                          [("security", "a.py", 9), ("bug", "b.py", 2), ("bug", "c.py", 1)])
         self.assertEqual(found[2].rule, "syntax")
 
+    def test_ruff_only_flake8_bandit_codes_are_security(self):
+        out = json.dumps([{"code": c, "message": "m", "filename": "a.py", "location": {"row": 1}} for c in ("S608", "SIM102", "SLF001")])
+        self.assertEqual([f.category for f in analyze.parse_ruff(out, self.root, self.tmp)], ["security", "bug", "bug"])
+
     def test_ruff_rejects_non_list(self):
         with self.assertRaises(ValueError):
             analyze.parse_ruff('{"x": 1}', self.root, self.tmp)
@@ -140,6 +149,12 @@ class Parsers(unittest.TestCase):
         out = "src/a.py:3: error: Incompatible types  [assignment]\nsrc/a.py:4: note: see here\nSuccess: no issues\n"
         [f] = analyze.parse_mypy(out, self.root, self.tmp)
         self.assertEqual((f.category, f.rule, f.path, f.line), ("type", "assignment", "src/a.py", 3))
+
+    def test_mypy_with_column_numbers(self):
+        [f] = analyze.parse_mypy("src/a.py:3:5: error: Bad  [misc]\n", self.root, self.tmp)
+        self.assertEqual((f.path, f.line), ("src/a.py", 3))
+        found = analyze.parse_mypy("src/b.py:4:1:4:9: error: Worse  [misc]\n", self.root, self.tmp)
+        self.assertEqual([(f.path, f.line, f.rule) for f in found], [("src/b.py", 4, "misc")])
 
     def test_eslint(self):
         out = json.dumps([{"filePath": str(self.root / "src" / "x.ts"), "messages": [
@@ -185,6 +200,19 @@ class Parsers(unittest.TestCase):
         [f] = analyze.parse_gitleaks("", self.root, self.tmp)
         self.assertEqual((f.category, f.path, f.line), ("secret", "cfg.env", 2))
         self.assertNotIn("AKIA", f.message)
+
+    def test_gitleaks_message_carries_fingerprint(self):
+        write(self.tmp / "gitleaks.json", json.dumps([{"RuleID": "aws", "File": "cfg.env", "StartLine": 2, "Description": "AWS key",
+                                                      "Fingerprint": "abc123:cfg.env:aws:2"}]))
+        [f] = analyze.parse_gitleaks("", self.root, self.tmp)
+        self.assertIn("abc123:cfg.env:aws:2", f.message)
+
+    def test_gitleaks_runs_on_working_tree_and_history(self):
+        runs = [t for t in analyze.TOOLS if t.binary == "gitleaks"]
+        self.assertEqual([t.argv("gitleaks", self.root, self.tmp)[1] for t in runs], ["dir", "git"])
+        self.assertEqual([t.applies(self.root) for t in runs], [True, False])
+        (self.root / ".git").mkdir()
+        self.assertEqual([t.applies(self.root) for t in runs], [True, True])
 
     def test_gitleaks_missing_report_is_clean(self):
         self.assertEqual(analyze.parse_gitleaks("", self.root, self.tmp), [])
@@ -268,8 +296,29 @@ class Run(unittest.TestCase):
             seen.update(json.loads(out))
             return []
         analyze.run_tools([self.tool("envdump", grab)], self.root, {"python"}, path=str(self.bindir))
-        for key, value in analyze.OPT_OUT.items():
+        for key, value in analyze.TOOL_ENV.items():
             self.assertEqual(seen.get(key), value)
+        self.assertEqual(seen.get("PYTHONUTF8"), "1")
+
+    def test_timeout_kills_the_whole_process_tree(self):
+        marker = self.tmp / "grandchild-alive"
+        grandchild = f"import pathlib, time; time.sleep(4); pathlib.Path({str(marker)!r}).write_text('x')"
+        fake_tool(self.bindir, "mypy", body=textwrap.dedent(f'''\
+            import subprocess, sys, time
+            subprocess.Popen([sys.executable, "-c", {grandchild!r}])
+            time.sleep(60)
+        '''))
+        started = time.monotonic()
+        report = analyze.run_tools([self.tool("mypy", analyze.parse_mypy)], self.root, {"python"}, path=str(self.bindir), timeout=1)
+        self.assertLess(time.monotonic() - started, 20)
+        self.assertIn("timed out", report.errors[0][1])
+        time.sleep(6)
+        self.assertFalse(marker.exists())
+
+    def test_same_finding_from_two_runs_is_reported_once(self):
+        fake_tool(self.bindir, "mypy", "a.py:1: error: bad  [misc]\n", code=1)
+        tools = [self.tool("mypy", analyze.parse_mypy), self.tool("mypy", analyze.parse_mypy)]
+        self.assertEqual(len(analyze.run_tools(tools, self.root, {"python"}, path=str(self.bindir)).findings), 1)
 
     def test_tmp_is_removed(self):
         made = []
@@ -333,7 +382,8 @@ class Cli(unittest.TestCase):
         self.root = tree(self)
         self.bindir = tree(self)
         self.old_path = os.environ.get("PATH", "")
-        os.environ["PATH"] = os.pathsep.join([str(self.bindir), os.path.dirname(sys.executable), os.path.dirname(shutil.which("git"))])
+        launcher(self.bindir, "git", [shutil.which("git")])
+        os.environ["PATH"] = str(self.bindir)
         self.addCleanup(os.environ.__setitem__, "PATH", self.old_path)
         self.out = self.enterContext(contextlib.redirect_stdout(io.StringIO()))
         self.enterContext(contextlib.redirect_stderr(io.StringIO()))
@@ -357,6 +407,20 @@ class Cli(unittest.TestCase):
         self.assertEqual(analyze.cli(args), 1)
         data = json.loads(self.out.getvalue())
         self.assertIn("cognitive-complexity", {f["rule"] for f in data["findings"]})
+
+    def test_nothing_ran_exits_two(self):
+        write(self.root / "tool.py", "x = 1\n")
+        self.assertEqual(analyze.cli(self.args()), 2)
+
+    def test_narrow_console_encoding_does_not_crash(self):
+        write(self.root / "tool.py", "x = 1\n")
+        fake_tool(self.bindir, "ruff", json.dumps([{"code": "B1", "message": "łódź ação", "filename": "tool.py", "location": {"row": 1}}]))
+        narrow = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+        with contextlib.redirect_stdout(narrow):
+            self.assertEqual(analyze.cli(self.args()), 1)
+            args = self.args()
+            args.json = True
+            self.assertEqual(analyze.cli(args), 1)
 
     def test_bad_base_exits_two(self):
         write(self.root / "tool.py", "x = 1\n")
@@ -388,10 +452,11 @@ class RealTools(unittest.TestCase):
         git(root, "init", "-q")
         git(root, "add", ".")
         git(root, "commit", "-q", "-m", "x")
-        tools = [t for t in analyze.TOOLS if t.name == "gitleaks"]
+        write(root / "local.py", f'KEY = "{key}"\n')
+        tools = [t for t in analyze.TOOLS if t.binary == "gitleaks"]
         report = analyze.run_tools(tools, root, {"python"})
         self.assertEqual(report.errors, [])
-        self.assertEqual({(f.category, f.path) for f in report.findings}, {("secret", "settings.py")})
+        self.assertEqual({(f.category, f.path) for f in report.findings}, {("secret", "settings.py"), ("secret", "local.py")})
         self.assertNotIn(key, json.dumps([f.message for f in report.findings]))
 
     @unittest.skipUnless(shutil.which("osv-scanner"), "osv-scanner not installed")

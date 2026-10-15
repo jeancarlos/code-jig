@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import codecs
 import json
 import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from harness.analyze import printable, source_files
+from harness.analyze import printable, source_files, utf8_stdout
 
 TEST_PATH = re.compile(
     r"(^|/)(tests?|__tests__|specs?)/"
@@ -18,6 +19,7 @@ TEST_PATH = re.compile(
 )
 ID_CHARS = r"[A-Za-z0-9_]+(?:[.-][A-Za-z0-9_]+)*"
 MAX_BYTES = 2_000_000
+LINE_ID = re.compile(rf"^\s*(?:[-*+]\s+|\d+[.)]\s+)?#?(?:REQ-)?({ID_CHARS})", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -43,10 +45,13 @@ def _json_ids(data) -> list:
 
 
 def read_ids(text: str) -> list[str]:
+    text = text.lstrip("\ufeff")
     try:
         raw = _json_ids(json.loads(text))
     except ValueError:
-        raw = [line.split()[0] for line in text.splitlines() if line.strip()]
+        if text.lstrip().startswith(("[", "{")):
+            raise ValueError("looks like JSON but does not parse") from None
+        raw = [m.group(1) for m in map(LINE_ID.match, text.splitlines()) if m]
     ids = [_norm(v) for v in raw if v is not None and _norm(v)]
     return list(dict.fromkeys(ids))
 
@@ -55,7 +60,7 @@ def _regex(pattern: str, id_part: str) -> re.Pattern:
     if "{id}" not in pattern:
         raise ValueError("pattern must contain {id}")
     head, _, tail = pattern.partition("{id}")
-    return re.compile(rf"(?<![\w-]){head}{id_part}{tail}(?!\w|[.-]\w)", re.IGNORECASE)
+    return re.compile(rf"(?<![\w-]){re.escape(head)}{id_part}{re.escape(tail)}(?!\w|[.-]\w)", re.IGNORECASE)
 
 
 def trace(root: Path, ids: list[str], pattern: str = "REQ-{id}") -> Result:
@@ -94,13 +99,28 @@ def render(result: Result) -> list[str]:
     return out
 
 
+def decode(data: bytes) -> str:
+    if data.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+        return data.decode("utf-16")
+    return data.decode("utf-8-sig")
+
+
+def _read(name: str) -> str:
+    if name != "-":
+        return decode(Path(name).read_bytes())
+    return decode(sys.stdin.buffer.read()) if hasattr(sys.stdin, "buffer") else sys.stdin.read()
+
+
 def cli(args) -> int:
+    utf8_stdout()
     try:
-        text = sys.stdin.read() if args.ids == "-" else Path(args.ids).read_text(encoding="utf-8-sig")
+        ids = read_ids(_read(args.ids))
     except OSError as e:
         print(f"harness: {args.ids}: {e.strerror or e}", file=sys.stderr)
         return 2
-    ids = read_ids(text)
+    except ValueError as e:
+        print(f"harness: {args.ids}: {e}", file=sys.stderr)
+        return 2
     if not ids:
         print(f"harness: no requirement IDs in {args.ids}", file=sys.stderr)
         return 2

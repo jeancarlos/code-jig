@@ -32,6 +32,18 @@ class ReadIds(unittest.TestCase):
         self.assertEqual(trace.read_ids('"#7"'), ["7"])
         self.assertEqual(trace.read_ids("true"), [])
 
+    def test_bom_is_ignored(self):
+        self.assertEqual(trace.read_ids("\ufeff[12]"), ["12"])
+        self.assertEqual(trace.read_ids("\ufeff12\n"), ["12"])
+
+    def test_broken_json_is_rejected(self):
+        for text in ("[12,", '{"id": ', "[{"):
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                trace.read_ids(text)
+
+    def test_markdown_lines(self):
+        self.assertEqual(trace.read_ids("REQ-12: login\n- REQ-13\n* #14 export\n1. REQ-15.\n2) 16\n"), ["12", "13", "14", "15", "16"])
+
     def test_json_without_ids(self):
         self.assertEqual(trace.read_ids(json.dumps({"count": 0})), [])
 
@@ -70,6 +82,12 @@ class Trace(unittest.TestCase):
         result = trace.trace(self.root, ["4321"], r"AB#{id}")
         self.assertEqual(result.covered, {"4321": ["tests/test_wi.py"]})
         self.assertEqual(result.unknown, {})
+
+    def test_pattern_is_literal_text(self):
+        write(self.root / "tests" / "test_lit.py", "# (AB)#4321 and [REQ:7]\n")
+        self.assertEqual(trace.trace(self.root, ["4321"], "(AB)#{id}").covered, {"4321": ["tests/test_lit.py"]})
+        self.assertEqual(trace.trace(self.root, ["7"], "[REQ:{id}]").covered, {"7": ["tests/test_lit.py"]})
+        self.assertEqual(trace.trace(self.root, ["4321"], "(AB)#{id}").unknown, {})
 
     def test_pattern_needs_placeholder(self):
         with self.assertRaisesRegex(ValueError, "{id}"):
@@ -129,6 +147,26 @@ class Cli(unittest.TestCase):
 
     def test_unreadable_file(self):
         self.assertEqual(self.run_cli(str(self.root / "nope.txt")), 2)
+
+    def test_utf16_file(self):
+        (self.root / "ids.txt").write_bytes("1\r\n".encode("utf-16"))
+        self.assertEqual(self.run_cli(str(self.root / "ids.txt")), 0)
+
+    def test_undecodable_file_exits_two(self):
+        (self.root / "ids.txt").write_bytes(b"\x81\x8d 1\n")
+        self.assertEqual(self.run_cli(str(self.root / "ids.txt")), 2)
+
+    def test_broken_json_exits_two(self):
+        write(self.root / "ids.json", "[1,")
+        self.assertEqual(self.run_cli(str(self.root / "ids.json")), 2)
+
+    def test_narrow_console_encoding_does_not_crash(self):
+        write(self.root / "tests" / "test_łódź.py", "REQ-1\n")
+        write(self.root / "ids.txt", "1\n")
+        narrow = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+        with contextlib.redirect_stdout(narrow):
+            self.assertEqual(self.run_cli(str(self.root / "ids.txt")), 0)
+            self.assertEqual(self.run_cli(str(self.root / "ids.txt"), "--json"), 0)
 
     def test_bad_pattern(self):
         write(self.root / "ids.txt", "1\n")

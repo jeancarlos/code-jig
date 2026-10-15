@@ -43,7 +43,7 @@ Default tag: `REQ-<id>`, anywhere in a test file, case-insensitive.
 | Jest, Vitest | `it("REQ-1234 rejects an expired token", ...)` |
 | pytest | `@pytest.mark.req("REQ-1234")`, with the `req` marker registered in the pytest config |
 
-Teams that already write Azure Boards links in tests can keep them: `--pattern "AB#{id}"`.
+Teams that already write Azure Boards links in tests can keep them: `--pattern "AB#{id}"`. The pattern is literal text with one `{id}` placeholder.
 
 ## 3. Run the trace
 
@@ -53,7 +53,7 @@ python -m harness trace ids.txt --path services/api
 python -m harness trace ids.txt --pattern "AB#{id}" --json
 ```
 
-It reads tracked test files (`tests/`, `__tests__/`, `*.test.ts`, `test_*.py`, `*Tests.cs`, `*.Tests/` projects and similar) and reports requirements with tests, `missing` requirements, and `unknown` IDs that tests cite but the list does not contain. Exit 0 when nothing is missing or unknown, 1 otherwise, 2 for unusable input.
+It reads test files that git tracks or would track (`tests/`, `__tests__/`, `*.test.ts`, `test_*.py`, `*Tests.cs`, `*.Tests/` projects and similar) and reports requirements with tests, `missing` requirements, and `unknown` IDs that tests cite but the list does not contain. Exit 0 when nothing is missing or unknown, 1 otherwise, 2 for unusable input.
 
 ## 4. Close the gaps
 

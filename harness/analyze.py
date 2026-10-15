@@ -5,17 +5,18 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable
 
 CATEGORIES = ("security", "secret", "dependency", "bug", "type", "complexity", "duplication")
-OPT_OUT = {"SEMGREP_SEND_METRICS": "off", "SEMGREP_ENABLE_VERSION_CHECK": "0", "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
-           "DOTNET_NOLOGO": "1", "KIOTA_CLI_TELEMETRY_OPTOUT": "1"}
+TOOL_ENV = {"SEMGREP_SEND_METRICS": "off", "SEMGREP_ENABLE_VERSION_CHECK": "0", "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+            "DOTNET_NOLOGO": "1", "KIOTA_CLI_TELEMETRY_OPTOUT": "1", "PYTHONUTF8": "1"}
 COGNITIVE, CYCLOMATIC, NLOC, PARAMS = 15, 15, 100, 7
 CODE_SUFFIXES = {".py", ".cs", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".vue", ".java", ".kt", ".go", ".rs", ".swift", ".php", ".rb", ".scala", ".lua", ".c", ".cc", ".cpp", ".h", ".hpp", ".m"}
 SKIP_DIRS = {".git", "node_modules", "bin", "obj", ".venv", "venv", "dist", "build", "__pycache__"}
@@ -29,7 +30,7 @@ DOTNET_COMPLEXITY = {"S3776", "S1541", "S138", "S107", "CA1502", "CA1505", "CA15
 DOTNET_SECURITY = {"CA2100", "S2068", "S2077", "S2245", "S3649", "S4423", "S4426", "S4433", "S4507", "S4790",
                    "S5332", "S5344", "S5443", "S5542", "S5547", "S5659", "S5773", "S6418"}
 MSBUILD = re.compile(r"^(.+?)\((\d+),\d+\): (warning|error) ([A-Za-z]+\d+): (.*?)(?: \[[^\]]*\])?$")
-MYPY = re.compile(r"^(.+?):(\d+): error: (.*?)(?:  \[([\w-]+)\])?$")
+MYPY = re.compile(r"^(.+?):(\d+)(?::\d+)*: error: (.*?)(?:  \[([\w-]+)\])?$")
 DUP_LOC = re.compile(r"^(.+):(\d+) ~ (\d+)$")
 
 
@@ -53,6 +54,7 @@ class Tool:
     hint: str = ""
     ok: tuple[int, ...] = (0,)
     reason: str = ""
+    binary: str = ""
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,7 @@ class Report:
     findings: list[Finding]
     skipped: list[tuple[str, str]]
     errors: list[tuple[str, str]]
+    ran: list[str] = field(default_factory=list)
 
 
 def detect(root: Path) -> set[str]:
@@ -177,7 +180,7 @@ def parse_ruff(out: str, root: Path, tmp: Path) -> list[Finding]:
         code = item.get("code")
         if not code:
             category, rule = "bug", "syntax"
-        elif code.startswith("S"):
+        elif re.fullmatch(r"S\d+", code):
             category, rule = "security", code
         elif code.startswith(("C90", "PLR09")):
             category, rule = "complexity", code
@@ -241,7 +244,8 @@ def parse_gitleaks(out: str, root: Path, tmp: Path) -> list[Finding]:
     report = tmp / "gitleaks.json"
     if not report.is_file() or not report.read_text(encoding="utf-8").strip():
         return []
-    return [Finding("secret", "gitleaks", r.get("RuleID", "secret"), rel(r["File"], root), int(r.get("StartLine") or 0), r.get("Description", ""))
+    return [Finding("secret", "gitleaks", r.get("RuleID", "secret"), rel(r["File"], root), int(r.get("StartLine") or 0),
+                    r.get("Description", "") + (f" (fingerprint {r['Fingerprint']})" if r.get("Fingerprint") else ""))
             for r in _json(report.read_text(encoding="utf-8"), list)]
 
 
@@ -284,6 +288,8 @@ def _dotnet_target(root: Path) -> list[str]:
     return []
 
 
+_GITLEAKS = ("--no-banner", "--redact", "--exit-code", "0", "--report-format", "json", "--report-path")
+
 TOOLS = [
     Tool("lizard", "any", _lizard_args, parse_lizard, hint="pip install lizard"),
     Tool("ruff", "python", lambda exe, root, tmp: [exe, "check", "--output-format", "json", "--no-cache", "--exit-zero", "--extend-select", "S,B", "."],
@@ -298,9 +304,10 @@ TOOLS = [
          parse_dotnet, lambda root: bool(_dotnet_target(root)), "install the .NET SDK", reason="no solution or project at the root"),
     Tool("semgrep", "any", lambda exe, root, tmp: [exe, "scan", "--metrics=off", "--disable-version-check", "--config", str(_semgrep_rules(root)), "--json", "--quiet", "."],
          parse_semgrep, lambda root: _semgrep_rules(root) is not None, "pip install semgrep", reason="no local rules (.semgrep.yml or .semgrep/)"),
-    Tool("gitleaks", "any", lambda exe, root, tmp: [exe, "git" if (root / ".git").exists() else "dir", "--no-banner", "--redact", "--exit-code", "0",
-                                                    "--report-format", "json", "--report-path", str(tmp / "gitleaks.json"), "."],
-         parse_gitleaks, hint="install gitleaks from its GitHub releases"),
+    Tool("gitleaks", "any", lambda exe, root, tmp: [exe, "dir", *_GITLEAKS, str(tmp / "gitleaks.json"), "."],
+         parse_gitleaks, hint="install gitleaks from its GitHub releases", binary="gitleaks"),
+    Tool("gitleaks-history", "any", lambda exe, root, tmp: [exe, "git", *_GITLEAKS, str(tmp / "gitleaks.json"), "."],
+         parse_gitleaks, lambda root: (root / ".git").exists(), "install gitleaks from its GitHub releases", reason="not a git repository", binary="gitleaks"),
     Tool("osv-scanner", "any", lambda exe, root, tmp: [exe, "scan", "source", "-r", "--offline", "--download-offline-databases", "--format", "json", "."],
          parse_osv, hint="install osv-scanner from its GitHub releases", ok=(0, 1, 128)),
 ]
@@ -310,42 +317,74 @@ def _first(text: str) -> str:
     return (text.strip().splitlines() or [""])[0][:300]
 
 
+def _kill_tree(proc: subprocess.Popen) -> None:
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except OSError:
+        proc.kill()
+
+
+def _execute(argv: list[str], root: Path, env: dict, timeout: int) -> tuple[int, str, str]:
+    group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
+    with subprocess.Popen(argv, cwd=root, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          text=True, encoding="utf-8", errors="replace", **group) as proc:
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except BaseException:
+            _kill_tree(proc)
+            proc.communicate()
+            raise
+    return proc.returncode, out, err
+
+
 def _run_one(t: Tool, exe: str, root: Path, env: dict, timeout: int) -> tuple[list[Finding], str | None]:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
         try:
-            r = subprocess.run(t.argv(exe, root, tmp), cwd=root, env=env, capture_output=True, text=True,
-                               encoding="utf-8", errors="replace", timeout=timeout)
+            code, out, err = _execute(t.argv(exe, root, tmp), root, env, timeout)
         except subprocess.TimeoutExpired:
             return [], f"timed out after {timeout}s"
         except OSError as e:
             return [], f"cannot run: {e}"
         try:
-            found = t.parse(r.stdout, root, tmp)
+            found = t.parse(out, root, tmp)
         except (ValueError, KeyError, TypeError, IndexError, AttributeError) as e:
-            return [], f"unreadable output: {e}; {_first(r.stderr)}"
-    if r.returncode not in t.ok and not found:
-        return [], f"exit {r.returncode}: {_first(r.stderr) or _first(r.stdout)}"
+            return [], f"unreadable output: {e}; {_first(err)}"
+    if code not in t.ok and not found:
+        return [], f"exit {code}: {_first(err) or _first(out)}"
     return found, None
+
+
+def _add_new(findings: list[Finding], seen: set, found: list[Finding]) -> None:
+    for f in found:
+        key = (f.tool, f.rule, f.path, f.line)
+        if key not in seen:
+            seen.add(key)
+            findings.append(f)
 
 
 def run_tools(tools: list[Tool], root: Path, stacks: set[str], path: str | None = None, timeout: int = 600) -> Report:
     report = Report([], [], [])
-    env = {**os.environ, **OPT_OUT}
+    env = {**os.environ, **TOOL_ENV}
     if path is not None:
         env["PATH"] = path
+    seen = set()
     for t in tools:
         if not stacks or (t.stack != "any" and t.stack not in stacks):
             continue
         if not t.applies(root):
             report.skipped.append((t.name, t.reason))
             continue
-        exe = resolve(t.name, root, t.stack, path)
+        exe = resolve(t.binary or t.name, root, t.stack, path)
         if exe is None:
             report.skipped.append((t.name, f"not installed; {t.hint}"))
             continue
         found, error = _run_one(t, exe, root, env, timeout)
-        report.findings.extend(found)
+        report.ran.append(t.name)
+        _add_new(report.findings, seen, found)
         if error:
             report.errors.append((t.name, error))
     return report
@@ -373,7 +412,13 @@ def render(report: Report, stacks: set[str], top: int = 10) -> list[str]:
     return out
 
 
+def utf8_stdout() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def cli(args) -> int:
+    utf8_stdout()
     root = Path(args.path).resolve()
     stacks = detect(root)
     if not stacks:
@@ -386,11 +431,14 @@ def cli(args) -> int:
         return 2
     report = run_tools(TOOLS, root, stacks, timeout=args.timeout)
     if keep is not None:
-        report = Report([f for f in report.findings if f.path in keep], report.skipped, report.errors)
+        report = Report([f for f in report.findings if f.path in keep], report.skipped, report.errors, report.ran)
     if args.json:
         print(json.dumps({"stacks": sorted(stacks), "findings": [asdict(f) for f in report.findings],
                           "skipped": report.skipped, "errors": report.errors}, ensure_ascii=False, indent=1))
     else:
         for line in render(report, stacks, args.top):
             print(line)
+    if not report.ran:
+        print("harness: no analyzer ran; install at least one of the skipped tools", file=sys.stderr)
+        return 2
     return 1 if report.findings or report.errors else 0

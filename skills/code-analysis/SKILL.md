@@ -18,7 +18,7 @@ python -m harness analyze --top 30        # more findings per category
 python -m harness analyze --json          # machine-readable
 ```
 
-Exit 0 means clean, 1 means findings or a tool error, 2 means no project or a bad `--base`.
+Exit 0 means clean, 1 means findings or a tool error, 2 means no project, a bad `--base`, or no analyzer installed.
 
 ## What runs
 
@@ -31,7 +31,7 @@ Exit 0 means clean, 1 means findings or a tool error, 2 means no project or a ba
 | tsc | Node, with `tsconfig.json` | Type errors |
 | dotnet build | .NET | Compiler and analyzer warnings, SonarAnalyzer and Roslynator included when the project references them |
 | semgrep | all, with `.semgrep.yml` or `.semgrep/` | Your own local rules only, run with `--metrics=off` |
-| gitleaks | all | Secrets in the git history (or files outside git); the secret itself is never printed |
+| gitleaks | all | Secrets in the working tree, uncommitted files included, and in the git history; the secret itself is never printed |
 | osv-scanner | all | Known vulnerabilities in lockfiles, with `--offline`: the first run downloads the vulnerability database, no project data leaves |
 
 The command sets `DOTNET_CLI_TELEMETRY_OPTOUT=1`, `SEMGREP_SEND_METRICS=off` and `KIOTA_CLI_TELEMETRY_OPTOUT=1` for every tool. Missing tools are listed as skipped with an install hint.

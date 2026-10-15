@@ -10,6 +10,8 @@ The core ships two stdlib commands and five skills that Codex uses when asked:
 - `harness trace` maps requirement IDs from any source to the test files that cite them.
 - Skills: `code-analysis`, `regression-tests`, `hld-trace`, `bug-hunt`, `codegen`.
 
+gitleaks runs twice: on the working tree, so uncommitted secrets are found before they are committed, and on the history when the folder is a git repository. A timed-out tool is killed with every process it started. Exit 2 means nothing could run, so an empty toolbox is never mistaken for a clean repo.
+
 Nothing is enforced: no blocking `Stop` hook, no gate. A tool is never downloaded at run time, every known telemetry opt-out is set, and a tool that crashes, times out or prints something unreadable becomes an error line, never a crash.
 
 ## Context
