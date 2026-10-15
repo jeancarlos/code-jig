@@ -2,6 +2,7 @@
 
 - Python 3.11+, stdlib only. No new dependencies.
 - Run tests: `python -m unittest discover -s tests -v`
+- A new or changed skill ships only after `harness skill-check skills/<name> --review --live` passes on Codex and its `.skill-check` stamp is committed with it; see [AGENTS.md](AGENTS.md).
 - Real-tool tests run when `HARNESS_REAL_TOOLS=1` is set and lizard, ruff, vulture, knip, gitleaks and osv-scanner are on `PATH`; CI runs them on Linux and Windows. A new parser for an external tool needs a captured-output unit test and, where the tool can run in CI, a real-tool test.
 - Read and write files with explicit utf-8; generated files use LF.
 - Paths via pathlib; must work with spaces and non-ASCII names on Windows and Linux.

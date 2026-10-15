@@ -1,0 +1,5 @@
+[[case]]
+prompt = "Apply the same mechanical change across every file in this repo: rename get_user to fetch_user. Then show me the result."
+fixture = "repo"
+sandbox = "workspace-write"
+output = ["fetch_user"]

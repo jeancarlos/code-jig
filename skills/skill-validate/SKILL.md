@@ -34,9 +34,19 @@ Spawn one `reviewer` subagent with the full SKILL.md text and this rubric. Do no
 
 Require one line per rule, `N | PASS or FAIL | shortest quote that decides it | one-line fix`, then `VERDICT: ship` or `VERDICT: fix N, N`. Prose instead of rows means the contract was not stated firmly enough: restate it and spawn again.
 
+## Pass 3: Codex runs it
+
+A skill that reads well can still name tools Codex does not have, or never trigger. After pass 2 passes and the skill is installed (`harness install`):
+
+```sh
+harness skill-check path/to/skill-dir --review --live
+```
+
+It needs an `evals.toml` next to SKILL.md with at least one `[[case]]` (`prompt`, and any of `commands`, `output`, `spawns`, `fixture`, `setup`, `sandbox`). It runs a Codex review on the `review` tier, then each case through `codex exec`, and writes `.skill-check` when everything passes. In the codex-harness repository that stamp is required in the same commit as the skill.
+
 ## Report
 
-Merge both passes into one table. Validation edits nothing unless the user asks for the fixes afterwards.
+Merge all three passes into one table: every FAIL and WARN, every rubric row, the Codex review verdict and each live case. Validation edits nothing. When the user asks for the fixes, apply them and run all three passes again.
 
 ## Common mistakes
 

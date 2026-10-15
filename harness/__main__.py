@@ -58,6 +58,12 @@ def build_parser() -> argparse.ArgumentParser:
     gh.add_argument("name")
     gh.add_argument("rest", nargs="*")
     gh.add_argument("--prose", action="store_true")
+    sk = sub.add_parser("skill-check")
+    sk.add_argument("skills", nargs="+")
+    sk.add_argument("--review", action="store_true")
+    sk.add_argument("--live", action="store_true")
+    sk.add_argument("--profile", default="default")
+    sk.add_argument("--codex-bin")
     cs = sub.add_parser("check-sources")
     cs.add_argument("files", nargs="+")
     return p
@@ -92,6 +98,8 @@ def main(argv: list[str] | None = None) -> int:
         from harness.scrub import cli
     elif args.cmd == "git-hook":
         from harness.gitgate import cli
+    elif args.cmd == "skill-check":
+        from harness.skillcheck import cli
     elif args.cmd == "check-sources":
         from harness.sources import cli
     else:

@@ -5,6 +5,7 @@ import json
 import os
 import threading
 import types
+from pathlib import Path
 import unittest
 from unittest import mock
 
@@ -148,6 +149,13 @@ class Sources(unittest.TestCase):
         claims = sources.load([str(path)])
         self.assertEqual([c.verdict for c in claims], ["malformed", "malformed"])
         self.assertIn("e.jsonl:2", claims[1].where)
+
+    def test_patterns_are_expanded_here_not_by_the_shell(self):
+        root = tree(self)
+        for name in ("evidence-a.jsonl", "evidence-b.jsonl", "notes.txt"):
+            write(root / name, "")
+        self.assertEqual([Path(f).name for f in sources.expand([str(root / "evidence-*.jsonl")])], ["evidence-a.jsonl", "evidence-b.jsonl"])
+        self.assertEqual(sources.expand(["plain.jsonl"]), ["plain.jsonl"])
 
     def test_sandboxed_network_stops_early(self):
         with mock.patch.dict(os.environ, {"CODEX_SANDBOX_NETWORK_DISABLED": "1"}):

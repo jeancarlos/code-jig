@@ -1,0 +1,10 @@
+[[case]]
+prompt = "Some commits in this repo carry AI attribution. List them; do not rewrite anything yet."
+setup = [
+  "git config user.email me@example.com",
+  "git config user.name me",
+  "git commit -q --no-verify --allow-empty -m \"first\"",
+  "git commit -q --no-verify --allow-empty -m \"second\" -m \"Co-authored-by: Codex <noreply@openai.com>\"",
+]
+commands = ["harness scrub"]
+output = ["(?i)second"]

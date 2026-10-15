@@ -30,7 +30,7 @@ I use coding agents every day, and I kept running into the same four problems.
 - **Knowledge base**: one fact per file, indexed, pointed at by the generated AGENTS.md.
 - **Sourced research**: `web-consensus` runs researchers, challenger and judge on the model each job needs, and `harness check-sources` confirms every quoted sentence is really on the cited page.
 - **No AI attribution, no unreviewed prose**: an opt-in git gate strips AI co-author lines from commit messages, removes invisible characters from staged files, refuses agent-written docs until you commit them yourself, and refuses pushes that still carry attribution; `harness scrub` removes it from history without touching anything else.
-- **Skill linting**: `harness lint-skill` and the `skill-validate` skill check a skill before it ships.
+- **Skills proven on Codex**: `harness lint-skill` and the `skill-validate` skill check a skill's text; `harness skill-check --review --live` has Codex review it and run its test cases, and CI refuses a skill whose stamp is not current.
 - **Edit feedback**: after every agent write, syntax errors and undefined names in Python, JSON and TOML, and a notice when a test is deleted or skipped, go straight back to the model. Nothing blocks.
 - **Doctor**: checks the binary, the pins, every tier's model against your account's catalog, the subagent roles, managed requirements, the AGENTS.md budget and the size of the skills list sent with every request, and probes each tier for free.
 - **Works on locked-down machines**: native Windows support, no scripts required, respects administrator-managed Codex config and tells you how it differs from what was tested.

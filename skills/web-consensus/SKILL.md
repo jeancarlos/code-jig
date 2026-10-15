@@ -16,11 +16,11 @@ Cheap researchers gather evidence in parallel, a reviewer from another model fam
 | Link and quote check | `harness check-sources` | no model |
 | Verdict | `judge` | `deep` tier: the strongest model |
 
-Each subagent gets its own brief and nothing about the others, so no role can quietly agree with another, and never a fork of this conversation. You only route: write the evidence files, run the script, pass material between roles. Without subagents, do the roles one after another and keep each role's notes in its own file.
+Each subagent gets its own brief and nothing about the others, so no role can quietly agree with another, and never a fork of this conversation. You only route: write the evidence files, run the script, pass material between roles. If `spawn_agent` is not available in this session, say so, then play each role yourself in order with its own notes file, and state in the verdict that it was not produced by the `judge` role.
 
 ## Flow
 
-1. **Evidence.** One `explorer` per angle. Each returns claim / URL / exact quote triples and nothing else. Write them to `evidence-<angle>.jsonl` in a scratch directory, one JSON object per line: `{"claim": "...", "url": "...", "quote": "..."}`.
+1. **Evidence.** One `explorer` per angle. Each returns claim / URL / exact quote triples and nothing else. Write them to `evidence-<angle>.jsonl` in the workspace, one JSON object per line: `{"claim": "...", "url": "...", "quote": "..."}`.
    - `direct`: the question as asked.
    - `disconfirming`: the strongest evidence that the expected answer is wrong: corrections, retractions, errata, dissenting primary sources.
    - `primary-source`: official docs, specifications, source code, changelogs and papers only.
@@ -28,7 +28,7 @@ Each subagent gets its own brief and nothing about the others, so no role can qu
 
    Vary the wording of the searches between angles. The same index returns very different results for differently worded questions.
 
-2. **Check.** `harness check-sources evidence-*.jsonl`. It fetches each URL once and reports per claim: `ok` (the page contains the quote), `quote-missing`, `dead`, `blocked` (401/403/429: usually bot-blocking, not absence), `unreadable` (PDF or binary: quote unverified). It needs the network, so in a sandbox it must run with escalation; one run covers every file.
+2. **Check.** `harness check-sources "evidence-*.jsonl"` (the command expands the pattern itself, so the same line works in PowerShell). It fetches each URL once and reports per claim: `ok` (the page contains the quote), `quote-missing`, `dead`, `blocked` (401/403/429: usually bot-blocking, not absence), `unreadable` (PDF or binary: quote unverified). It needs the network, so in a sandbox it must run with escalation; one run covers every file.
 
 3. **Challenge.** A `reviewer` reads the evidence files and the check report, and is told not to search. It rules on every claim with one line each, `OK`, `DOUBT` or `MISMATCH`, then lists the questions that would settle each dispute.
 
@@ -41,7 +41,7 @@ Each subagent gets its own brief and nothing about the others, so no role can qu
 - A claim can only be agreed when `check-sources` says `ok`, or `unreadable` with the quote confirmed by a second source.
 - The searcher never dictates the answer alone. Say how many independent evidence sets agree.
 - Prefer primary sources over secondary ones, and recent over old when the subject moves.
-- When results look stale, rerun the researchers with live search: `codex -c web_search="live" ...`.
+- When results look stale, ask the user to start the session with live search (`codex -c web_search="live"`).
 - If web search is not available in this session, say so and stop. Do not answer from memory.
 
 ## Common mistakes

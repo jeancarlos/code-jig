@@ -28,11 +28,13 @@ Put tests where the repo already keeps them, with its framework, naming and fixt
 
 | Stack | Produce `coverage.xml` |
 |---|---|
-| Python | `coverage run -m pytest && coverage xml` |
+| Python | `coverage run -m pytest` then `coverage xml` (two commands; Windows PowerShell 5.1 has no `&&`) |
 | .NET | `DOTNET_CLI_TELEMETRY_OPTOUT=1 dotnet test --collect:"XPlat Code Coverage"` writes `TestResults/*/coverage.cobertura.xml` |
 | Node with c8 | `npx c8 --reporter=cobertura npm test` writes `coverage/cobertura-coverage.xml` |
 | Vitest | `npx vitest run --coverage --coverage.reporter=cobertura` |
 | Jest | `npx jest --coverage --coverageReporters=cobertura` |
+
+Windows PowerShell has no `NAME=value command` form: write the variable first in the same command, for example `$env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'; dotnet test`.
 
 Then:
 

@@ -1,0 +1,4 @@
+[[case]]
+prompt = "Before I commit plan.md, get a review of it from a model of another family."
+fixture = "repo"
+commands = ["cross-review"]

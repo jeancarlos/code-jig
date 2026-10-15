@@ -9,7 +9,7 @@ description: Use when the user asks to analyse code quality, find bugs, code sme
 
 ## Run it
 
-From the repository root, with the harness core on `PYTHONPATH` (POSIX: `PYTHONPATH=<core> python -m harness analyze`; Windows PowerShell: `$env:PYTHONPATH = "<core>"; py -3 -m harness analyze`):
+From the repository root run `harness analyze` (the launcher installed with the pack). Without the launcher, point `PYTHONPATH` at the codex-harness checkout, the folder that contains `harness/` (POSIX: `PYTHONPATH=<checkout> python -m harness analyze`; Windows PowerShell: `$env:PYTHONPATH = "<checkout>"; py -3 -m harness analyze`):
 
 ```
 python -m harness analyze                 # whole repo
@@ -42,7 +42,7 @@ Analysis executes the repo's own code: `eslint.config.js`, MSBuild targets, mypy
 
 ## Fix in this order
 
-1. `secret`: rotate the secret first, then remove it. Removing it from the code does not un-leak it.
+1. `secret`: report it to the user first: the secret must be rotated (only its owner can, and only with their approval), then removed from the code. Removing it from the code does not un-leak it.
 2. `security`, then `dependency` (upgrade to the fixed version osv-scanner names).
 3. `bug` and `type`.
 4. `complexity`: extract functions, return early, replace flag arguments, split by responsibility. Behaviour must not change; run the tests before and after.

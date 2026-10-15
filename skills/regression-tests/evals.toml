@@ -1,0 +1,6 @@
+[[case]]
+prompt = "Fix this bug: divide(1, 0) in calc.py crashes, and it should return None instead."
+fixture = "repo"
+sandbox = "workspace-write"
+commands = ["unittest"]
+output = ["(?i)test"]

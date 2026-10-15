@@ -1,0 +1,3 @@
+[[case]]
+prompt = "Escreve a pauta de um artigo curto sobre por que usar git worktrees no dia a dia. Só a pauta, sem o texto."
+output = ["(?i)pauta"]

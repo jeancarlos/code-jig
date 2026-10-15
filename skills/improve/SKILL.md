@@ -10,7 +10,7 @@ Turn something learned into a durable change, in the right place, without leakin
 ## Start
 
 1. Run `python -m harness doctor` and fix any FAIL first.
-2. Read `overlay.toml` in the overlay (`$CODEX_HARNESS_OVERLAY` or the path the user gives). `core_writable` decides where you may write.
+2. Read `overlay.toml` in the overlay (`$CODEX_HARNESS_OVERLAY`, in PowerShell `$env:CODEX_HARNESS_OVERLAY`, or the path the user gives). `core_writable` decides where you may write.
 
 ## Where changes go
 

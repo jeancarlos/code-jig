@@ -1,0 +1,3 @@
+[[case]]
+prompt = "Grill me on this plan before I commit to it: next week we move every cron job on our servers to systemd timers in one go."
+output = ["(?i)round"]

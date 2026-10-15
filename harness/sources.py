@@ -1,5 +1,6 @@
 import http.client
 import ipaddress
+import glob
 import json
 import os
 import re
@@ -170,9 +171,17 @@ def fetch(url: str) -> tuple[str, str]:
         return "dead", str(getattr(e, "reason", e))
 
 
+def expand(patterns: list[str]) -> list[str]:
+    """File names with shell patterns expanded here, so PowerShell and cmd behave like a POSIX shell."""
+    out = []
+    for p in patterns:
+        out += sorted(glob.glob(p)) if glob.has_magic(p) else [p]
+    return out
+
+
 def load(files: list[str]) -> list[Claim]:
     claims = []
-    for name in files:
+    for name in expand(files):
         with open(name, encoding="utf-8-sig") as f:
             for n, line in enumerate(f, 1):
                 if not line.strip():

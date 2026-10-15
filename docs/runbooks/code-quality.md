@@ -62,6 +62,29 @@ The ID file may be UTF-8 or UTF-16 (what Windows PowerShell 5.1 writes with `>`)
 
 Exit 0 when every ID has a test and no test cites an unknown ID, 1 otherwise, 2 for unreadable or undecodable input, broken JSON, no IDs, or a pattern without `{id}`.
 
+### `harness skill-check`
+
+```sh
+harness skill-check skills/<name>                    # static checks only, no quota
+harness skill-check skills/<name> --review --live    # Codex review and live cases; writes .skill-check
+```
+
+Static checks: the skill lint, names that exist only in Claude Code (with the Codex equivalent), unknown `harness` commands, and an `evals.toml`. `--review` runs a Codex session on the `review` tier against a Codex-compatibility rubric; it must end in `VERDICT: ship`. `--live` needs the skill installed (`harness install`) and runs each `[[case]]` through `codex exec --json` in a scratch git repository:
+
+```toml
+[[case]]
+prompt = "Which requirements in design.md have tests and which are untested?"
+fixture = "repo"                 # copied from evals/repo
+commands = ["harness trace"]     # substrings of commands that must run
+output = ["REQ-2"]               # patterns the final answer must match
+spawns = 0                       # minimum spawn_agent calls
+sandbox = "read-only"            # or "workspace-write"
+setup = []                       # shell commands run in the repo first
+read_skill = true                # SKILL.md must be read
+```
+
+Every case costs one real Codex turn. In this repository a skill is committed only with a current `.skill-check`; see `AGENTS.md`.
+
 ## Skills
 
 | Skill | Ask for | What Codex does |

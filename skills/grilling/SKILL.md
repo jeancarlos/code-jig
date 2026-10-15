@@ -5,7 +5,7 @@ description: Use when the user wants a plan, decision, design or idea stress-tes
 
 # Grilling
 
-Interview the user until you both understand the decision the same way. Map it as a design tree: every decision branches into the decisions that hang off it.
+Run only when the user asks to be grilled or to stress-test something; never start a grilling on your own. Interview the user until you both understand the decision the same way. Map it as a design tree: every decision branches into the decisions that hang off it.
 
 Work the tree in rounds. The frontier is every decision whose prerequisites are already settled, which are the questions you can ask now without guessing answers you have not heard. Ask the frontier at most three questions per round. Number each question, give the options, and give your recommendation. Then wait for the answers before the next round.
 
@@ -35,11 +35,11 @@ The user may answer `skip`. Take your recommendation, mark it `(assumed)`, and k
 
 ## Facts are yours, decisions are theirs
 
-When a question needs a fact from the environment (files, tools, docs, the web), find it yourself, with an `explorer` subagent when subagents are available. Never ask the user for something you can look up. Only questions that depend on a pending lookup wait for it; ask the rest of the frontier now. State the fact when you use it.
+When a question needs a fact from the environment (files, tools, docs, the web), find it yourself, with an `explorer` subagent when subagents are available. A web lookup from a sandbox without network needs an approved escalation; if it is refused, say the fact is unverified and ask the rest of the frontier. Never ask the user for something you can look up. Only questions that depend on a pending lookup wait for it; ask the rest of the frontier now. State the fact when you use it.
 
 ## Tree file
 
-Write `grill-<slug>.md` in a scratch directory and update it at the end of every round:
+Write `grill-<slug>.md` in the current workspace (never outside it, which the sandbox may refuse) and update it at the end of every round. In a read-only sandbox, keep the same structure in your reply instead:
 
 ```markdown
 # Grill: <topic>

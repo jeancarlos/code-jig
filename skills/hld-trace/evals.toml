@@ -1,0 +1,5 @@
+[[case]]
+prompt = "Which requirements in design.md have tests and which are untested?"
+fixture = "repo"
+commands = ["harness trace"]
+output = ["REQ-2"]

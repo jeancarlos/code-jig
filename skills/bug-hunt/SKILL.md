@@ -23,7 +23,7 @@ git log --since=90.days --name-only --format= | sort | uniq -c | sort -rn | head
 git grep -n -i -E "(TODO|FIXME|HACK|XXX).*(security|auth|unsafe|bypass|vuln|temp)|disable.*(auth|ssl|tls|verif)|skip.*validat"
 ```
 
-PowerShell: replace `grep -E` with `Select-String -Pattern`, and the churn line with `git log --since=90.days --name-only --format= | Group-Object | Sort-Object Count -Descending | Select-Object -First 20 Count, Name`.
+PowerShell: write a `NAME=value command` line as `$env:NAME = 'value'; command`, replace `grep -E` with `Select-String -Pattern`, and the churn line with `git log --since=90.days --name-only --format= | Group-Object | Sort-Object Count -Descending | Select-Object -First 20 Count, Name`.
 
 - A tracked `.env`, key or credentials file is CRITICAL before anything else: report it now. Removing it does not un-leak it; the secret must be rotated.
 - Past fix commits show what this codebase gets wrong; read them and look for the same mistake elsewhere.
@@ -71,7 +71,7 @@ With many candidates and a subagent tool available, split them by category, one 
 
 ## 3. Prove
 
-- A confirmed bug gets a failing test that reproduces it (the `regression-tests` skill). Fix it only if the user asked for fixes.
+- A confirmed bug gets a failing test that reproduces it (the `regression-tests` skill) when the code has a test framework; otherwise record the command and output that reproduce it. Fix it only if the user asked for fixes.
 - Logic that looks wrong but resists a single example gets a property test or a fuzz run.
 - For hotspot files, run mutation testing to see what the existing tests would miss.
 
@@ -93,7 +93,7 @@ Good properties: decode(encode(x)) == x; sorting is idempotent; a result stays i
 |---|---|---|
 | Python | atheris (Linux x86_64 wheels only) | a script calling `atheris.Setup(sys.argv, test_one_input)` and `atheris.Fuzz()`, run with `-max_total_time=60` |
 | TS/JS | jazzer.js | `npx jazzer <fuzz-target-module> -- -max_total_time=60`, the module exporting `fuzz(data)` |
-| .NET | SharpFuzz | a console project with the `SharpFuzz` package and the target assembly instrumented by the `sharpfuzz` tool (`dotnet tool install SharpFuzz.CommandLine` in a tool manifest). With afl-fuzz (Linux) the harness calls `Fuzzer.OutOfProcess.Run(stream => ...)`; with libfuzzer-dotnet (Windows and Linux) it calls `Fuzzer.LibFuzzer.Run(span => ...)`. Follow its README and `docs/libFuzzer.md` |
+| .NET | SharpFuzz | a console project with the `SharpFuzz` package and the target assembly instrumented by the `sharpfuzz` tool (`dotnet tool install SharpFuzz.CommandLine` in a tool manifest). With afl-fuzz (Linux) the harness calls `Fuzzer.OutOfProcess.Run(stream => ...)`; with libfuzzer-dotnet (Windows and Linux) it calls `Fuzzer.LibFuzzer.Run(span => ...)`. Follow its README (https://github.com/Metalnem/sharpfuzz) and `docs/libFuzzer.md` |
 | HTTP APIs | schemathesis | `schemathesis run http://localhost:<port>/openapi.json`, only against a local instance |
 
 Bound every run by time. Each crashing input becomes a test.
@@ -128,4 +128,4 @@ CRITICAL  Tenant check missing on invoice download
   Any signed-in user can fetch another tenant's invoice by ID. Proven by InvoicesTests.Download_OtherTenant_Forbidden (fails today).
 ```
 
-End with counts per severity, what was scanned, which tools `analyze` skipped, and the fuzzing and mutation runs with their durations. No finding without a location and either a failing test or the evidence that confirmed it.
+End with counts per severity, what was scanned, which tools `analyze` skipped, and the fuzzing and mutation runs with their durations. No finding without a location and its proof from step 3: a failing test, or where there is no test framework, the command and output that reproduce it.

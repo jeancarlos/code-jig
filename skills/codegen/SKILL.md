@@ -24,6 +24,8 @@ Generators and codemods are deterministic: the same input gives the same output,
 
 Kiota sends usage telemetry unless `KIOTA_CLI_TELEMETRY_OPTOUT=1` is set; set it in the script, not only in your shell.
 
+Windows PowerShell has no `NAME=value command` form: write the variable first in the same command, for example `$env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'; dotnet test`.
+
 ## Codemods with ast-grep
 
 ast-grep matches syntax, not text, so it does not touch strings or comments that merely look like code.
@@ -41,4 +43,4 @@ Use the stack's own templates: `dotnet new <template>` (with `DOTNET_CLI_TELEMET
 
 ## After generating
 
-Build, run the tests, and run `python -m harness analyze --base main` on the result.
+Then run the repository's own build and test commands (from its README, AGENTS.md or CI configuration) and `harness analyze --base main`, and report what changed, which generator or script made the change, and the build, test and analysis results.

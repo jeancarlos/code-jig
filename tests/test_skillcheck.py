@@ -1,0 +1,171 @@
+import json
+import sys
+import types
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from harness import install, paths, probe, skillcheck
+from tests.util import tree, write
+
+SKILL = "---\nname: demo\ndescription: Use when the user asks for a demo.\n---\n\n# Demo\n\nRun `harness doctor`.\n\n## Common mistakes\n\nNone.\n"
+EVALS = '[[case]]\nprompt = "show me a demo"\ncommands = ["harness doctor"]\noutput = ["(?i)done"]\n'
+
+FAKE = r'''
+import json, os, sys
+args = sys.argv[1:]
+mode = os.environ.get("FAKE_MODE", "good")
+if "-o" in args:
+    out = args[args.index("-o") + 1]
+    text = "1 | PASS | x | none\nVERDICT: ship\n" if mode == "good" else "1 | FAIL | Agent tool | use spawn_agent\nVERDICT: fix 1\n"
+    open(out, "w", encoding="utf-8").write(text)
+    sys.exit(0)
+home = os.environ["CODEX_HOME"]
+events = [{"type": "thread.started", "thread_id": "t"}]
+if mode == "good":
+    events.append({"type": "item.completed", "item": {"id": "1", "type": "command_execution",
+                   "command": "/bin/bash -lc 'cat ~/.agents/skills/demo/SKILL.md'", "aggregated_output": "", "exit_code": 0, "status": "completed"}})
+    events.append({"type": "item.completed", "item": {"id": "2", "type": "command_execution",
+                   "command": "/bin/bash -lc 'harness doctor'", "aggregated_output": "", "exit_code": 0, "status": "completed"}})
+    events.append({"type": "item.completed", "item": {"id": "3", "type": "collab_tool_call", "tool": "spawn_agent",
+                   "sender_thread_id": "t", "receiver_thread_ids": ["c"], "agents_states": {}, "status": "completed"}})
+events.append({"type": "item.completed", "item": {"id": "4", "type": "agent_message", "text": "Done." if mode == "good" else "No."}})
+events.append({"type": "turn.completed", "usage": {"input_tokens": 1200, "cached_input_tokens": 100, "output_tokens": 30}})
+for e in events:
+    print(json.dumps(e))
+'''
+
+
+class Static(unittest.TestCase):
+    def setUp(self):
+        self.root = tree(self)
+
+    def test_claude_only_names_fail_with_the_codex_equivalent(self):
+        text = "Dispatch the Agent tool with subagent_type: explorer, track it in TodoWrite, then WebFetch the page; see ~/.claude/skills."
+        found = skillcheck.claude_only(text)
+        self.assertEqual([name for name, _ in found], ["Agent tool", "subagent_type", "TodoWrite", "WebFetch", "~/.claude"])
+        self.assertTrue(any("spawn_agent" in hint for _, hint in found))
+        self.assertEqual(skillcheck.claude_only("Spawn an `explorer` subagent and run `harness doctor`."), [])
+
+    def test_unknown_harness_commands_fail(self):
+        text = "Run `harness doctor`, then\n```sh\npython -m harness nope --x\nharness lint-skill dir\n```\nThe harness core is fine."
+        self.assertEqual(skillcheck.unknown_commands(text), ["nope"])
+
+    def test_evals_are_required_and_parsed(self):
+        d = write(self.root / "demo" / "SKILL.md", SKILL).parent
+        self.assertIn("FAIL", [lv for lv, _ in skillcheck.static(d)])
+        write(d / "evals.toml", EVALS)
+        self.assertNotIn("FAIL", [lv for lv, _ in skillcheck.static(d)])
+        [case] = skillcheck.load_cases(d)
+        self.assertEqual((case.prompt, case.commands, case.read_skill, case.sandbox), ("show me a demo", ["harness doctor"], True, "read-only"))
+
+    def test_bad_evals_fail(self):
+        d = write(self.root / "demo" / "SKILL.md", SKILL).parent
+        for text in ("[[case]]\n", "[[case]]\nprompt = 'x'\nsandbox = 'danger-full-access'\n", "case = 1\n", "[[case\n"):
+            write(d / "evals.toml", text)
+            with self.subTest(text=text):
+                self.assertIn("FAIL", [lv for lv, _ in skillcheck.static(d)])
+
+
+class Events(unittest.TestCase):
+    def test_parse_and_judge(self):
+        lines = [json.dumps(e) for e in [
+            {"type": "item.completed", "item": {"type": "command_execution", "command": "cat /h/.agents/skills/demo/SKILL.md"}},
+            {"type": "item.completed", "item": {"type": "collab_tool_call", "tool": "spawn_agent"}},
+            {"type": "item.completed", "item": {"type": "agent_message", "text": "all done"}},
+            {"type": "turn.completed", "usage": {"input_tokens": 10}}]] + ["not json"]
+        run = skillcheck.parse_events("\n".join(lines))
+        self.assertEqual((run.spawns, run.message, run.input_tokens), (1, "all done", 10))
+        case = skillcheck.Case(prompt="p", commands=["SKILL.md"], output=["(?i)DONE"], spawns=1)
+        self.assertEqual(skillcheck.judge("demo", case, run), [])
+        miss = skillcheck.Case(prompt="p", commands=["harness doctor"], output=["nope"], spawns=2)
+        self.assertEqual(len(skillcheck.judge("other", miss, run)), 4)
+
+
+class Errors(unittest.TestCase):
+    def test_a_usage_limit_is_reported_as_untested_not_as_a_skill_failure(self):
+        stdout = "\n".join(json.dumps(e) for e in [
+            {"type": "error", "message": "You've hit your usage limit."},
+            {"type": "turn.failed", "error": {"message": "You've hit your usage limit."}}])
+        self.assertIn("usage limit", skillcheck.parse_events(stdout).error)
+
+
+class WithFakeCodex(unittest.TestCase):
+    def setUp(self):
+        self.root = tree(self)
+        self.skill = write(self.root / "skills" / "demo" / "SKILL.md", SKILL).parent
+        write(self.skill / "evals.toml", EVALS)
+        self.home = self.root / "codex home"
+        self.agents = self.root / "agents-skills"
+        script = write(self.root / "fake_codex.py", FAKE)
+        for target, value in ((probe, "command"), ):
+            p = mock.patch.object(target, value, lambda b: [sys.executable, str(script)])
+            p.start()
+            self.addCleanup(p.stop)
+        p = mock.patch.object(paths, "agents_skills", lambda: self.agents)
+        p.start()
+        self.addCleanup(p.stop)
+        install.install_skills({"demo": self.skill}, self.agents)
+
+    def args(self, **kw):
+        base = dict(skills=[str(self.skill)], review=True, live=True, profile="default", codex_bin=str(self.root / "codex"),
+                    codex_home=str(self.home))
+        return types.SimpleNamespace(**{**base, **kw})
+
+    def run_cli(self, mode="good", **kw):
+        with mock.patch.dict("os.environ", {"FAKE_MODE": mode}):
+            out = __import__("io").StringIO()
+            with mock.patch("sys.stdout", out), mock.patch("sys.stderr", out):
+                code = skillcheck.cli(self.args(**kw))
+        return code, out.getvalue()
+
+    def test_passing_run_writes_a_stamp_that_matches(self):
+        code, out = self.run_cli()
+        self.assertEqual(code, 0, out)
+        stamp = json.loads((self.skill / skillcheck.STAMP).read_text(encoding="utf-8"))
+        self.assertEqual(stamp["digest"], install.tree_digest(self.skill))
+        self.assertEqual(stamp["review"], "ship")
+        self.assertTrue(skillcheck.stamp_current(self.skill))
+        write(self.skill / "SKILL.md", SKILL + "More.\n")
+        self.assertFalse(skillcheck.stamp_current(self.skill))
+
+    def test_failing_review_or_live_writes_no_stamp(self):
+        code, out = self.run_cli("bad")
+        self.assertEqual(code, 1)
+        self.assertIn("VERDICT: fix 1", out)
+        self.assertIn("did not read", out)
+        self.assertFalse((self.skill / skillcheck.STAMP).exists())
+
+    def test_live_refuses_a_stale_install(self):
+        write(self.skill / "SKILL.md", SKILL + "Changed.\n")
+        code, out = self.run_cli(review=False)
+        self.assertEqual(code, 1)
+        self.assertIn("harness install", out)
+
+    def test_static_only_never_stamps(self):
+        code, _ = self.run_cli(review=False, live=False)
+        self.assertEqual(code, 0)
+        self.assertFalse((self.skill / skillcheck.STAMP).exists())
+
+    def test_stamp_and_evals_are_not_installed(self):
+        self.run_cli()
+        install.install_skills({"demo": self.skill}, self.agents)
+        self.assertFalse((self.agents / "demo" / "evals.toml").exists())
+        self.assertFalse((self.agents / "demo" / skillcheck.STAMP).exists())
+
+
+class CoreSkills(unittest.TestCase):
+    def test_every_core_skill_passes_static_checks(self):
+        for d in sorted(p.parent for p in (paths.CORE / "skills").glob("*/SKILL.md")):
+            with self.subTest(skill=d.name):
+                self.assertEqual([m for lv, m in skillcheck.static(d) if lv == "FAIL"], [])
+
+    def test_every_core_skill_passed_codex_review_and_live_test_in_its_current_form(self):
+        for d in sorted(p.parent for p in (paths.CORE / "skills").glob("*/SKILL.md")):
+            with self.subTest(skill=d.name):
+                self.assertTrue(skillcheck.stamp_current(d),
+                                f"run: harness skill-check skills/{d.name} --review --live (after harness install)")
+
+
+if __name__ == "__main__":
+    unittest.main()
