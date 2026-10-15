@@ -70,5 +70,9 @@ python3 -c "from harness.watermark import strip_watermark; strip_watermark('/pat
 The stripper:
 - Never rewrites a file if nothing matched (preserves mtime for build caches)
 - Preserves CRLF line endings and UTF-8 BOM (if present at start)
+- Preserves the original file's permissions (mode)
 - Fails gracefully: errors are logged to stderr, but the hook always returns success
+- Reports changes to stderr: when watermarks are stripped, the count per category is logged
+  - Claude Code: also reports via JSON systemMessage in the hook output
+- Refuses to follow symlinks outside the current working directory
 - Runs in under 50 ms typical (O(n) scan)

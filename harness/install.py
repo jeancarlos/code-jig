@@ -60,10 +60,16 @@ def write_generated(path: Path, text: str) -> Path | None:
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(text, encoding="utf-8", newline="\n")
     backup = None
+    mode = None
     if path.exists() and not is_generated(path):
         backup = _backup_name(path)
+        mode = path.stat().st_mode
         path.replace(backup)
+    elif path.exists():
+        mode = path.stat().st_mode
     os.replace(tmp, path)
+    if mode is not None:
+        path.chmod(mode)
     return backup
 
 
@@ -108,10 +114,14 @@ def write_merged(path: Path, text: str) -> Path | None:
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(text, encoding="utf-8", newline="\n")
     backup = None
+    mode = None
     if path.exists():
+        mode = path.stat().st_mode
         backup = _backup_name(path)
         shutil.copy2(path, backup)
     os.replace(tmp, path)
+    if mode is not None:
+        path.chmod(mode)
     return backup
 
 

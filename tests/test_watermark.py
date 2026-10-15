@@ -14,7 +14,8 @@ class WatermarkInvisibleChars(unittest.TestCase):
     def test_zero_width_space_removed(self):
         path = self.root / "test.py"
         write(path, f"x{chr(0x200b)}y = 1\n")
-        self.assertTrue(strip_watermark(str(path)))
+        result = strip_watermark(str(path))
+        self.assertIsInstance(result, dict)
         self.assertEqual(path.read_text(encoding="utf-8"), "xy = 1\n")
 
     def test_zero_width_non_joiner_removed(self):
@@ -281,7 +282,7 @@ class WatermarkBinary(unittest.TestCase):
         content = bytes(range(256))
         path.write_bytes(content)
         result = strip_watermark(str(path))
-        self.assertTrue(result)
+        self.assertIsInstance(result, dict)
         self.assertEqual(path.read_bytes(), content)
 
 
@@ -289,10 +290,10 @@ class WatermarkNonExistent(unittest.TestCase):
     def setUp(self):
         self.root = tree(self)
 
-    def test_nonexistent_file_returns_true(self):
+    def test_nonexistent_file_returns_dict(self):
         path = self.root / "nonexistent.py"
         result = strip_watermark(str(path))
-        self.assertTrue(result)
+        self.assertIsInstance(result, dict)
 
 
 class WatermarkClaudeCodeHook(unittest.TestCase):

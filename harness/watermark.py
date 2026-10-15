@@ -1,3 +1,5 @@
+import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -51,36 +53,77 @@ def is_binary(data: bytes) -> bool:
         return True
 
 
-def strip_watermark(path: str) -> bool:
+def strip_watermark(path: str) -> dict:
+    result = {"file": path, "zero_width": 0, "directional": 0, "attribution_lines": 0}
     try:
         p = Path(path)
         if not p.is_file():
-            return True
+            return result
+        if p.is_symlink() and not str(p.resolve()).startswith(str(Path.cwd())):
+            return result
         original = p.read_bytes()
         if is_binary(original):
-            return True
+            return result
         text = original.decode("utf-8")
         had_bom = original.startswith(BOM)
         cleaned = text
+        old_cleaned = cleaned
         cleaned = cleaned.replace(_NO_BREAK_SPACE, " ")
         cleaned = cleaned.replace(_NARROW_NO_BREAK_SPACE, " ")
         invisible_chars = "".join(k for k in INVISIBLE_CHARS.keys() if k not in (_NO_BREAK_SPACE, _NARROW_NO_BREAK_SPACE))
-        cleaned = re.sub(f"[{re.escape(invisible_chars)}]", "", cleaned)
+        for char in invisible_chars:
+            count = cleaned.count(char)
+            if count > 0:
+                result["zero_width"] += count
+            cleaned = cleaned.replace(char, "")
         cleaned = cleaned.replace(_SOFT_HYPHEN, "")
-        cleaned = re.sub(ATTRIBUTION_LINES, b"", cleaned.encode("utf-8")).decode("utf-8")
+        if old_cleaned != cleaned:
+            result["zero_width"] = len(old_cleaned) - len(cleaned.replace(_NO_BREAK_SPACE, " ").replace(_NARROW_NO_BREAK_SPACE, " "))
+        old_bytes = cleaned.encode("utf-8")
+        cleaned = re.sub(ATTRIBUTION_LINES, b"", old_bytes)
+        if old_bytes != cleaned:
+            result["attribution_lines"] = (len(old_bytes) - len(cleaned)) // 20
+        cleaned = cleaned.decode("utf-8")
         new_bytes = cleaned.encode("utf-8")
         if had_bom and not new_bytes.startswith(BOM):
             new_bytes = BOM + new_bytes
         if original == new_bytes:
-            return True
-        p.write_bytes(new_bytes)
-        return True
+            return result
+        mode = p.stat().st_mode
+        tmp = p.with_name(p.name + ".tmp")
+        tmp.write_bytes(new_bytes)
+        os.replace(str(tmp), str(p))
+        p.chmod(mode)
+        result["changed"] = True
+        return result
     except Exception as e:
         print(f"watermark: error processing {path}: {e}", file=sys.stderr)
-        return True
+        return result
+
+
+def report_result(result: dict, hook_type: str = "posttooluse") -> None:
+    if not result.get("changed"):
+        return
+    total_changes = result.get("zero_width", 0) + result.get("attribution_lines", 0)
+    msg = f"watermark: {result['file']}: stripped {total_changes} watermark items"
+    if result.get("zero_width"):
+        msg += f" ({result['zero_width']} invisible chars"
+        if result.get("attribution_lines"):
+            msg += f", {result['attribution_lines']} attribution lines)"
+        else:
+            msg += ")"
+    elif result.get("attribution_lines"):
+        msg += f" ({result['attribution_lines']} attribution lines)"
+    print(msg, file=sys.stderr)
+    if hook_type == "claude-code":
+        sys.stdout.write(json.dumps({
+            "systemMessage": msg,
+            "hookSpecificOutput": {"additionalContext": msg}
+        }) + "\n")
 
 
 def cli(args) -> int:
     for path in (args.path or []):
-        strip_watermark(path)
+        result = strip_watermark(path)
+        report_result(result, "cli")
     return 0
