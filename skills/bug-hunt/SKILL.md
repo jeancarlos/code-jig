@@ -67,7 +67,7 @@ When a bug is confirmed, check its siblings; bugs cluster.
 | Hardcoded credential | The other config files in the same folder |
 | Disposable or subscription not released | The other resources in the same class or component |
 
-With many candidates and a subagent tool available, split them by category, one subagent each, and give every subagent this reality gate and severity table.
+With many candidates and a subagent tool available, split them by category, one subagent each on the default role (judging a bug is not a lookup, so not `explorer`), and give every subagent this reality gate and severity table.
 
 ## 3. Prove
 

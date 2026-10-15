@@ -35,7 +35,7 @@ The user may answer `skip`. Take your recommendation, mark it `(assumed)`, and k
 
 ## Facts are yours, decisions are theirs
 
-When a question needs a fact from the environment (files, tools, docs, the web), find it yourself, with a subagent when one is available. Never ask the user for something you can look up. Only questions that depend on a pending lookup wait for it; ask the rest of the frontier now. State the fact when you use it.
+When a question needs a fact from the environment (files, tools, docs, the web), find it yourself, with an `explorer` subagent when subagents are available. Never ask the user for something you can look up. Only questions that depend on a pending lookup wait for it; ask the rest of the frontier now. State the fact when you use it.
 
 ## Tree file
 

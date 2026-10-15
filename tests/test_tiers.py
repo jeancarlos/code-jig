@@ -67,6 +67,14 @@ class Profile(unittest.TestCase):
         data = tomllib.loads(render_profile(Tier("default", "m", "medium"), policy))
         self.assertEqual(data["auto_review"]["extra_policy"], raw.removeprefix(chr(0xFEFF)).replace("\r\n", "\n").strip())
 
+    def test_compact_limit_is_a_top_level_key(self):
+        data = tomllib.loads(render_profile(Tier("default", "m", "medium"), "- rule", 150000))
+        self.assertEqual(data["model_auto_compact_token_limit"], 150000)
+        self.assertNotIn("model_auto_compact_token_limit", data["auto_review"])
+
+    def test_no_compact_limit_by_default(self):
+        self.assertNotIn("model_auto_compact_token_limit", tomllib.loads(render_profile(Tier("default", "m", "medium"), "")))
+
     def test_no_policy_file(self):
         ov = tree(self)
         self.assertEqual(tiers.extra_policy(ov), "")

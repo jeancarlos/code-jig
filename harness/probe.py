@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import subprocess
@@ -9,6 +10,9 @@ from harness.tiers import Tier
 Check = tuple[str, str, str]
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 SUMMARY = re.compile(r"^(model|reasoning effort): (.+)$")
+SKILLS_BLOCK = re.compile(r"<skills_instructions>(.*?)</skills_instructions>", re.DOTALL)
+SKILL_ENTRY = re.compile(r"^- (\S+?): .*\(file: .*$", re.MULTILINE)
+SKILLS_BUDGET = 8000
 
 
 def command(bin_path: Path) -> list[str]:
@@ -43,11 +47,35 @@ def _digest(home: Path) -> str:
     return first.split(MARKER_BODY, 1)[1].split(" ", 1)[0]
 
 
+def _prompt_texts(stdout: str) -> str:
+    try:
+        items = json.loads(stdout)
+    except ValueError:
+        return ""
+    return "\n".join(c["text"] for m in items if isinstance(m, dict) for c in m.get("content") or []
+                     if isinstance(c, dict) and isinstance(c.get("text"), str)) if isinstance(items, list) else ""
+
+
+def skills_budget(stdout: str) -> Check | None:
+    block = SKILLS_BLOCK.search(_prompt_texts(stdout))
+    if not block:
+        return None
+    entries = [(m.group(1), len(m.group(0).encode("utf-8"))) for m in SKILL_ENTRY.finditer(block.group(1))]
+    size = len(block.group(0).encode("utf-8"))
+    detail = f"{len(entries)} skills, {size} bytes in every request"
+    if size <= SKILLS_BUDGET:
+        return ("ok", "skills catalog", detail)
+    largest = ", ".join(f"{n} ({b})" for n, b in sorted(entries, key=lambda e: -e[1])[:5])
+    fix = 'turn off what this machine never uses with [[skills.config]] name = "<skill>" enabled = false in config.toml'
+    return ("warn", "skills catalog", f"{detail}, over {SKILLS_BUDGET}; largest: {largest}; {fix}")
+
+
 def check_prompt(bin_path: Path | None, home: Path, cwd: Path, ts: list[Tier], skills: list[str] | None = None) -> list[Check]:
     if bin_path is None:
         return [("warn", "prompt probe", "codex not found; skipped")]
     digest = _digest(home)
     checks = []
+    budget = None
     for t in ts:
         name = f"tier {t.name} prompt"
         r = run_codex(bin_path, home, ["--profile", t.name, "debug", "prompt-input", "ping"], cwd, 120)
@@ -61,7 +89,8 @@ def check_prompt(bin_path: Path | None, home: Path, cwd: Path, ts: list[Tier], s
             checks.append(("FAIL", name, f"skills not loaded: {', '.join(missing)}; run harness install"))
         else:
             checks.append(("ok", name, "profile loads" + (" and AGENTS.md reaches the prompt" if digest else "")))
-    return checks
+            budget = budget or skills_budget(r.stdout)
+    return checks + ([budget] if budget else [])
 
 
 def check_rules(bin_path: Path | None, home: Path, cwd: Path) -> list[Check]:

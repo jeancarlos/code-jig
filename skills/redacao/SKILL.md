@@ -22,7 +22,7 @@ Before writing a word, gather the facts yourself. Read the code, run the tests, 
 
 Write `apuracao-<slug>.md` in a scratch directory: one line per fact, with its source (`command`, `path:line` or URL). Mark the gaps and the things that contradict the story you expected. Those are often the best material.
 
-Subagents may gather, but verify anything they report that goes into the text. They summarise confidently and get file states wrong.
+`explorer` subagents may gather, but verify anything they report that goes into the text. They summarise confidently and get file states wrong.
 
 ## 2. Pauta
 

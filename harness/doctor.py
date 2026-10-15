@@ -9,7 +9,7 @@ import tomllib
 from pathlib import Path
 
 from harness import managed, paths, probe, tiers
-from harness.install import HOOK_STATUS, render_agents, render_profile, skill_sources, valid_hook_groups
+from harness.install import HOOK_STATUS, ROLE_TIERS, render_agents, render_profile, role_files, skill_sources, valid_hook_groups
 from harness.overlay import Overlay, load
 
 Check = tuple[str, str, str]
@@ -25,6 +25,7 @@ PACK_KEYS = (
     "ignore_rules",
     "allow_managed_hooks_only",
     "guardian_extra_policy",
+    "developer_instructions",
 )
 SHIM_MAX_BYTES = 1_000_000
 
@@ -164,7 +165,7 @@ def check_tiers(home: Path, core: Path, ov: Overlay) -> list[Check]:
         name = f"tier {t.name} profile"
         if not f.is_file():
             checks.append(("warn", name, f"{f} is missing; Codex silently uses the base config; run harness install"))
-        elif f.read_bytes() != render_profile(t, policy).encode("utf-8"):
+        elif f.read_bytes() != render_profile(t, policy, ov.auto_compact_token_limit).encode("utf-8"):
             checks.append(("warn", name, f"{f} is stale or edited; run harness install"))
         else:
             checks.append(("ok", name, f"{t.model} at {t.effort}"))
@@ -185,6 +186,28 @@ def check_tiers(home: Path, core: Path, ov: Overlay) -> list[Check]:
         same = family(by["review"].model) == family(by["default"].model)
         checks.append(("warn", "review family", f"review and default are both {family(by['default'].model)}; cross-family review catches different bugs")
                       if same else ("ok", "review family", f"{by['review'].model} vs {by['default'].model}"))
+    return checks
+
+
+def check_roles(home: Path, core: Path, ov: Overlay) -> list[Check]:
+    try:
+        ts = tiers.load(core, ov.root)
+    except ValueError:
+        return []
+    by = {t.name: t for t in ts}
+    checks: list[Check] = []
+    for name, text in role_files(core, ts).items():
+        role = name.removesuffix(".toml")
+        t = by[ROLE_TIERS[role]]
+        f = home / "agents" / name
+        if not f.is_file():
+            checks.append(("warn", f"{role} role", f"{f} is missing; subagents of that kind use the parent's model; run harness install"))
+        elif f.read_bytes() != text.encode("utf-8"):
+            checks.append(("warn", f"{role} role", f"{f} is stale or edited; run harness install"))
+        elif "default" in by and t.model == by["default"].model and t.effort == by["default"].effort:
+            checks.append(("warn", f"{role} role", f"{t.name} tier is the same as default ({t.model} at {t.effort}); the role saves nothing"))
+        else:
+            checks.append(("ok", f"{role} role", f"{role}s run {t.model} at {t.effort}"))
     return checks
 
 
@@ -265,6 +288,7 @@ def cli(args) -> int:
             checks += check_core(paths.CORE, ov)
             checks += check_global(home, paths.CORE, ov)
             checks += check_tiers(home, paths.CORE, ov)
+            checks += check_roles(home, paths.CORE, ov)
             checks += check_hook(home)
             checks += check_knowledge(ov)
             checks += check_superpowers(home)

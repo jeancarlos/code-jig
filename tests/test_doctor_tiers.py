@@ -31,6 +31,13 @@ class Tiers(unittest.TestCase):
     def test_all_ok(self):
         self.assertEqual(set(self.levels().values()), {"ok"})
 
+    def test_profile_with_compact_limit_is_current(self):
+        ov = Overlay(self.ov.root, "v0.2.0", True, 150000)
+        run(self.core, ov, self.home)
+        levels = {name: level for level, name, _ in check_tiers(self.home, self.core, ov)}
+        self.assertEqual(levels["tier default profile"], "ok")
+        self.assertEqual(self.levels()["tier default profile"], "warn")
+
     def test_model_not_in_catalog_fails_with_candidates(self):
         write(self.ov.root / "profiles.toml", 'default = "zzz"\nreview = "n-b"\n')
         run(self.core, self.ov, self.home)

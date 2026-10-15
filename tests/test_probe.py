@@ -1,6 +1,8 @@
+import json
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from harness import probe
@@ -107,3 +109,33 @@ class Probe(unittest.TestCase):
     def test_skill_name_in_prose_is_not_a_loaded_skill(self):
         [(level, _, _)] = probe.check_prompt(self.bin, self.home, self.cwd, [Tier("default", "m-a", "medium")], skills=["skills_instructions"])
         self.assertEqual(level, "FAIL")
+
+
+def prompt_with_skills(entries: list[tuple[str, int]]) -> str:
+    lines = "\n".join(f"- {name}: {'d' * size} (file: r1/{name}/SKILL.md)" for name, size in entries)
+    text = f"<skills_instructions>\n## Skills\n### Skill roots\n- `r1` = `/x`\n{lines}\n</skills_instructions>"
+    return json.dumps([{"type": "message", "content": [{"type": "input_text", "text": text}]}])
+
+
+class SkillsBudget(unittest.TestCase):
+    def test_small_catalog_is_ok(self):
+        level, _, detail = probe.skills_budget(prompt_with_skills([("a", 10), ("b", 20)]))
+        self.assertEqual(level, "ok")
+        self.assertIn("2 skills", detail)
+
+    def test_large_catalog_warns_naming_the_largest(self):
+        entries = [(f"s{i}", 300) for i in range(30)] + [("plugin:huge", 900)]
+        level, _, detail = probe.skills_budget(prompt_with_skills(entries))
+        self.assertEqual(level, "warn")
+        self.assertIn("31 skills", detail)
+        self.assertTrue(detail.split("largest: ")[1].startswith("plugin:huge"))
+        self.assertIn("[[skills.config]]", detail)
+
+    def test_no_catalog_gives_nothing(self):
+        self.assertIsNone(probe.skills_budget("[]"))
+        self.assertIsNone(probe.skills_budget("not json <skills_instructions> - a: b"))
+
+    def test_check_prompt_adds_one_budget_line(self):
+        with mock.patch.object(probe, "run_codex", return_value=subprocess.CompletedProcess([], 0, prompt_with_skills([("a", 5)]), "")):
+            checks = probe.check_prompt(Path("codex"), tree(self), tree(self), [Tier("default", "m", "low"), Tier("deep", "m", "high")])
+        self.assertEqual([c[1] for c in checks], ["tier default prompt", "tier deep prompt", "skills catalog"])

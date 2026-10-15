@@ -26,6 +26,20 @@ class LoadOverlay(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "true or false"):
             load(self.root)
 
+    def test_compact_limit_defaults_to_none(self):
+        write(self.root / "overlay.toml", 'core_version = "v0.1.0"\ncore_writable = true\n')
+        self.assertIsNone(load(self.root).auto_compact_token_limit)
+
+    def test_compact_limit_read(self):
+        write(self.root / "overlay.toml", 'core_version = "v0.1.0"\ncore_writable = true\nauto_compact_token_limit = 150000\n')
+        self.assertEqual(load(self.root).auto_compact_token_limit, 150000)
+
+    def test_compact_limit_must_be_a_positive_integer(self):
+        for bad in ("0", "-5", '"150000"', "true", "1.5"):
+            write(self.root / "overlay.toml", f'core_version = "v0.1.0"\ncore_writable = true\nauto_compact_token_limit = {bad}\n')
+            with self.subTest(bad=bad), self.assertRaisesRegex(ValueError, "auto_compact_token_limit must be a positive integer"):
+                load(self.root)
+
     def test_malformed_toml_names_file(self):
         write(self.root / "overlay.toml", "core_version = \n")
         with self.assertRaisesRegex(ValueError, "overlay.toml"):

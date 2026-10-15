@@ -50,12 +50,14 @@ def toml_str(s: str) -> str:
     return json.dumps(s, ensure_ascii=False).replace("\x7f", "\\u007f")
 
 
-def profile_body(tier: Tier, policy: str) -> str:
+def profile_body(tier: Tier, policy: str, compact: int | None = None) -> str:
     lines = [
         f"model = {toml_str(tier.model)}",
         f"model_reasoning_effort = {toml_str(tier.effort)}",
         'approvals_reviewer = "auto_review"',
     ]
+    if compact is not None:
+        lines.append(f"model_auto_compact_token_limit = {compact}")
     if policy:
         lines += ["", "[auto_review]", f"extra_policy = {toml_str(policy)}"]
     return "\n".join(lines) + "\n"

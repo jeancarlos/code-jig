@@ -227,15 +227,32 @@ def install_skills(sources: dict[str, Path], dest: Path) -> list[str]:
     return lines
 
 
-def render_profile(tier: tiers.Tier, policy: str) -> str:
-    return stamp(tiers.profile_body(tier, policy), "hash")
+def render_profile(tier: tiers.Tier, policy: str, compact: int | None = None) -> str:
+    return stamp(tiers.profile_body(tier, policy, compact), "hash")
+
+
+ROLE_TIERS = {"explorer": "bulk", "reviewer": "review"}
+
+
+def role_files(core: Path, ts: list[tiers.Tier]) -> dict[str, str]:
+    by = {t.name: t for t in ts}
+    out = {}
+    for role, tier in ROLE_TIERS.items():
+        template = core / "core" / "agents" / f"{role}.toml"
+        if tier in by and template.is_file():
+            t = by[tier]
+            head = f"model = {tiers.toml_str(t.model)}\nmodel_reasoning_effort = {tiers.toml_str(t.effort)}\n"
+            out[f"{role}.toml"] = stamp(head + template.read_text(encoding="utf-8-sig"), "hash")
+    return out
 
 
 def plan(core: Path, ov: Overlay, home: Path, claude_code_settings: Path | None = None) -> list[tuple[Path, str]]:
     skill_sources(core, ov.root)
     policy = tiers.extra_policy(ov.root)
     outputs = [(home / "AGENTS.md", render_agents(core, ov.root))]
-    outputs += [(home / f"{t.name}.config.toml", render_profile(t, policy)) for t in tiers.load(core, ov.root)]
+    ts = tiers.load(core, ov.root)
+    outputs += [(home / f"{t.name}.config.toml", render_profile(t, policy, ov.auto_compact_token_limit)) for t in ts]
+    outputs += [(home / "agents" / name, text) for name, text in role_files(core, ts).items()]
     outputs += [(home / "rules" / name, text) for name, text in rule_files(ov.root).items()]
     lib = home / "codex-harness" / "lib"
     outputs += [(lib / "harness" / p.name, stamp(p.read_text(encoding="utf-8"), "hash")) for p in sorted((core / "harness").glob("*.py"))]

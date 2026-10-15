@@ -7,7 +7,7 @@ description: Use when a question has to be settled against the live web rather t
 
 Researchers gather evidence, a blind challenger attacks it, the disputed points are researched again from scratch, every cited link is checked, and the verdict cites sources only.
 
-Use one subagent per role when subagents are available. Each subagent gets its own brief and nothing about the others, so no role can quietly agree with another. Without subagents, do the roles one after another and keep each role's notes in its own file.
+Use one subagent per role when subagents are available: researchers (steps 1 and 3) as `explorer`, which runs on the cheap bulk tier, and the challenger as `reviewer`, which runs on a different model family. Each subagent gets its own brief and nothing about the others, so no role can quietly agree with another. Without subagents, do the roles one after another and keep each role's notes in its own file.
 
 ## Flow
 
