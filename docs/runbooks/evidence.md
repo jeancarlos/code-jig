@@ -18,10 +18,10 @@ Every Codex session has a window: from its first recorded moment to its last, in
 
 | Group | A commit belongs here when |
 |---|---|
-| `harness` | Its committer date falls inside a session window for that repo. |
+| `harness` | Its author date falls inside a session window for that repo. |
 | `baseline` | It is in the same repo and falls outside every window: older than the first session, or written without Codex since. |
 
-The committer date is used because it is when the commit was made, even if the work was rebased or amended later.
+The author date is used because it survives a rebase, an amend or a cherry-pick; those reset the committer date to the moment they ran.
 
 ## The report, line by line
 
@@ -41,9 +41,11 @@ Mature means at least 14 days old: a younger commit has not had the time to be r
 ## Limits
 
 - This is correlation, not causation. Session work and baseline work are different tasks, and nobody picks which gets done with Codex at random. Read the numbers as a trend over months, not as proof.
+- Only commits reachable from the repo's current checkout are read. Work on a branch that is not merged into it is invisible, and a forge squash merge replaces the session's commits with one commit dated at the merge.
+- A session that commits several times and reworks its own lines counts that as rework, which works against the harness group.
 - Same-line rework compares line numbers between commits. Other commits in between shift lines, so the match is approximate in both directions.
 - The dashboard's test pass rate treats any command containing `pytest`, `unittest`, `dotnet test`, `npm test`, `pnpm test`, `yarn test`, `run test`, `vitest` or `jest` as a test run, the same rule as the report.
-- `--analyze` checks out each sampled commit in a temporary worktree with git hooks disabled and runs every installed analyzer except the history scan. It takes as long as `analyze` does, times N, times two groups.
+- `--analyze` checks out each sampled commit in a temporary worktree with git hooks disabled and runs every installed analyzer except the history scan. Findings count only when they sit on lines the commit added or changed. A commit whose checkout fails, where no analyzer runs, or where an analyzer errors is left out and reported as `could not be analyzed`. It takes as long as `analyze` does, times N, for each group in each repo.
 
 ## Using it on a managed machine
 

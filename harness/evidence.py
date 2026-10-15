@@ -1,3 +1,4 @@
+import codecs
 import json
 import re
 import statistics
@@ -28,7 +29,8 @@ LEFT JOIN (
 WHERE t.kind = 'main' AND t.started >= ?
 GROUP BY t.id
 """
-LOG_FORMAT = "--format=%x01%H%x00%cI%x00%s%x00%b%x00"
+RECORD = "\x00\x01"
+LOG_FORMAT = "--format=%x00%x01%H%x00%aI%x00%s%x00%b%x00"
 
 
 @dataclass(frozen=True)
@@ -44,8 +46,15 @@ def is_test(cmd: str) -> bool:
     return any(m in cmd for m in TEST_MARKERS)
 
 
+def _unquote(name: str) -> str:
+    if len(name) > 1 and name[0] == name[-1] == '"':
+        return codecs.escape_decode(name[1:-1].encode("utf-8"))[0].decode("utf-8", "replace")
+    return name
+
+
 def _file(line: str, old: str | None) -> tuple[str | None, str | None]:
-    name = line[6:].rstrip("\t") if line[4:6] in ("a/", "b/") else None
+    raw = _unquote(line[4:].rstrip("\t"))
+    name = raw[2:] if raw[:2] in ("a/", "b/") else None
     return (name, None) if line.startswith("---") else (old, name or old)
 
 
@@ -74,7 +83,7 @@ def _hunks(diff: str) -> dict[str, list[tuple[int, int, int, int]]]:
 
 def parse_log(text: str) -> list[Commit]:
     commits = []
-    for chunk in text.split("\x01")[1:]:
+    for chunk in text.split(RECORD)[1:]:
         sha, when, subject, body, diff = chunk.split("\x00", 4)
         commits.append(Commit(sha, datetime.fromisoformat(when), subject, body, _hunks(diff)))
     return commits
@@ -155,7 +164,7 @@ def repo_root(cwd: str | None) -> Path | None:
 
 def git_log(root: Path, since: datetime) -> list[Commit]:
     r = _git("-C", str(root), "log", "--no-merges", f"--since={_iso(since)}", LOG_FORMAT, "-p", "--unified=0",
-             "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames")
+             "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--src-prefix=a/", "--dst-prefix=b/")
     return parse_log(r.stdout) if r and r.returncode == 0 else []
 
 
@@ -249,7 +258,11 @@ def changed_lines(c: Commit) -> int:
     return sum(d for hunks in c.hunks.values() for _, _, _, d in hunks)
 
 
-def analyze_commit(root: Path, c: Commit, timeout: int = 600, path: str | None = None) -> list:
+def in_changed_lines(found: list, c: Commit) -> list:
+    return [f for f in found if any(d and n <= f.line < n + d for _, _, n, d in c.hunks.get(f.path, ()))]
+
+
+def analyze_commit(root: Path, c: Commit, timeout: int = 600, path: str | None = None) -> list | None:
     tools = [t for t in analyze.TOOLS if t.name != "gitleaks-history"]
     with tempfile.TemporaryDirectory() as tmp:
         hooks = Path(tmp) / "hooks"
@@ -258,16 +271,16 @@ def analyze_commit(root: Path, c: Commit, timeout: int = 600, path: str | None =
         g = ("-c", f"core.hooksPath={hooks}", "-C", str(root))
         made = _git(*g, "worktree", "add", "--detach", "--quiet", str(wt), c.sha)
         if not made or made.returncode != 0:
-            return []
+            return None
         try:
-            found = analyze.run_tools(tools, wt, analyze.detect(wt), path=path, timeout=timeout).findings
-            return [f for f in found if f.path in c.hunks]
+            ran = analyze.run_tools(tools, wt, analyze.detect(wt), path=path, timeout=timeout)
+            return in_changed_lines(ran.findings, c) if ran.ran and not ran.errors else None
         finally:
             _git(*g, "worktree", "remove", "--force", str(wt))
 
 
-def _quality(cats: Counter, lines: int, sampled: int) -> dict:
-    return {"sampled": sampled, "changed_lines": lines, "findings": dict(cats),
+def _quality(cats: Counter, lines: int, sampled: int, failed: int) -> dict:
+    return {"sampled": sampled, "failed": failed, "changed_lines": lines, "findings": dict(cats),
             "per_100_lines": {k: v * 100 / lines for k, v in cats.items()} if lines else {}}
 
 
@@ -276,9 +289,13 @@ def quality(root: Path, group: list[Commit], n: int, runner) -> dict | None:
         return None
     picked = sample(group, n)
     cats: Counter = Counter()
+    done = []
     for c in picked:
-        cats.update(f.category for f in runner(root, c))
-    return _quality(cats, sum(changed_lines(c) for c in picked), len(picked))
+        found = runner(root, c)
+        if found is not None:
+            done.append(c)
+            cats.update(f.category for f in found)
+    return _quality(cats, sum(changed_lines(c) for c in done), len(done), len(picked) - len(done))
 
 
 def _total_quality(items: list[dict | None]) -> dict | None:
@@ -288,7 +305,7 @@ def _total_quality(items: list[dict | None]) -> dict | None:
     cats: Counter = Counter()
     for q in items:
         cats.update(q["findings"])
-    return _quality(cats, sum(q["changed_lines"] for q in items), sum(q["sampled"] for q in items))
+    return _quality(cats, sum(q["changed_lines"] for q in items), sum(q["sampled"] for q in items), sum(q["failed"] for q in items))
 
 
 def repo_report(root: Path, sess: list[Session], since: datetime, now: datetime, analyze_n: int = 0, runner=None) -> dict:
@@ -337,7 +354,8 @@ def _group(name: str, g: dict) -> list[str]:
     q = g.get("quality")
     if q:
         cats = ", ".join(f"{k} {v:.1f}" for k, v in sorted(q["per_100_lines"].items())) or "none"
-        lines.append(f"  {'':<9} findings per 100 changed lines: {cats} ({q['sampled']} commits, {q['changed_lines']} lines)")
+        failed = f", {q['failed']} could not be analyzed" if q["failed"] else ""
+        lines.append(f"  {'':<9} findings per 100 changed lines: {cats} ({q['sampled']} commits, {q['changed_lines']} lines{failed})")
     return lines
 
 

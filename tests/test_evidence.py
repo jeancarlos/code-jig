@@ -45,9 +45,9 @@ class Windows(unittest.TestCase):
 
 class ParseLog(unittest.TestCase):
     def test_parse_log_hunks_and_fields(self):
-        text = ("\x01aaa\x002026-03-01T10:00:00+00:00\x00add\x00body line\n\x00\n"
+        text = ("\x00\x01aaa\x002026-03-01T10:00:00+00:00\x00add\x00body line\n\x00\n"
                 "diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n@@ -1,0 +1,3 @@\n+a\n+b\n+c\n@@ -9 +12 @@\n-o\n+n\n"
-                "\x01bbb\x002026-03-02T10:00:00-03:00\x00second\x00\x00")
+                "\x00\x01bbb\x002026-03-02T10:00:00-03:00\x00second\x00\x00")
         a, b = parse_log(text)
         self.assertEqual((a.sha, a.subject, a.body.strip()), ("aaa", "add", "body line"))
         self.assertEqual(a.hunks, {"x.py": [(1, 0, 1, 3), (9, 1, 12, 1)]})
@@ -55,14 +55,14 @@ class ParseLog(unittest.TestCase):
         self.assertEqual(b.hunks, {})
 
     def test_parse_log_binary_and_deleted_files(self):
-        text = ("\x01ccc\x002026-03-01T10:00:00+00:00\x00mixed\x00\x00\n"
+        text = ("\x00\x01ccc\x002026-03-01T10:00:00+00:00\x00mixed\x00\x00\n"
                 "diff --git a/img.png b/img.png\nindex 1..2 100644\nBinary files a/img.png and b/img.png differ\n"
                 "diff --git a/gone.py b/gone.py\ndeleted file mode 100644\n--- a/gone.py\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-x\n-y\n")
         [commit] = parse_log(text)
         self.assertEqual(commit.hunks, {"gone.py": [(1, 2, 0, 0)]})
 
     def test_parse_log_content_that_looks_like_headers(self):
-        text = ("\x01ddd\x002026-03-01T10:00:00+00:00\x00sql\x00\x00\n"
+        text = ("\x00\x01ddd\x002026-03-01T10:00:00+00:00\x00sql\x00\x00\n"
                 "diff --git a/q.sql b/q.sql\n--- a/q.sql\n+++ b/q.sql\n@@ -3 +3 @@\n--- old comment\n+++ new comment\n@@ -9,0 +10 @@\n+x\n")
         [commit] = parse_log(text)
         self.assertEqual(commit.hunks, {"q.sql": [(3, 1, 3, 1), (9, 0, 10, 1)]})
@@ -279,7 +279,7 @@ class Quality(unittest.TestCase):
         group = [c("a", 0, hunks={"x.py": [(0, 0, 1, 30)]}), c("b", 1, hunks={"y.py": [(0, 0, 1, 20)]})]
         found = {"a": [Finding("security", "ruff", "S1", "x.py", 1, "m")], "b": [Finding("complexity", "lizard", "c", "y.py", 1, "m")] * 2}
         q = evidence.quality(Path("."), group, 5, lambda root, commit: found[commit.sha])
-        self.assertEqual(q, {"sampled": 2, "changed_lines": 50, "findings": {"security": 1, "complexity": 2},
+        self.assertEqual(q, {"sampled": 2, "failed": 0, "changed_lines": 50, "findings": {"security": 1, "complexity": 2},
                              "per_100_lines": {"security": 2.0, "complexity": 4.0}})
         self.assertIsNone(evidence.quality(Path("."), group, 0, None))
 
@@ -290,7 +290,7 @@ class Quality(unittest.TestCase):
         commit(root, "a.py", "x = 1\n", "2026-03-01T10:00:00Z")
         [c0] = evidence.git_log(root, datetime(2026, 1, 1, tzinfo=timezone.utc))
         empty = tree(self)
-        self.assertEqual(evidence.analyze_commit(root, c0, path=str(empty)), [])
+        self.assertIsNone(evidence.analyze_commit(root, c0, path=str(empty)))
         listed = subprocess.run(["git", "-C", str(root), "worktree", "list"], capture_output=True, text=True, encoding="utf-8").stdout
         self.assertEqual(len(listed.strip().splitlines()), 1)
 
@@ -353,3 +353,53 @@ class Cli(unittest.TestCase):
                      "bug-hunt 2", "never fired: codegen", "allow 3", "4 of 40 calls escalated (10.0%)", "cache 94.0%"):
             with self.subTest(part=part):
                 self.assertIn(part, text)
+
+
+class ReviewFixes(unittest.TestCase):
+    def test_quoted_path_header(self):
+        text = ('\x00\x01eee\x002026-03-01T10:00:00+00:00\x00q\x00\x00\n'
+                'diff --git "a/q\\"uote.txt" "b/q\\"uote.txt"\nnew file mode 100644\n--- /dev/null\n+++ "b/q\\"uote.txt"\n@@ -0,0 +1 @@\n+x\n'
+                'diff --git "a/tab\\there.txt" "b/tab\\there.txt"\n--- "a/tab\\there.txt"\n+++ "b/tab\\there.txt"\n@@ -2 +2 @@\n-a\n+b\n')
+        [commit] = parse_log(text)
+        self.assertEqual(commit.hunks, {'q"uote.txt': [(0, 0, 1, 1)], "tab\there.txt": [(2, 1, 2, 1)]})
+
+    def test_findings_outside_changed_lines_do_not_count(self):
+        c0 = c("a", 0, hunks={"x.py": [(0, 0, 10, 3)], "z.py": [(5, 2, 4, 0)]})
+        keep = Finding("bug", "ruff", "B1", "x.py", 11, "m")
+        found = [keep, Finding("bug", "ruff", "B1", "x.py", 50, "m"), Finding("bug", "ruff", "B1", "y.py", 11, "m"),
+                 Finding("bug", "ruff", "B1", "x.py", 0, "m"), Finding("bug", "ruff", "B1", "z.py", 4, "m")]
+        self.assertEqual(evidence.in_changed_lines(found, c0), [keep])
+
+    def test_failed_commits_are_not_sampled(self):
+        group = [c("a", 0, hunks={"x.py": [(0, 0, 1, 10)]}), c("b", 1, hunks={"y.py": [(0, 0, 1, 10)]})]
+        q = evidence.quality(Path("."), group, 5, lambda root, commit: None if commit.sha == "b" else [])
+        self.assertEqual((q["sampled"], q["failed"], q["changed_lines"]), (1, 1, 10))
+
+
+@unittest.skipIf(shutil.which("git") is None, "git not installed")
+class ReviewFixesGit(unittest.TestCase):
+    def test_control_byte_in_content_does_not_split_records(self):
+        root = new_repo(self)
+        commit(root, "fix.txt", "8=FIX\x019=12\n", "2026-03-01T10:00:00Z")
+        commit(root, "b.txt", "b\n", "2026-03-02T10:00:00Z")
+        every = evidence.git_log(root, datetime(2026, 1, 1, tzinfo=timezone.utc))
+        self.assertEqual(sorted(p for c0 in every for p in c0.hunks), ["b.txt", "fix.txt"])
+
+    def test_noprefix_config_keeps_hunks(self):
+        root = new_repo(self)
+        commit(root, "a.py", "1\n", "2026-03-01T10:00:00Z")
+        extra = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "diff.noprefix", "GIT_CONFIG_VALUE_0": "true"}
+        with mock.patch.dict(os.environ, extra):
+            [c0] = evidence.git_log(root, datetime(2026, 1, 1, tzinfo=timezone.utc))
+        self.assertEqual(list(c0.hunks), ["a.py"])
+
+    def test_rebased_session_commit_stays_harness(self):
+        root = new_repo(self)
+        write(root / "a.py", "1\n")
+        git(root, "add", "-A")
+        env = {**os.environ, **GIT_ENV, "GIT_AUTHOR_DATE": "2026-03-01T10:30:00Z", "GIT_COMMITTER_DATE": "2026-03-01T15:00:00Z"}
+        subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", "rebased"], check=True, capture_output=True, env=env)
+        con = db(self, sessions=[("s1", "main", None, "2026-03-01T10:00:00Z", str(root))],
+                 usage=[("s1", "r1", "2026-03-01T11:00:00Z", 1, 0, 1)])
+        data = evidence.report(con, datetime(2026, 2, 1, tzinfo=timezone.utc), T0 + timedelta(days=30))
+        self.assertEqual((data["repos"][0]["harness"]["commits"], data["repos"][0]["baseline"]["commits"]), (1, 0))
