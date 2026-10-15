@@ -11,14 +11,6 @@ CURLY_QUOTES = str.maketrans({
 ELLIPSIS = "…"
 
 LLM_BOILERPLATE = [
-    "Example usage:",
-    "Example output:",
-    "Example:",
-    "Add more as needed",
-    "Rest of the code",
-    "... existing code ...",
-    "... your code ...",
-    "Your code here",
     "Certainly",
     "Here's the updated",
     "Here is the updated",
@@ -27,6 +19,11 @@ LLM_BOILERPLATE = [
     "Feel free to",
     "As an AI",
     "As an assistant",
+    "Add more as needed",
+    "Rest of the code",
+    "... existing code ...",
+    "... your code ...",
+    "Your code here",
 ]
 
 COMMENT_MARKERS = {

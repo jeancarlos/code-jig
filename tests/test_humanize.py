@@ -97,16 +97,6 @@ class HumanizeBoilerplate(unittest.TestCase):
     def setUp(self):
         self.root = tree(self)
 
-    def test_example_usage_removed(self):
-        path = self.root / "test.py"
-        write(path, "# Example usage:\ncode = 1\n")
-        result = humanize_file(str(path))
-        self.assertTrue(result.get("changed"))
-        self.assertEqual(result["boilerplate"], 1)
-        text = path.read_text()
-        self.assertNotIn("Example usage", text)
-        self.assertIn("code = 1", text)
-
     def test_add_more_as_needed_removed(self):
         path = self.root / "test.py"
         write(path, "# Add more as needed\ncode = 1\n")
