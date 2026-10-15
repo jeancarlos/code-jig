@@ -28,12 +28,14 @@ Before any `az` command below: the `azure-devops` extension (`az extension add -
 
   PowerShell: `Select-String -Path hld.md -Pattern "REQ-\d+" -AllMatches | ForEach-Object { $_.Matches.Value } | Sort-Object -Unique > ids.txt`.
 
-- GitHub issues: `gh issue list --label requirement --json number --jq ".[].number" > ids.txt`.
+- GitHub issues: `gh issue list --label requirement --json number --jq ".[].number" > ids.txt` (`--jq` is built into `gh`, so the line is the same in PowerShell).
 - A Markdown HLD in the repo: the same `grep` as the wiki case.
+
+When the source needs `az` or `gh` and `command -v az` (PowerShell: `Get-Command az`) finds nothing, do not install it: ask the user to paste the IDs or export the page, and continue from that file.
 
 ## 2. Tag the tests
 
-Default tag: `REQ-<id>`, anywhere in a test file, case-insensitive.
+For each requirement, search the test files for the names it uses (endpoint, function, field, error message) with `rg -i` (`grep -rni` where `rg` is missing; PowerShell: `Select-String`), read the matching tests, and add the requirement's tag to those whose assertions check it, in the form the framework below uses; tests written in step 4 get the tag as they are written. Default tag: `REQ-<id>`, anywhere in a test file, case-insensitive.
 
 | Framework | Example |
 |---|---|
@@ -63,4 +65,4 @@ It reads test files that git tracks or would track (`tests/`, `__tests__/`, `*.t
 
 ## 5. Report
 
-One table: each requirement ID, `covered`, `missing` or `unknown`, the test files that cite it, and for covered ones whether the assertions prove it. List the tests written and any deletion still waiting for the user.
+One table: each requirement ID, `covered`, `missing` or `unknown`, the test files that cite it, and for covered ones whether the assertions prove it. List the tests tagged, the tests written, and any deletion still waiting for the user. Commit nothing; the user reviews the diff.

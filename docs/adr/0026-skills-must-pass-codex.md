@@ -28,6 +28,8 @@ The user writes and uses these skills in Claude Code as well as Codex, and asked
 
 - A case cannot run a program on the checking machine (security review of the first version): the prompt goes to `codex exec` on stdin, so one starting with `-` is never read as an option such as a sandbox bypass; the shell `setup` list became declarative `commits` made with fixed git commands, hooks off and the message on stdin, because even git-only setup can run programs through aliases or `core.fsmonitor`; a fixture must be a folder directly inside `evals/` and is copied without `.git`.
 
+- Claude stood in for Codex once, at the user's request (2026-10-15). The account's limit ended the third run with 8 skills left. Claude reviewers, one per skill in a fresh context, got the same rubric and material as the Codex review and were rerun until each said `VERDICT: ship`; their stamps say `"reviewer": "claude"` and `"live": "not run"`. `stamp_current` accepts them, so a rerun of `harness skill-check --review --live` with Codex replaces them. Live runs from the third Codex run before that: 5 of the 8 passed; `bug-hunt` failed on a case that expected `average([])` to be reported (an empty-list error is defensible, the case now checks only `last_n`); `skill-validate` and `web-consensus` spawned no subagents, because Codex's `spawn_agent` description forbids spawning unless a skill asks for subagents explicitly and advises doing blocking work locally. Both skills now ask outright.
+
 ## Cost
 
 About 250 lines, sixteen tests with a fake `codex`, one `evals.toml` and small fixtures per skill. Each live case costs a real Codex turn on the account's quota; the stamp records the Codex version and date.

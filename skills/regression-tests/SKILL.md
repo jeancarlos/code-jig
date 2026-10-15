@@ -28,7 +28,7 @@ Put tests where the repo already keeps them, with its framework, naming and fixt
 
 | Stack | Produce `coverage.xml` |
 |---|---|
-| Python | `coverage run -m pytest` then `coverage xml` (two commands; Windows PowerShell 5.1 has no `&&`) |
+| Python | `coverage run -m pytest`, then `coverage xml` (in PowerShell 5.1, which has no `&&`: `coverage run -m pytest; coverage xml`) |
 | .NET | `DOTNET_CLI_TELEMETRY_OPTOUT=1 dotnet test --collect:"XPlat Code Coverage"` writes `TestResults/*/coverage.cobertura.xml` |
 | Node with c8 | `npx c8 --reporter=cobertura npm test` writes `coverage/cobertura-coverage.xml` |
 | Vitest | `npx vitest run --coverage --coverage.reporter=cobertura` |
@@ -47,3 +47,7 @@ Pass several reports at once for a multi-stack repo. Every uncovered changed lin
 ## Is the test good enough
 
 A test that never fails proves nothing. For important logic, run mutation testing on the changed files (the `bug-hunt` skill): a surviving mutant is a regression the tests would miss.
+
+## Report
+
+Name the test that failed before the change and passes after it, the full suite result, and each changed line diff-cover listed with the test that now covers it or the reason it stays uncovered.

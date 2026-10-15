@@ -65,6 +65,7 @@ Seções:
 2. ...
 Fica de fora: <what you will not cover and why>
 Fontes: <the strongest three facts from the apuração>
+Destino: <the file the final article goes to; ask the editor when the repo does not make it obvious>
 
 ❓ **Decisões** (at most 3, numbered, each with options a/b/c and your recommendation)
 ```
@@ -106,7 +107,7 @@ When every section is approved:
 1. Assemble the full text and save it as `rascunho-<slug>.md` in the workspace. Write the title, the description (frontmatter) and the first paragraph last, now that you know what the article proves.
 2. Run `python3 <skill dir>/checar.py rascunho-<slug>.md` (Windows: `py -3 <skill dir>\checar.py rascunho-<slug>.md`); `<skill dir>` is the folder this SKILL.md is in. LanguageTool is optional: it runs as a local server, and without one the script still prints the rhythm numbers. It prints the rhythm numbers and the LanguageTool pt-BR matches; it starts nothing, and tells you the `podman run` line when LanguageTool is down. Fix real spelling, agreement and crase errors. Ignore matches on English technical terms, and never take a suggestion that flattens the author's register. LanguageTool misses agreement errors ("nossas vida"), so it is not a substitute for reading. Then run the checklist in reference.md over the whole text. Read it aloud in your head; a sentence you would not say to a colleague gets rewritten.
 3. Present the full text with a final `Mudanças` list for anything the assembly changed, then ask for the last `aprova`.
-4. After approval, write it to the target file. Do not commit it. Say where it is and what the editor still has to do (translation, images, publishing).
+4. After approval, write it to the `Destino` file from the approved pauta. Do not commit it. Say where it is and what the editor still has to do (translation, images, publishing).
 
 ## Quitting early
 
