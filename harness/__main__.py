@@ -64,6 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
     sk.add_argument("--live", action="store_true")
     sk.add_argument("--profile", default="default")
     sk.add_argument("--codex-bin")
+    sk.add_argument("--trust-evals", action="store_true")
     cs = sub.add_parser("check-sources")
     cs.add_argument("files", nargs="+")
     return p

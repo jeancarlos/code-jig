@@ -193,10 +193,14 @@ def skill_sources(core: Path, overlay_root: Path) -> dict[str, Path]:
     return {**core_skills, **ov_skills}
 
 
+def installed_file(src: Path, f: Path) -> bool:
+    rel = f.relative_to(src)
+    return "__pycache__" not in rel.parts and not (len(rel.parts) == 1 and rel.name in NOT_INSTALLED) and rel.parts[0] != "evals"
+
+
 def tree_digest(src: Path) -> str:
     h = hashlib.sha256()
-    for f in sorted(p for p in src.rglob("*") if p.is_file() and p.name not in NOT_INSTALLED and "__pycache__" not in p.parts
-                    and "evals" not in p.relative_to(src).parts[:1]):
+    for f in sorted(p for p in src.rglob("*") if p.is_file() and installed_file(src, p)):
         h.update(f.relative_to(src).as_posix().encode() + b"\0" + f.read_bytes() + b"\0")
     return h.hexdigest()
 
@@ -219,8 +223,8 @@ def install_skills(sources: dict[str, Path], dest: Path) -> list[str]:
             lines.append(f"moved your previous {target} to {backup}")
         elif target.exists():
             shutil.rmtree(target)
-        shutil.copytree(src, target, ignore=lambda d, names: [n for n in names if n in NOT_INSTALLED or n == "__pycache__"
-                                                               or (n == "evals" and Path(d) == src)])
+        shutil.copytree(src, target, ignore=lambda d, names: [n for n in names if n == "__pycache__"
+                                                               or (n in (*NOT_INSTALLED, "evals") and Path(d) == src)])
         (target / SKILL_SIDECAR).write_text(tree_digest(target) + "\n", encoding="utf-8", newline="\n")
         lines.append(f"wrote {target}")
     for d in sorted(p for p in dest.iterdir() if p.is_dir() and p.name not in sources and (p / SKILL_SIDECAR).is_file()):

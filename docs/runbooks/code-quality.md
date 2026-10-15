@@ -85,7 +85,7 @@ read_skill = true                # SKILL.md must be read
 message = "fix: x\n\nCo-authored-by: Codex <noreply@openai.com>"
 ```
 
-A case never runs a command of its own: the prompt goes to Codex on stdin, commits are made with fixed git commands and hooks off, and a fixture is copied without any `.git` folder, so a skill's `evals.toml` cannot run a program on the machine that checks it.
+A case never runs a command of its own: the prompt goes to Codex on stdin, commits are made with fixed git commands and hooks off, and a fixture is copied without any `.git` folder, so a skill's `evals.toml` cannot run a program on the machine that checks it by itself. Codex still runs the commands a case's prompt leads it to, with your login, so `--live` on a skill outside this repository's `skills/` needs `--trust-evals`, given after reading its cases. A fixture may not hold symlinks. The stamp records a digest of the skill and one of `evals.toml` and `evals/`; a change to either makes it stale.
 
 Every case costs one real Codex turn. In this repository a skill is committed only with a current `.skill-check`; see `AGENTS.md`.
 

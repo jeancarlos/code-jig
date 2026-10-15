@@ -1,5 +1,6 @@
 {
  "digest": "504d46045ebbf2d281c8a4153e04762631ca6939d4b7a801f6960aeed1bd4e8f",
+ "evals": "d394b74b1feee7e60e03cf0248d5cf63aa64d1c76c9b79d474da974d9573ebe1",
  "review": "ship",
  "reviewer": "claude",
  "live": "not run",

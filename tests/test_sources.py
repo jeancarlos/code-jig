@@ -156,6 +156,8 @@ class Sources(unittest.TestCase):
             write(root / name, "")
         self.assertEqual([Path(f).name for f in sources.expand([str(root / "evidence-*.jsonl")])], ["evidence-a.jsonl", "evidence-b.jsonl"])
         self.assertEqual(sources.expand(["plain.jsonl"]), ["plain.jsonl"])
+        with self.assertRaises(FileNotFoundError):
+            sources.load([str(root / "evidnce-*.jsonl")])
 
     def test_sandboxed_network_stops_early(self):
         with mock.patch.dict(os.environ, {"CODEX_SANDBOX_NETWORK_DISABLED": "1"}):
