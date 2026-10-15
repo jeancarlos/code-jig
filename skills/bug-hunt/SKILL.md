@@ -16,7 +16,7 @@ Take scope from the request: a path, a category (security, logic, data integrity
 With the harness core on `PYTHONPATH`, or the `harness` launcher on `PATH`:
 
 ```
-python -m harness analyze --json [--base main] [path]
+harness analyze --json [--base main] [path]
 git ls-files | grep -E "(^|/)\.env($|\.)|\.(pem|key|pfx|p12)$|credentials\.json$|secrets?\.(json|ya?ml)$"
 git log --oneline -i -E --grep="security|cve|vuln|bypass|injection|xss|csrf|auth" -n 30
 git log --since=90.days --name-only --format= | sort | uniq -c | sort -rn | head -20
@@ -25,7 +25,7 @@ git grep -n -i -E "(TODO|FIXME|HACK|XXX).*(security|auth|unsafe|bypass|vuln|temp
 
 PowerShell: write a `NAME=value command` line as `$env:NAME = 'value'; command`, replace `grep -E` with `Select-String -Pattern`, and the churn line with `git log --since=90.days --name-only --format= | Group-Object | Sort-Object Count -Descending | Select-Object -First 20 Count, Name`.
 
-- A tracked `.env`, key or credentials file is CRITICAL before anything else: report it now. Removing it does not un-leak it; the secret must be rotated.
+- A tracked `.env`, key or credentials file is CRITICAL before anything else: open it, confirm it holds a real-looking secret and not a placeholder or example value, and report it first. Removing it does not un-leak it; the secret must be rotated.
 - Past fix commits show what this codebase gets wrong; read them and look for the same mistake elsewhere.
 - Hotspots, files that are both in the churn list and in `analyze`'s complexity findings, get read first.
 - Security TODOs are bugs the authors already found.
@@ -44,7 +44,7 @@ PowerShell: write a `NAME=value command` line as `$env:NAME = 'value'; command`,
 
 ## 2. Confirm: the reality gate
 
-For every candidate, read at least 20 lines around it and answer: is this a real problem in this code's actual context? A pattern match on safe code is a false positive; drop it silently. Skip test and mock code unless the test itself hides a bug.
+For every candidate, read at least 20 lines around it and answer: is this a real problem in this code's actual context? A pattern match on safe code is a false positive; drop it silently. Skip test and mock code, with one exception: a test that asserts the buggy behaviour is reported together with the bug it locks in.
 
 | Severity | Meaning |
 |---|---|
@@ -91,7 +91,7 @@ Good properties: decode(encode(x)) == x; sorting is idempotent; a result stays i
 
 | Stack | Tool | Run |
 |---|---|---|
-| Python | atheris (Linux x86_64 wheels only) | a script calling `atheris.Setup(sys.argv, test_one_input)` and `atheris.Fuzz()`, run with `-max_total_time=60` |
+| Python | atheris (Linux x86_64 wheels only; on Windows run it in WSL) | a script calling `atheris.Setup(sys.argv, test_one_input)` and `atheris.Fuzz()`, run with `-max_total_time=60` |
 | TS/JS | jazzer.js | `npx jazzer <fuzz-target-module> -- -max_total_time=60`, the module exporting `fuzz(data)` |
 | .NET | SharpFuzz | a console project with the `SharpFuzz` package and the target assembly instrumented by the `sharpfuzz` tool (`dotnet tool install SharpFuzz.CommandLine` in a tool manifest). With afl-fuzz (Linux) the harness calls `Fuzzer.OutOfProcess.Run(stream => ...)`; with libfuzzer-dotnet (Windows and Linux) it calls `Fuzzer.LibFuzzer.Run(span => ...)`. Follow its README (https://github.com/Metalnem/sharpfuzz) and `docs/libFuzzer.md` |
 | HTTP APIs | schemathesis | `schemathesis run http://localhost:<port>/openapi.json`, only against a local instance |

@@ -11,6 +11,8 @@ Requirements get IDs, tests cite them, and `harness trace` checks the links dete
 
 Write them to a file, one per line, or as JSON (a list of IDs, or objects with an `id` field).
 
+Before any `az` command below: the `azure-devops` extension (`az extension add --name azure-devops`), `az login` done in your own terminal, and defaults set with `az devops configure --defaults organization=<url> project=<name>`.
+
 - Azure DevOps work items (child items of a feature or epic):
 
   ```
@@ -25,8 +27,6 @@ Write them to a file, one per line, or as JSON (a list of IDs, or objects with a
   ```
 
   PowerShell: `Select-String -Path hld.md -Pattern "REQ-\d+" -AllMatches | ForEach-Object { $_.Matches.Value } | Sort-Object -Unique > ids.txt`.
-
-  The `az` commands need the `azure-devops` extension (`az extension add --name azure-devops`), `az login` done in your own terminal, and defaults set with `az devops configure --defaults organization=<url> project=<name>`.
 
 - GitHub issues: `gh issue list --label requirement --json number --jq ".[].number" > ids.txt`.
 - A Markdown HLD in the repo: the same `grep` as the wiki case.
@@ -48,9 +48,9 @@ Teams that already write Azure Boards links in tests can keep them: `--pattern "
 ## 3. Run the trace
 
 ```
-python -m harness trace ids.txt                     # or ids.json, or - for stdin
-python -m harness trace ids.txt --path services/api
-python -m harness trace ids.txt --pattern "AB#{id}" --json
+harness trace ids.txt                     # or ids.json, or - for stdin
+harness trace ids.txt --path services/api
+harness trace ids.txt --pattern "AB#{id}" --json
 ```
 
 It reads test files that git tracks or would track (`tests/`, `__tests__/`, `*.test.ts`, `test_*.py`, `*Tests.cs`, `*.Tests/` projects and similar) and reports requirements with tests, `missing` requirements, and `unknown` IDs that tests cite but the list does not contain. Exit 0 when nothing is missing or unknown, 1 otherwise, 2 for unusable input.
@@ -60,3 +60,7 @@ It reads test files that git tracks or would track (`tests/`, `__tests__/`, `*.t
 - Missing: write the test (the `regression-tests` skill), tagged.
 - Unknown: the requirement was renamed or removed, or the tag has a typo. Ask before deleting a test.
 - Covered: read each requirement next to its tests and confirm the assertions prove it. A tag on a test that checks something else is worse than no tag.
+
+## 5. Report
+
+One table: each requirement ID, `covered`, `missing` or `unknown`, the test files that cite it, and for covered ones whether the assertions prove it. List the tests written and any deletion still waiting for the user.

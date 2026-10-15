@@ -9,7 +9,7 @@ Turn something learned into a durable change, in the right place, without leakin
 
 ## Start
 
-1. Run `python -m harness doctor` and fix any FAIL first.
+1. Run `harness doctor` and fix any FAIL first.
 2. Read `overlay.toml` in the overlay (`$CODEX_HARNESS_OVERLAY`, in PowerShell `$env:CODEX_HARNESS_OVERLAY`, or the path the user gives). `core_writable` decides where you may write.
 
 ## Where changes go
@@ -29,10 +29,10 @@ With `core_writable = false`, write only to these overlay slots. Never edit the 
 
 - One fact per file: what is true, why it matters, how to apply it.
 - Before adding, search the index for a file that already covers it, and update that file instead.
-- Keep `INDEX.md` at 150 lines or fewer, one line each. Merge related facts and delete ones that are no longer true.
+- Keep `INDEX.md` at 150 lines or fewer, one line each. Merge related facts. When a fact is no longer true, name the file to the user and delete it only after they agree.
 
 ## Finish
 
-1. Run `python -m harness install`, then `python -m harness doctor`.
+1. Run `harness install`, then `harness doctor`.
 2. Summarise what changed and where.
 3. End with **Upstream candidates**: improvements that would help anyone, written in generic language. Leave out company and product names, hosts, people, numbers measured at work, and code copied from work. The user decides whether to restate them on another machine. Nothing is copied across.

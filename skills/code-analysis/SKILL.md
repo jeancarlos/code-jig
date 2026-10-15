@@ -12,10 +12,10 @@ description: Use when the user asks to analyse code quality, find bugs, code sme
 From the repository root run `harness analyze` (the launcher installed with the pack). Without the launcher, point `PYTHONPATH` at the codex-harness checkout, the folder that contains `harness/` (POSIX: `PYTHONPATH=<checkout> python -m harness analyze`; Windows PowerShell: `$env:PYTHONPATH = "<checkout>"; py -3 -m harness analyze`):
 
 ```
-python -m harness analyze                 # whole repo
-python -m harness analyze --base main     # only files changed since main, plus untracked ones
-python -m harness analyze --top 30        # more findings per category
-python -m harness analyze --json          # machine-readable
+harness analyze                 # whole repo
+harness analyze --base main     # only files changed since main, plus untracked ones
+harness analyze --top 30        # more findings per category
+harness analyze --json          # machine-readable
 ```
 
 Exit 0 means clean, 1 means findings or a tool error, 2 means no project, a bad `--base`, or no analyzer installed.
@@ -36,7 +36,7 @@ Exit 0 means clean, 1 means findings or a tool error, 2 means no project, a bad 
 | gitleaks | all | Secrets in the working tree, uncommitted files included, and in the git history; the secret itself is never printed |
 | osv-scanner | all | Known vulnerabilities in lockfiles, with `--offline`: the first run downloads the vulnerability database, no project data leaves |
 
-The command sets `DOTNET_CLI_TELEMETRY_OPTOUT=1`, `SEMGREP_SEND_METRICS=off` and `KIOTA_CLI_TELEMETRY_OPTOUT=1` for every tool. Missing tools are listed as skipped with an install hint.
+`harness analyze` itself sets `DOTNET_CLI_TELEMETRY_OPTOUT=1`, `SEMGREP_SEND_METRICS=off` and `KIOTA_CLI_TELEMETRY_OPTOUT=1` for every tool, in any shell; there is nothing to export. Missing tools are listed as skipped with an install hint.
 
 Analysis executes the repo's own code: `eslint.config.js`, MSBuild targets, mypy plugins and the tools in `node_modules/.bin`. Run it only where you would run the repo's tests.
 
@@ -46,10 +46,10 @@ Analysis executes the repo's own code: `eslint.config.js`, MSBuild targets, mypy
 2. `security`, then `dependency` (upgrade to the fixed version osv-scanner names).
 3. `bug` and `type`.
 4. `complexity`: extract functions, return early, replace flag arguments, split by responsibility. Behaviour must not change; run the tests before and after.
-5. `unused`: delete it, after checking reflection, dependency injection, public API and framework entry points that tools cannot see.
+5. `unused`: remove the dead code (git keeps it), after checking reflection, dependency injection, public API and framework entry points that tools cannot see.
 6. `duplication`: extract the shared code only when both copies change for the same reason.
 
-Rerun with `--base main` to confirm the branch is clean.
+Rerun with `--base` and the branch this one will merge into (`main` when it exists; check with `git rev-parse --verify main`) to confirm the branch is clean. With no such branch, rerun on the whole repository.
 
 ## Add Sonar's rules to a repo
 

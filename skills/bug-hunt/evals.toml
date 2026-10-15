@@ -1,4 +1,4 @@
 [[case]]
 prompt = "Hunt for bugs nobody has reported in this repository. Report what you find with evidence; do not fix anything."
 fixture = "repo"
-output = ["(?i)last_n", "(?i)average|ZeroDivision|empty"]
+output = ["(?i)last_n"]

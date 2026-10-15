@@ -5,7 +5,7 @@ description: Use when a SKILL.md is about to ship or was just edited, when a ski
 
 # Validate a skill
 
-Two passes. A script decides everything a pattern can decide; a reviewer from another model family decides the rest, in a fresh context, because the author of a skill already knows what it meant to say.
+Three passes. A script decides everything a pattern can decide; a reviewer from another model family decides the rest, in a fresh context, because the author of a skill already knows what it meant to say.
 
 ## Pass 1: mechanical
 
@@ -13,11 +13,11 @@ Two passes. A script decides everything a pattern can decide; a reviewer from an
 harness lint-skill path/to/skill-dir
 ```
 
-`FAIL` breaks loading or a hard rule and exits 1. `WARN` is a judgement call. Fix every FAIL before pass 2.
+`FAIL` breaks loading or a hard rule and exits 1. `WARN` is a judgement call. Run pass 2 whatever pass 1 says: its FAILs go in the report with everything else.
 
 ## Pass 2: judgement
 
-Spawn one `reviewer` subagent with the full SKILL.md text and this rubric. Do not fork this conversation into it.
+This skill asks for a subagent: call `spawn_agent` with `agent_type` `reviewer` and a message holding the full SKILL.md text and this rubric, then wait for it. Do not fork this conversation into it, and do not judge the rubric yourself instead.
 
 | # | Rule |
 |---|---|

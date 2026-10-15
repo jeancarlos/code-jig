@@ -16,7 +16,7 @@ Cheap researchers gather evidence in parallel, a reviewer from another model fam
 | Link and quote check | `harness check-sources` | no model |
 | Verdict | `judge` | `deep` tier: the strongest model |
 
-Each subagent gets its own brief and nothing about the others, so no role can quietly agree with another, and never a fork of this conversation. You only route: write the evidence files, run the script, pass material between roles. If `spawn_agent` is not available in this session, say so, then play each role yourself in order with its own notes file, and state in the verdict that it was not produced by the `judge` role.
+This skill asks for subagents: every role in the table runs through `spawn_agent` with that `agent_type`, even when you wait for its result before the next step, because the point is a different model and a fresh context, not speed. Each subagent gets its own brief and nothing about the others, so no role can quietly agree with another, and never a fork of this conversation. You only route: write the evidence files, run the script, pass material between roles. If `spawn_agent` is not available in this session, say so, then play each role yourself in order with its own notes file, and state in the verdict that it was not produced by the `judge` role.
 
 ## Flow
 

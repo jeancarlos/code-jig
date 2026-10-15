@@ -13,7 +13,7 @@ description: Use when AI attribution leaked into git history - "Co-authored-by: 
 2. Show the list and get a yes for this repo.
 3. `harness scrub`. It writes a backup bundle into the git directory, rewrites local branches and tags, and prints one `git push --force-with-lease=...` command per branch. It never pushes.
 4. Pushing rewrites shared history. Get a yes for each push command, then run it exactly as printed: the lease refuses the push if someone pushed in the meantime.
-5. Every other clone of the repo: `git fetch`, then for each branch `git switch <branch>` and `git reset --keep origin/<branch>`. `--keep` refuses to discard uncommitted work.
+5. Every other clone of the repo, with a yes for each clone: `git fetch`, then for each branch the push rewrote run `git cherry origin/<branch> <branch>`. Rewritten commits show `-` (only their message changed); a `+` is a commit that exists only in that clone: stop and ask the user how to carry it over. No `origin/<branch>`: leave the branch alone. Otherwise `git switch <branch>` and `git reset --keep origin/<branch>`. `--keep` refuses to discard uncommitted work.
 6. Old commits stay reachable by SHA on the server (and in pull request refs) until the host garbage-collects them. Say so; removing them needs the hosting admin or recreating the repository, which only the user decides.
 
 ## Prevention
