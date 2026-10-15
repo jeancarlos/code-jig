@@ -191,7 +191,7 @@ class HumanizeCheck(unittest.TestCase):
                     self.assertEqual(main(["humanize", "--check", str(target)]), 1)
                 self.assertEqual(path.read_text(encoding="utf-8"), content)
                 self.assertEqual(path.stat().st_mtime_ns, before)
-                self.assertIn(str(path), err.getvalue())
+                self.assertIn(f"{path.name}: fixed 1 dashes", err.getvalue())
 
 
 if __name__ == "__main__":
