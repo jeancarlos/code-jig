@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from harness.install import HOOK_STATUS, hook_commands, merged_hooks, run, write_merged
+from harness.install import CLAUDE_CODE_WATERMARK_STATUS, HOOK_STATUS, hook_commands, merged_claude_code_hooks, merged_hooks, run, write_merged
 from harness.overlay import Overlay
 from tests.util import tree, write
 
@@ -116,3 +116,47 @@ class HookInterpreter(unittest.TestCase):
         self.assertIn(" -P -s -m harness ", windows)
         with mock.patch.object(sys, "_base_executable", "/opt/base/python3", create=True):
             self.assertEqual(install.interpreter(), "/opt/base/python3")
+
+
+class ClaudeCodeHooks(unittest.TestCase):
+    def setUp(self):
+        self.root = tree(self)
+        self.path = self.root / ".claude" / "settings.json"
+
+    def test_absent_file_gets_posttooluse_hooks(self):
+        data = json.loads(merged_claude_code_hooks(self.path, "cmd"))
+        self.assertIn("PostToolUse", data["hooks"])
+        self.assertEqual(len(data["hooks"]["PostToolUse"]), 4)
+        matchers = [g.get("matcher") for g in data["hooks"]["PostToolUse"]]
+        self.assertEqual(sorted(matchers), ["Edit", "MultiEdit", "NotebookEdit", "Write"])
+
+    def test_user_hooks_survive_and_ours_are_replaced(self):
+        user = {"hooks": {"PostToolUse": [
+            {"matcher": "OtherTool", "hooks": [{"type": "command", "command": "x"}]},
+            {"hooks": [{"type": "command", "command": "notify"}]}
+        ]}}
+        write(self.path, json.dumps(user))
+        once = merged_claude_code_hooks(self.path, "cmd1")
+        write(self.path, once)
+        data = json.loads(merged_claude_code_hooks(self.path, "cmd2"))
+        watermarks = [g for g in data["hooks"]["PostToolUse"] if any(
+            h.get("statusMessage") == CLAUDE_CODE_WATERMARK_STATUS for h in g.get("hooks") or [])]
+        self.assertEqual(len(watermarks), 4)
+        other = [g for g in data["hooks"]["PostToolUse"] if g.get("matcher") == "OtherTool"]
+        self.assertEqual(len(other), 1)
+        notify = [g for g in data["hooks"]["PostToolUse"] if not g.get("matcher") and not any(
+            h.get("statusMessage") for h in g.get("hooks") or [])]
+        self.assertEqual(len(notify), 1)
+
+    def test_watermark_hooks_have_correct_status(self):
+        data = json.loads(merged_claude_code_hooks(self.path, "cmd"))
+        for group in data["hooks"]["PostToolUse"]:
+            if group.get("statusMessage") == CLAUDE_CODE_WATERMARK_STATUS:
+                self.assertEqual(group["hooks"][0]["type"], "command")
+                self.assertIn("cmd", group["hooks"][0]["command"])
+
+    def test_write_merged_settings_backs_up_only_on_change(self):
+        write(self.path, '{"hooks": {}}\n')
+        self.assertIsNotNone(write_merged(self.path, '{"hooks": {"PostToolUse": []}}\n'))
+        self.assertIsNone(write_merged(self.path, '{"hooks": {"PostToolUse": []}}\n'))
+        self.assertEqual(len(list(self.path.parent.glob("settings.json.bak-*"))), 1)

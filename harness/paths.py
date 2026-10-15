@@ -20,3 +20,8 @@ def overlay_dir(arg: str | None) -> Path:
 
 def agents_skills() -> Path:
     return Path(os.environ.get("CODEX_HARNESS_SKILLS_DIR") or Path.home() / ".agents" / "skills").expanduser()
+
+
+def claude_code_settings() -> Path | None:
+    path = Path.home() / ".claude" / "settings.json"
+    return path if path.is_file() else None
