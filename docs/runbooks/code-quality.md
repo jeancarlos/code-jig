@@ -20,7 +20,7 @@ It finds the stacks from marker files at the given path (`*.sln` or `*.slnx` the
 
 ```
 analyze: python
-security 2  secret 0  dependency 1  bug 7  type 0  complexity 3  duplication 1
+security 2  secret 0  dependency 1  bug 7  type 0  unused 4  complexity 3  duplication 1
 == security (2)
   app/db.py:41  S608  Possible SQL injection vector through string-based query construction
   ...
@@ -34,10 +34,12 @@ Exit 0: clean. Exit 1: findings or a tool error. Exit 2: no project found, a bad
 |---|---|---|
 | lizard | always, on source files that git tracks or would track (ignored files are skipped) | `complexity` above cognitive 15 (Sonar's default for S3776), cyclomatic 15, 100 lines of code or 7 parameters (the harness's limits); `duplication` for repeated blocks |
 | ruff | Python | `S` followed by digits (the bandit rules) security, `C90*`/`PLR09*` complexity, the rest bug; the repo's ruff config applies, plus `S` and `B` |
+| vulture | Python | `unused`: dead functions, classes, imports and unreachable code at 80% confidence or more |
 | mypy | Python with a mypy config | type |
 | eslint | Node with an eslint config | `sonarjs/*` complexity and security rules mapped, `security/*` security, the rest bug |
+| knip | Node | `unused` files, exports, types and dependencies; `bug` for unlisted or unresolved imports and import cycles |
 | tsc | Node with `tsconfig.json` | type |
-| dotnet build | .NET with a solution or project at the root | `S3776` and other complexity rules, `CA3*`, `CA5*` and known Sonar security rules as security, `CS*` as type, the rest bug |
+| dotnet build | .NET with a solution or project at the root | `S3776` and other complexity rules, `CA3*`, `CA5*` and known Sonar security rules as security, `CS*` as type, NuGet audit warnings `NU1901`-`NU1904` as dependency (project-level warnings carry no line), the rest bug |
 | semgrep | `.semgrep.yml`, `.semgrep.yaml` or `.semgrep/` exists | security |
 | gitleaks | always on the working tree, uncommitted and untracked files included (ignored files skipped); again on the git history when `.git` exists | secret, never printing the secret; the message carries gitleaks' fingerprint |
 | osv-scanner | always | dependency |
@@ -67,7 +69,7 @@ Exit 0 when every ID has a test and no test cites an unknown ID, 1 otherwise, 2 
 | `code-analysis` | "analyse this", "what would Sonar say" | Runs `harness analyze`, fixes by category (secrets first), sets up Sonar rule packages only with your agreement |
 | `regression-tests` | bug fixes, "is this covered" | Failing test first, then diff-cover on the changed lines |
 | `hld-trace` | "does this follow the HLD" | Pulls requirement IDs (Azure DevOps, GitHub issues, Markdown), runs `harness trace`, closes gaps |
-| `bug-hunt` | "fuzz this", "would the tests catch it" | Property tests, coverage-guided fuzzing, mutation testing on changed files |
+| `bug-hunt` | "hunt for bugs", "fuzz this", "would the tests catch it" | Deterministic recon, a reality gate on every candidate, proof by failing test; property tests, fuzzing (including SharpFuzz for .NET), mutation testing; osv.dev lookups and `osv-scanner fix`; trivy and PSRule for infrastructure code; bisect, flaky-test and differential techniques |
 | `codegen` | API clients, codemods, scaffolding | NSwag, Kiota, openapi-generator, ast-grep, the stack's templates, all from a script kept in the repo |
 
 ## Installing the tools
@@ -76,12 +78,12 @@ None are required; each missing one is reported as skipped. Install them as the 
 
 | Tool | Install |
 |---|---|
-| lizard, ruff, mypy, semgrep, diff-cover | `pip install` (or the project's dev dependency file) |
-| eslint, eslint-plugin-sonarjs, eslint-plugin-security, typescript | `npm install -D` |
+| lizard, ruff, vulture, mypy, semgrep, diff-cover | `pip install` (or the project's dev dependency file) |
+| eslint, eslint-plugin-sonarjs, eslint-plugin-security, typescript, knip | `npm install -D` |
 | SonarAnalyzer.CSharp, Roslynator.Analyzers | `PackageReference` with `PrivateAssets="all"` in `Directory.Build.props` |
 | gitleaks, osv-scanner | release binaries from their GitHub pages, or the machine's package manager |
 
-CI pins the versions it tests against: lizard 1.24.1, ruff 0.17.0, gitleaks 8.30.1, osv-scanner 2.7.0.
+CI pins the versions it tests against: lizard 1.24.1, ruff 0.17.0, vulture 2.16, knip 6.41.0, gitleaks 8.30.1, osv-scanner 2.7.0.
 
 ## Privacy
 
@@ -89,6 +91,7 @@ CI pins the versions it tests against: lizard 1.24.1, ruff 0.17.0, gitleaks 8.30
 - Every tool runs with `DOTNET_CLI_TELEMETRY_OPTOUT=1`, `DOTNET_NOLOGO=1`, `SEMGREP_SEND_METRICS=off`, `SEMGREP_ENABLE_VERSION_CHECK=0` and `KIOTA_CLI_TELEMETRY_OPTOUT=1`.
 - semgrep runs only local rule files, with `--metrics=off` and `--disable-version-check`.
 - osv-scanner runs with `--offline --download-offline-databases`: it downloads the public vulnerability database and sends nothing about the project.
+- `dotnet build` runs NuGet's audit during restore, which asks nuget.org about the project's package names and versions, as every restore already does.
 - Python tools run with `PYTHONUTF8=1`, so file lists and output stay UTF-8 on Windows; `analyze` and `trace` write UTF-8 to the console too.
 - `harness analyze` executes the repo's own code (eslint configs, MSBuild targets, mypy plugins, `node_modules/.bin`). Run it only where you would run the repo's tests.
 

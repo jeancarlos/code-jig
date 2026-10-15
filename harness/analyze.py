@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable
 
-CATEGORIES = ("security", "secret", "dependency", "bug", "type", "complexity", "duplication")
+CATEGORIES = ("security", "secret", "dependency", "bug", "type", "unused", "complexity", "duplication")
 TOOL_ENV = {"SEMGREP_SEND_METRICS": "off", "SEMGREP_ENABLE_VERSION_CHECK": "0", "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
             "DOTNET_NOLOGO": "1", "KIOTA_CLI_TELEMETRY_OPTOUT": "1", "PYTHONUTF8": "1"}
 COGNITIVE, CYCLOMATIC, NLOC, PARAMS = 15, 15, 100, 7
@@ -30,6 +30,11 @@ DOTNET_COMPLEXITY = {"S3776", "S1541", "S138", "S107", "CA1502", "CA1505", "CA15
 DOTNET_SECURITY = {"CA2100", "S2068", "S2077", "S2245", "S3649", "S4423", "S4426", "S4433", "S4507", "S4790",
                    "S5332", "S5344", "S5443", "S5542", "S5547", "S5659", "S5773", "S6418"}
 MSBUILD = re.compile(r"^(.+?)\((\d+),\d+\): (warning|error) ([A-Za-z]+\d+): (.*?)(?: \[[^\]]*\])?$")
+MSBUILD_PROJECT = re.compile(r"^(.+?) : (warning|error) ([A-Za-z]+\d+): (.*?)(?: \[[^\]]*\])?$")
+VULTURE = re.compile(r"^(.+?):(\d+): (([^'(]+?)\s*(?:'[^']*')?) \((\d+)% confidence[^)]*\)$")
+KNIP_UNUSED = ("files", "dependencies", "devDependencies", "optionalPeerDependencies", "exports", "types", "nsExports", "nsTypes",
+               "enumMembers", "namespaceMembers", "duplicates", "catalog")
+KNIP_BROKEN = ("unlisted", "unresolved", "binaries", "cycles")
 MYPY = re.compile(r"^(.+?):(\d+)(?::\d+)*: error: (.*?)(?:  \[([\w-]+)\])?$")
 DUP_LOC = re.compile(r"^(.+):(\d+) ~ (\d+)$")
 
@@ -217,6 +222,8 @@ def parse_tsc(out: str, root: Path, tmp: Path) -> list[Finding]:
 
 
 def _dotnet_category(rule: str) -> str:
+    if re.fullmatch(r"NU190[1-4]", rule):
+        return "dependency"
     if rule in DOTNET_COMPLEXITY:
         return "complexity"
     if rule in DOTNET_SECURITY or rule.startswith(("CA3", "CA5", "CA23")):
@@ -226,13 +233,48 @@ def _dotnet_category(rule: str) -> str:
     return "bug"
 
 
+def _dotnet_lines(out: str, root: Path):
+    for line in (ln.strip() for ln in out.splitlines()):
+        m = MSBUILD.match(line)
+        if m:
+            yield m.group(4), m.group(1), int(m.group(2)), m.group(5)
+            continue
+        m = MSBUILD_PROJECT.match(line)
+        if m:
+            yield m.group(3), m.group(1), 0, m.group(4)
+
+
 def parse_dotnet(out: str, root: Path, tmp: Path) -> list[Finding]:
     seen: dict[tuple, Finding] = {}
-    for m in map(MSBUILD.match, (ln.strip() for ln in out.splitlines())):
-        if m:
-            f = Finding(_dotnet_category(m.group(4)), "dotnet", m.group(4), rel(m.group(1), root), int(m.group(2)), m.group(5))
-            seen.setdefault((f.path, f.line, f.rule, f.message), f)
+    for rule, path, line, message in _dotnet_lines(out, root):
+        f = Finding(_dotnet_category(rule), "dotnet", rule, rel(path, root), line, message)
+        seen.setdefault((f.path, f.line, f.rule, f.message), f)
     return list(seen.values())
+
+
+def parse_vulture(out: str, root: Path, tmp: Path) -> list[Finding]:
+    found = []
+    for m in map(VULTURE.match, out.splitlines()):
+        if m:
+            rule = re.sub(r"\W+", "-", m.group(4).strip().lower())
+            found.append(Finding("unused", "vulture", rule, rel(m.group(1), root), int(m.group(2)), f"{m.group(3)} ({m.group(5)}% confidence)"))
+    return found
+
+
+def _knip_item(entry: dict, key: str, item, root: Path) -> Finding:
+    category = "bug" if key in KNIP_BROKEN else "unused"
+    if isinstance(item, list):
+        names = " -> ".join(str(i.get("name", "")) for i in item)
+        return Finding(category, "knip", f"knip/{key}", rel(entry["file"], root), 0, f"{key}: {names}")
+    return Finding(category, "knip", f"knip/{key}", rel(entry["file"], root), int(item.get("line") or 0), f"{key}: {item.get('name', '')}")
+
+
+def parse_knip(out: str, root: Path, tmp: Path) -> list[Finding]:
+    issues = _json(out, dict).get("issues")
+    if not isinstance(issues, list):
+        raise ValueError("expected an issues list")
+    return [_knip_item(entry, key, item, root)
+            for entry in issues for key in KNIP_UNUSED + KNIP_BROKEN for item in entry.get(key) or []]
 
 
 def parse_semgrep(out: str, root: Path, tmp: Path) -> list[Finding]:
@@ -294,10 +336,14 @@ TOOLS = [
     Tool("lizard", "any", _lizard_args, parse_lizard, hint="pip install lizard"),
     Tool("ruff", "python", lambda exe, root, tmp: [exe, "check", "--output-format", "json", "--no-cache", "--exit-zero", "--extend-select", "S,B", "."],
          parse_ruff, hint="pip install ruff"),
+    Tool("vulture", "python", lambda exe, root, tmp: [exe, ".", "--min-confidence", "80", "--exclude", ",".join(sorted(SKIP_DIRS))],
+         parse_vulture, hint="pip install vulture", ok=(0, 3)),
     Tool("mypy", "python", lambda exe, root, tmp: [exe, "--no-error-summary", "--no-pretty", "--show-error-codes", "."],
          parse_mypy, _has_mypy_config, "pip install mypy", reason="no mypy config"),
     Tool("eslint", "node", lambda exe, root, tmp: [exe, ".", "-f", "json"], parse_eslint, _has_eslint_config,
          "npm install -D eslint eslint-plugin-sonarjs", reason="no eslint config"),
+    Tool("knip", "node", lambda exe, root, tmp: [exe, "--reporter", "json", "--no-progress"], parse_knip,
+         hint="npm install -D knip"),
     Tool("tsc", "node", lambda exe, root, tmp: [exe, "--noEmit", "--pretty", "false", "-p", "."], parse_tsc,
          lambda root: (root / "tsconfig.json").is_file(), "npm install -D typescript", reason="no tsconfig.json"),
     Tool("dotnet", "dotnet", lambda exe, root, tmp: [exe, "build", "--nologo", "--no-incremental", "-clp:NoSummary", *_dotnet_target(root)],

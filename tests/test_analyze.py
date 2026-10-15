@@ -189,6 +189,55 @@ class Parsers(unittest.TestCase):
             ("type", "CS0103", "Svc/C.cs"), ("bug", "RCS1163", "Svc/D.cs")])
         self.assertEqual(found[0].message, "Refactor this method")
 
+    def test_dotnet_project_level_warnings(self):
+        proj = str(self.root / "Api" / "Api.csproj")
+        out = "\n".join([
+            f"{proj} : warning NU1903: Package 'Newtonsoft.Json' 12.0.1 has a known high severity vulnerability, https://github.com/advisories/GHSA-5crp-9r3c-p9vr [{proj}]",
+            f"{proj} : warning NU1903: O pacote 'Newtonsoft.Json' 12.0.1 tem uma alta vulnerabilidade de gravidade conhecida, https://github.com/advisories/GHSA-5crp-9r3c-p9vr",
+            f"{proj} : warning NU1900: Error occurred while getting package vulnerability data",
+            f"{proj} : error NETSDK1045: The current .NET SDK does not support targeting .NET 99.0",
+        ])
+        found = analyze.parse_dotnet(out, self.root, self.tmp)
+        self.assertEqual([(f.category, f.rule, f.path, f.line) for f in found], [
+            ("dependency", "NU1903", "Api/Api.csproj", 0), ("dependency", "NU1903", "Api/Api.csproj", 0),
+            ("bug", "NU1900", "Api/Api.csproj", 0), ("bug", "NETSDK1045", "Api/Api.csproj", 0)])
+        self.assertIn("GHSA-5crp-9r3c-p9vr", found[0].message)
+        self.assertNotIn("[", found[0].message.split("https")[0])
+
+    def test_vulture(self):
+        out = textwrap.dedent("""\
+            m.py:1: unused import 'os' (90% confidence)
+            pkg/m.py:6: unused function 'unused_func' (60% confidence)
+            pkg/m.py:12: unreachable code after 'return' (100% confidence, 2 lines)
+            not a vulture line
+        """)
+        found = analyze.parse_vulture(out, self.root, self.tmp)
+        self.assertEqual([(f.category, f.rule, f.path, f.line) for f in found], [
+            ("unused", "unused-import", "m.py", 1), ("unused", "unused-function", "pkg/m.py", 6),
+            ("unused", "unreachable-code-after", "pkg/m.py", 12)])
+        self.assertEqual(found[0].message, "unused import 'os' (90% confidence)")
+
+    def test_knip(self):
+        out = json.dumps({"issues": [
+            {"file": "package.json", "dependencies": [{"name": "lodash", "line": 5, "col": 6}], "devDependencies": [], "unlisted": []},
+            {"file": "src/util.ts", "exports": [{"name": "helper", "line": 3, "col": 14}], "types": [{"name": "Shape", "line": 9}]},
+            {"file": "src/old.ts", "files": [{"name": "src/old.ts"}]},
+            {"file": "src/app.ts", "unlisted": [{"name": "chalk"}], "unresolved": [{"name": "./gone", "line": 2}]},
+            {"file": "src/a.ts", "cycles": [[{"name": "src/a.ts"}, {"name": "src/b.ts"}]]},
+        ]})
+        found = analyze.parse_knip(out, self.root, self.tmp)
+        self.assertEqual([(f.category, f.rule, f.path, f.line) for f in found], [
+            ("unused", "knip/dependencies", "package.json", 5), ("unused", "knip/exports", "src/util.ts", 3),
+            ("unused", "knip/types", "src/util.ts", 9), ("unused", "knip/files", "src/old.ts", 0),
+            ("bug", "knip/unlisted", "src/app.ts", 0), ("bug", "knip/unresolved", "src/app.ts", 2),
+            ("bug", "knip/cycles", "src/a.ts", 0)])
+        self.assertIn("helper", found[1].message)
+        self.assertIn("src/b.ts", found[-1].message)
+
+    def test_knip_rejects_wrong_shape(self):
+        with self.assertRaises(ValueError):
+            analyze.parse_knip("[]", self.root, self.tmp)
+
     def test_semgrep(self):
         out = json.dumps({"results": [{"check_id": "r.sql", "path": "a.py", "start": {"line": 3}, "extra": {"message": "sqli"}}], "errors": []})
         [f] = analyze.parse_semgrep(out, self.root, self.tmp)
@@ -366,6 +415,7 @@ class Render(unittest.TestCase):
         report = analyze.Report(f, [("mypy", "no mypy config")], [("tsc", "exit 3: boom")])
         text = "\n".join(analyze.render(report, {"python"}, top=1))
         self.assertIn("security 1", text)
+        self.assertIn("unused 0", text)
         self.assertIn("a.py:9  S602  shell\\x1b[31m=True", text)
         self.assertIn("b.py  cognitive-complexity", text)
         self.assertIn("skipped: mypy (no mypy config)", text)
@@ -442,6 +492,28 @@ class RealTools(unittest.TestCase):
         rules = {f.rule for f in report.findings}
         self.assertIn("cognitive-complexity", rules)
         self.assertTrue(any(r.startswith("S") for r in rules))
+
+    @unittest.skipUnless(shutil.which("vulture"), "vulture not installed")
+    def test_real_vulture(self):
+        root = tree(self)
+        write(root / "pyproject.toml", "")
+        write(root / "m.py", "import os\n\ndef used():\n    return 1\n\nprint(used())\n")
+        report = analyze.run_tools([t for t in analyze.TOOLS if t.name == "vulture"], root, {"python"})
+        self.assertEqual(report.errors, [])
+        self.assertEqual([(f.rule, f.path, f.line) for f in report.findings], [("unused-import", "m.py", 1)])
+
+    @unittest.skipUnless(shutil.which("knip"), "knip not installed")
+    def test_real_knip(self):
+        root = tree(self)
+        write(root / "package.json", json.dumps({"name": "x", "version": "1.0.0", "main": "index.js", "dependencies": {"left-pad": "1.3.0"}}))
+        write(root / "index.js", "const { a } = require('./lib');\nconsole.log(a);\n")
+        write(root / "lib.js", "exports.a = 1;\nexports.b = 2;\n")
+        write(root / "orphan.js", "module.exports = 3;\n")
+        report = analyze.run_tools([t for t in analyze.TOOLS if t.name == "knip"], root, {"node"})
+        self.assertEqual(report.errors, [])
+        rules = {(f.rule, f.path) for f in report.findings}
+        self.assertIn(("knip/files", "orphan.js"), rules)
+        self.assertIn(("knip/dependencies", "package.json"), rules)
 
     @unittest.skipUnless(shutil.which("gitleaks"), "gitleaks not installed")
     def test_real_gitleaks(self):

@@ -10,6 +10,7 @@ OPT_OUTS = {
     r"\bkiota\b": "KIOTA_CLI_TELEMETRY_OPTOUT=1",
     r"\bdotnet\b": "DOTNET_CLI_TELEMETRY_OPTOUT=1",
     r"\bosv-scanner\b": "--offline",
+    r"\btrivy\b": "--disable-telemetry",
 }
 
 

@@ -29,9 +29,16 @@ Every candidate was checked on 2026-10-14 against its GitHub repo, PyPI, npm or 
 - complexipy: lizard's cognitive extension covers Python as well as C# and TypeScript with one tool.
 - jscpd: lizard's duplicate extension covers the same need without a Node dependency.
 - opengrep: its telemetry could not be confirmed. Semgrep CE with local rules and `--metrics=off` is documented to send nothing.
-- sharpfuzz: no release since January 2025.
 - Security Code Scan: no release since 2022.
 - Hosted documentation or analysis services: they would receive the code.
+
+## Amendment (v0.6.0, 2026-10-14)
+
+- `analyze` adds vulture (Python) and knip (Node) for dead code, under a new `unused` category, and reads project-level MSBuild warnings, so NuGet audit warnings `NU1901`-`NU1904` become `dependency` findings. They carry no line number, which is why the first parser missed them.
+- SharpFuzz is in the `bug-hunt` skill after all. Its GitHub releases stop in January 2025, but NuGet has 2.3.0 from June 2026; the first check read the wrong source.
+- `bug-hunt` gained recipes for osv.dev single-package queries, `osv-scanner fix` (its default deps.dev source receives package names), trivy config (`--disable-telemetry --skip-check-update`, because trivy reports flag usage otherwise), PSRule for Azure, and techniques that need no tool: bisect, flaky-test hunting, differential and metamorphic testing.
+- Checked and skipped: Bearer CLI (ELv2, source-available, single-file taint only), RESTler (no published releases), CodeQL (licence excludes private code without GitHub Advanced Security). osv-scanner call analysis covers only Go and Rust.
+- The standalone `jeancarlos/claude-bug-hunt` repository is archived; the skill lives here.
 
 ## Consequences
 

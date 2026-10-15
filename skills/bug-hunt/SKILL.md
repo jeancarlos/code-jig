@@ -29,6 +29,18 @@ PowerShell: replace `grep -E` with `Select-String -Pattern`, and the churn line 
 - Past fix commits show what this codebase gets wrong; read them and look for the same mistake elsewhere.
 - Hotspots, files that are both in the churn list and in `analyze`'s complexity findings, get read first.
 - Security TODOs are bugs the authors already found.
+- `analyze` already reports vulnerable dependencies (osv-scanner, and NuGet audit warnings from `dotnet build`) and dead code (vulture, knip); a function nobody calls is a bug hiding place and a deletion candidate.
+
+### Dependencies, deeper
+
+- One package against osv.dev, sending only its name and version: `curl -s -d '{"package":{"name":"lodash","ecosystem":"npm"},"version":"4.17.20"}' https://api.osv.dev/v1/query` (PowerShell: `Invoke-RestMethod -Method Post -Uri https://api.osv.dev/v1/query -ContentType application/json -Body '<same JSON>'`). The fixed versions are in `affected[].ranges[].events[].fixed`.
+- Upgrade suggestions for npm and Maven: `osv-scanner fix --strategy=in-place -L package-lock.json`. It rewrites the lockfile, so review the diff and run the tests. Its default `--data-source deps.dev` sends package names to deps.dev; `--data-source native` asks the package registry instead. Use `--offline` scans for everything else.
+- .NET: `DOTNET_CLI_TELEMETRY_OPTOUT=1 dotnet list package --vulnerable --include-transitive --format json`. Restore already asks nuget.org for advisories.
+
+### Infrastructure code
+
+- Docker, Kubernetes, Terraform, ARM: `trivy config --disable-telemetry --skip-check-update --format json .` (the bundled checks, no download).
+- Bicep and ARM against Azure's Well-Architected rules: `Install-Module -Name PSRule.Rules.Azure -Scope CurrentUser`, then `Invoke-PSRule -InputPath ./infra -Module PSRule.Rules.Azure -Outcome Fail`. Bicep files need the expansion option described in its Bicep setup page.
 
 ## 2. Confirm: the reality gate
 
@@ -81,6 +93,7 @@ Good properties: decode(encode(x)) == x; sorting is idempotent; a result stays i
 |---|---|---|
 | Python | atheris (Linux x86_64 wheels only) | a script calling `atheris.Setup(sys.argv, test_one_input)` and `atheris.Fuzz()`, run with `-max_total_time=60` |
 | TS/JS | jazzer.js | `npx jazzer <fuzz-target-module> -- -max_total_time=60`, the module exporting `fuzz(data)` |
+| .NET | SharpFuzz | a console project with the `SharpFuzz` package calling `Fuzzer.OutOfProcess.Run(stream => ...)`, the target assembly instrumented with the `sharpfuzz` tool (`dotnet tool install SharpFuzz.CommandLine` in a tool manifest), run under afl-fuzz on Linux or libfuzzer-dotnet on Windows; follow its README |
 | HTTP APIs | schemathesis | `schemathesis run http://localhost:<port>/openapi.json`, only against a local instance |
 
 Bound every run by time. Each crashing input becomes a test.
@@ -91,11 +104,19 @@ The tool flips conditions and removes calls, then reruns the tests; a surviving 
 
 | Stack | Tool | Run |
 |---|---|---|
-| Python | mutmut (POSIX; on Windows use WSL) | `[tool.mutmut]` with `source_paths = ["src/pkg/module.py"]` in `pyproject.toml`, then `mutmut run`, `mutmut results`, `mutmut show <mutant>` |
+| Python | mutmut (POSIX; on Windows use WSL) | `[tool.mutmut]` with `source_paths = ["pkg/module.py"]` in `pyproject.toml`, then `mutmut run`, `mutmut results`, `mutmut show <mutant>`. mutmut 3 refuses code imported as `src.…`: run it on a scratch copy with the package renamed. List every non-Python file the tests read in `also_copy`. |
 | TS/JS | Stryker | `npx stryker run --mutate "src/module.ts"` (`npx stryker init` once) |
 | .NET | Stryker.NET | `dotnet new tool-manifest` once, `dotnet tool install dotnet-stryker`, then `DOTNET_CLI_TELEMETRY_OPTOUT=1 dotnet stryker --mutate "**/Module.cs"` or `--since:main` |
 
 Each surviving mutant gets a test that kills it, or a sentence on why it is equivalent to the original.
+
+### Techniques without a new tool
+
+- **Bisect a regression**: `git bisect start <bad> <good>`, then `git bisect run <command that runs the failing test>`; the first bad commit names the cause.
+- **Flaky tests**: shuffle and repeat. pytest with `pytest-randomly` (or `-p randomly`) and a loop; `npx jest --randomize`; for .NET, run `DOTNET_CLI_TELEMETRY_OPTOUT=1 dotnet test --filter <name>` in a loop of 20. A test that fails only sometimes hides a race, shared state or an order dependency.
+- **Differential testing**: run the old and the new implementation (or two libraries) on the same generated inputs and compare.
+- **Metamorphic relations**: when the right answer is unknown, test relations instead: sorting a shuffled list gives the same result, filtering twice equals filtering once, a search for a superset term returns a superset.
+- **Invariants**: assert what must always hold at module boundaries in tests (totals add up, IDs stay unique) and let property tests drive them.
 
 ## 4. Report
 
