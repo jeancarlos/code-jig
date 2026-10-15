@@ -17,7 +17,7 @@ def prose(text):
     url = r"\((?:[^()]|\([^()]*\))*\)"
     text = re.sub(r"!\[[^\]]*\]" + url, "", text)
     text = re.sub(r"\[([^\]]*)\]" + url, r"\1", text)
-    text = re.sub(r"`[^`]*`", "código", text)
+    text = re.sub(r"`[^`]*`", "X", text)
     lines = [l for l in text.splitlines() if l.strip() and not l.startswith(("#", ">"))]
     return [l.strip() for l in lines]
 
@@ -45,7 +45,7 @@ def languagetool(paragraphs):
     with urllib.request.urlopen(f"{LT}/v2/check", data, timeout=60) as r:
         matches = json.load(r)["matches"]
     for m in matches:
-        if m["rule"]["id"] in SKIP_RULES:
+        if m["rule"]["id"] in SKIP_RULES or m["rule"]["id"].startswith("PT_BARBARISMS"):
             continue
         ctx = m["context"]
         frag = ctx["text"][ctx["offset"] : ctx["offset"] + ctx["length"]]
@@ -55,7 +55,7 @@ def languagetool(paragraphs):
 
 def demo():
     p = prose("---\nt: x\n---\n# H\n\nEu fiz `a` e [b](u_(x)).\n\n> nota\n\nOutra frase curta. E mais uma aqui.\n")
-    assert p == ["Eu fiz código e b.", "Outra frase curta. E mais uma aqui."], p
+    assert p == ["Eu fiz X e b.", "Outra frase curta. E mais uma aqui."], p
     r = ritmo(p)
     assert r["palavras"] == 12 and r["frases"] == 3 and r["eu_por_100"] == 8.3, r
 
