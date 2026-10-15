@@ -103,7 +103,8 @@ class SafeWrites(unittest.TestCase):
         os.chmod(path, 0o750)
         atomic_write(path, b"new\n")
         self.assertEqual(path.read_bytes(), b"new\n")
-        self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o750)
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o750)
         self.assertEqual([p.name for p in self.root.iterdir()], ["a.sh"])
 
 

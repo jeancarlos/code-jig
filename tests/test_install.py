@@ -231,8 +231,8 @@ class AtomicInstall(unittest.TestCase):
                 temporary = write(root / "config.toml.tmp", "unrelated data\n")
                 writer(path, "new\n")
                 self.assertTrue(temporary.exists())
-                self.assertEqual(temporary.read_text(), "unrelated data\n")
-                self.assertEqual(path.read_text(), "new\n")
+                self.assertEqual(temporary.read_text(encoding="utf-8"), "unrelated data\n")
+                self.assertEqual(path.read_text(encoding="utf-8"), "new\n")
 
     def test_failed_replacement_keeps_original_file(self):
         root = tree(self)
@@ -248,7 +248,7 @@ class AtomicInstall(unittest.TestCase):
             with self.assertRaises(OSError):
                 write_generated(path, "new\n")
         self.assertTrue(path.exists())
-        self.assertEqual(path.read_text(), "old\n")
+        self.assertEqual(path.read_text(encoding="utf-8"), "old\n")
 
     def test_writers_do_not_follow_dangling_backup_symlinks(self):
         root = tree(self)
@@ -263,4 +263,4 @@ class AtomicInstall(unittest.TestCase):
                 self.assertFalse(victim.exists())
                 self.assertTrue(planted.is_symlink())
                 self.assertNotEqual(backup, planted)
-                self.assertEqual(backup.read_text(), "old\n")
+                self.assertEqual(backup.read_text(encoding="utf-8"), "old\n")

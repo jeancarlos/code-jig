@@ -18,7 +18,7 @@ class HumanizeDashes(unittest.TestCase):
         result = humanize_file(str(path), root=str(self.root))
         self.assertTrue(result.get("changed"))
         self.assertEqual(result["dashes"], 1)
-        self.assertIn("# This - is an em dash", path.read_text())
+        self.assertIn("# This - is an em dash", path.read_text(encoding="utf-8"))
 
     def test_en_dash_removed_in_comment(self):
         path = self.root / "test.py"
@@ -26,13 +26,13 @@ class HumanizeDashes(unittest.TestCase):
         result = humanize_file(str(path), root=str(self.root))
         self.assertTrue(result.get("changed"))
         self.assertEqual(result["dashes"], 1)
-        self.assertIn("# Range: 1 - 10", path.read_text())
+        self.assertIn("# Range: 1 - 10", path.read_text(encoding="utf-8"))
 
     def test_code_lines_unchanged(self):
         path = self.root / "test.py"
         write(path, "code — value\nresult = 5\n")
         result = humanize_file(str(path), root=str(self.root))
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         self.assertFalse(result.get("changed"))
 
 
@@ -47,7 +47,7 @@ class HumanizeCurlyQuotes(unittest.TestCase):
         result = humanize_file(str(path), root=str(self.root))
         self.assertTrue(result.get("changed"))
         self.assertEqual(result["quotes"], 3)
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         self.assertNotIn("‘", text)
         self.assertNotIn("’", text)
 
@@ -57,7 +57,7 @@ class HumanizeCurlyQuotes(unittest.TestCase):
         result = humanize_file(str(path), root=str(self.root))
         self.assertTrue(result.get("changed"))
         self.assertEqual(result["quotes"], 2)
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         self.assertNotIn("“", text)
         self.assertNotIn("”", text)
 
@@ -73,7 +73,7 @@ class HumanizeEllipsis(unittest.TestCase):
         result = humanize_file(str(path), root=str(self.root))
         self.assertTrue(result.get("changed"))
         self.assertEqual(result["ellipsis"], 1)
-        self.assertIn("# Continue...", path.read_text())
+        self.assertIn("# Continue...", path.read_text(encoding="utf-8"))
 
 
 class HumanizeEmoji(unittest.TestCase):
@@ -87,14 +87,14 @@ class HumanizeEmoji(unittest.TestCase):
         result = humanize_file(str(path), root=str(self.root))
         self.assertTrue(result.get("changed"))
         self.assertEqual(result["emoji"], 1)
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         self.assertNotIn("🚀", text)
 
     def test_emoji_not_removed_from_code(self):
         path = self.root / "test.py"
         write(path, "icon = '🚀'  # Launch\ncode = 1\n")
         result = humanize_file(str(path), root=str(self.root))
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         self.assertIn("icon = '🚀'", text)
         self.assertIn("# Launch", text)
 
@@ -174,7 +174,7 @@ class HumanizeSymlinks(unittest.TestCase):
         symlink.symlink_to(target)
         result = humanize_file(str(symlink), root=str(self.root))
         self.assertFalse(result.get("changed"))
-        self.assertIn("Example usage", target.read_text())
+        self.assertIn("Example usage", target.read_text(encoding="utf-8"))
 
 
 class HumanizeCheck(unittest.TestCase):

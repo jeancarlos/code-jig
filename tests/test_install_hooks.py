@@ -50,7 +50,7 @@ class Hooks(unittest.TestCase):
                 write(self.path, original)
                 with self.assertRaisesRegex(ValueError, "hooks.json"):
                     merged_hooks(self.path, "p", "w")
-                self.assertEqual(self.path.read_text(), original)
+                self.assertEqual(self.path.read_text(encoding="utf-8"), original)
 
     def test_write_merged_backs_up_only_on_change(self):
         write(self.path, '{"hooks": {}}\n')
@@ -148,7 +148,8 @@ class CodexWatermarkHook(unittest.TestCase):
         write(settings, "{}\n")
         os.chmod(settings, 0o600)
         write_merged(settings, '{"hooks": {}}\n')
-        self.assertEqual(stat.S_IMODE(os.stat(settings).st_mode), 0o600)
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(os.stat(settings).st_mode), 0o600)
         self.assertEqual(sorted(p.name for p in self.root.iterdir() if p.name.endswith(".tmp")), [])
 
 
@@ -197,7 +198,7 @@ class ClaudeCodeHooks(unittest.TestCase):
                 write(self.path, original)
                 with self.assertRaisesRegex(ValueError, "settings.json"):
                     merged_claude_code_hooks(self.path, "cmd")
-                self.assertEqual(self.path.read_text(), original)
+                self.assertEqual(self.path.read_text(encoding="utf-8"), original)
 
     def test_write_merged_settings_backs_up_only_on_change(self):
         write(self.path, '{"hooks": {}}\n')
