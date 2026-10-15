@@ -27,7 +27,7 @@ class Dashboard(unittest.TestCase):
         board = json.loads((paths.CORE / "dashboard.json").read_text(encoding="utf-8"))
         queries = {p["title"]: p["targets"][0]["queryText"] for p in board["panels"]}
         run = lambda title: con.execute(queries[title].replace("$__from", "0").replace("$__to", "4102444800000")).fetchall()
-        self.assertEqual(run("Skill use (sessions)"), [("bug-hunt", 1), ("grilling", 1)])
+        self.assertEqual(run("Skill use (sessions)"), [("bug-hunt", 1), ("code-analysis", 1), ("grilling", 1), ("regression-tests", 1), ("using-superpowers", 1)])
         self.assertEqual(run("Test pass rate (%)"), [(50.0,)])
         self.assertEqual(run("Guardian outcomes"), [("allow", 1)])
         for marker in evidence.TEST_MARKERS:

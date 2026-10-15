@@ -146,8 +146,8 @@
             "uid": "${DS}"
           },
           "queryType": "table",
-          "queryText": "SELECT skill, COUNT(DISTINCT thread_id) AS sessions FROM call_view WHERE skill IS NOT NULL AND ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') AND ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch') GROUP BY skill ORDER BY sessions DESC, skill",
-          "rawQueryText": "SELECT skill, COUNT(DISTINCT thread_id) AS sessions FROM call_view WHERE skill IS NOT NULL AND ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') AND ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch') GROUP BY skill ORDER BY sessions DESC, skill"
+          "queryText": "SELECT s.skill, COUNT(DISTINCT s.thread_id) AS sessions FROM skill_reads s JOIN calls c ON c.thread_id = s.thread_id AND c.call_id = s.call_id WHERE ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') AND ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch') GROUP BY s.skill ORDER BY sessions DESC, s.skill",
+          "rawQueryText": "SELECT s.skill, COUNT(DISTINCT s.thread_id) AS sessions FROM skill_reads s JOIN calls c ON c.thread_id = s.thread_id AND c.call_id = s.call_id WHERE ts >= strftime('%Y-%m-%dT%H:%M:%SZ', $__from / 1000, 'unixepoch') AND ts < strftime('%Y-%m-%dT%H:%M:%SZ', $__to / 1000, 'unixepoch') GROUP BY s.skill ORDER BY sessions DESC, s.skill"
         }
       ]
     },

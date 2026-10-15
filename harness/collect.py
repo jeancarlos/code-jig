@@ -12,13 +12,15 @@ CREATE TABLE IF NOT EXISTS calls (thread_id TEXT NOT NULL, call_id TEXT NOT NULL
 CREATE TABLE IF NOT EXISTS compactions (thread_id TEXT NOT NULL, line INTEGER NOT NULL, ts TEXT, PRIMARY KEY (thread_id, line));
 CREATE TABLE IF NOT EXISTS quarantine (path TEXT NOT NULL, line INTEGER NOT NULL, reason TEXT, PRIMARY KEY (path, line));
 CREATE TABLE IF NOT EXISTS call_results (thread_id TEXT NOT NULL, call_id TEXT NOT NULL, exit_code INTEGER, skill TEXT, PRIMARY KEY (thread_id, call_id));
+CREATE TABLE IF NOT EXISTS skill_reads (thread_id TEXT NOT NULL, call_id TEXT NOT NULL, skill TEXT NOT NULL, PRIMARY KEY (thread_id, call_id, skill));
 CREATE TABLE IF NOT EXISTS guardian (thread_id TEXT NOT NULL, line INTEGER NOT NULL, ts TEXT, outcome TEXT NOT NULL, PRIMARY KEY (thread_id, line));
 CREATE VIEW IF NOT EXISTS turn_usage AS
   SELECT u.*, COALESCE(t.kind, 'main') AS kind, t.parent_id AS parent_id
   FROM usage u LEFT JOIN threads t ON t.id = u.thread_id
   WHERE u.key NOT LIKE 'tc:%' OR u.thread_id NOT IN (SELECT thread_id FROM usage WHERE key NOT LIKE 'tc:%');
-CREATE VIEW IF NOT EXISTS call_view AS
-  SELECT c.*, r.exit_code AS exit_code, r.skill AS skill
+DROP VIEW IF EXISTS call_view;
+CREATE VIEW call_view AS
+  SELECT c.*, r.exit_code AS exit_code
   FROM calls c LEFT JOIN call_results r ON r.thread_id = c.thread_id AND r.call_id = c.call_id;
 """
 USAGE_KEYS = ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens")
@@ -71,11 +73,7 @@ def tool_call(payload: dict) -> tuple[str, str, bool] | None:
         m = CMD.search(text) if isinstance(text, str) else None
         if not m:
             return None
-        try:
-            cmd = json.loads(f'"{m.group(1)}"')
-        except ValueError:
-            cmd = m.group(1)
-        return call_id, cmd, "require_escalated" in text
+        return call_id, _decode(m.group(1)), "require_escalated" in text
     if kind == "function_call":
         try:
             args = json.loads(payload.get("arguments") or "{}")
@@ -90,6 +88,18 @@ def tool_call(payload: dict) -> tuple[str, str, bool] | None:
             return None
         return call_id, cmd, args.get("sandbox_permissions") == "require_escalated"
     return None
+
+
+def _decode(raw: str) -> str:
+    try:
+        return json.loads(f'"{raw}"')
+    except ValueError:
+        return raw
+
+
+def cell_commands(payload: dict) -> list[str]:
+    text = payload.get("input") if payload.get("type") == "custom_tool_call" else None
+    return [_decode(m) for m in CMD.findall(text)] if isinstance(text, str) else []
 
 
 def _output_text(payload: dict) -> str:
@@ -111,9 +121,8 @@ def exit_code(payload: dict) -> int | None:
     return int(next(g for g in m.groups() if g is not None)) if m else None
 
 
-def skill_of(cmd: str) -> str | None:
-    m = SKILL.search(cmd)
-    return m.group(1) if m else None
+def skills_of(cmd: str) -> list[str]:
+    return list(dict.fromkeys(SKILL.findall(cmd)))
 
 
 def guardian_outcome(payload: dict) -> str | None:
@@ -127,19 +136,21 @@ def guardian_outcome(payload: dict) -> str | None:
 def _response_item(con: sqlite3.Connection, thread: str, turn: str | None, ts: str | None, p: dict) -> None:
     call = tool_call(p)
     if call:
-        con.execute("INSERT OR IGNORE INTO calls (thread_id, call_id, turn_id, ts, cmd, escalated) VALUES (?,?,?,?,?,?)",
-                    (thread, call[0], turn, ts, call[1], int(call[2])))
-        skill = skill_of(call[1])
-        if skill:
-            con.execute("INSERT INTO call_results (thread_id, call_id, skill) VALUES (?,?,?) "
-                        "ON CONFLICT(thread_id, call_id) DO UPDATE SET skill = excluded.skill", (thread, call[0], skill))
+        rows = [(call[0], call[1], int(call[2]))]
+        rows += [(f"{call[0]}#{i}", cmd, 0) for i, cmd in enumerate(cell_commands(p)[1:], start=2)]
+        for call_id, cmd, escalated in rows:
+            con.execute("INSERT OR IGNORE INTO calls (thread_id, call_id, turn_id, ts, cmd, escalated) VALUES (?,?,?,?,?,?)",
+                        (thread, call_id, turn, ts, cmd, escalated))
+            for skill in skills_of(cmd):
+                con.execute("INSERT OR IGNORE INTO skill_reads VALUES (?,?,?)", (thread, call_id, skill))
     elif p.get("type") in OUTPUTS and isinstance(p.get("call_id"), str):
         code = exit_code(p)
         if code is not None:
             con.execute("INSERT INTO call_results (thread_id, call_id, exit_code) SELECT ?, ?, ? "
                         "WHERE EXISTS (SELECT 1 FROM calls WHERE thread_id = ? AND call_id = ?) "
+                        "AND NOT EXISTS (SELECT 1 FROM calls WHERE thread_id = ? AND call_id = ? || '#2') "
                         "ON CONFLICT(thread_id, call_id) DO UPDATE SET exit_code = excluded.exit_code WHERE call_results.exit_code IS NULL",
-                        (thread, p["call_id"], code, thread, p["call_id"]))
+                        (thread, p["call_id"], code, thread, p["call_id"], thread, p["call_id"]))
 
 
 def _scan_file(con: sqlite3.Connection, path: Path) -> tuple[int, int]:
@@ -224,7 +235,7 @@ def _scan_file(con: sqlite3.Connection, path: Path) -> tuple[int, int]:
 def scan(con: sqlite3.Connection, home: Path, rescan: bool = False) -> dict[str, int]:
     if rescan:
         with con:
-            for table in ("files", "threads", "usage", "calls", "compactions", "quarantine", "guardian", "call_results"):
+            for table in ("files", "threads", "usage", "calls", "compactions", "quarantine", "guardian", "call_results", "skill_reads"):
                 con.execute(f"DELETE FROM {table}")
     summary = {"files": 0, "lines": 0, "quarantined": 0}
     for path in rollout_files(home):

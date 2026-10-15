@@ -184,15 +184,22 @@ def by_repo(sess: list[Session]) -> tuple[dict[Path, list[Session]], list[str]]:
 
 
 def _owners(con, since: str | None = None):
-    query = "SELECT c.thread_id, t.kind, t.parent_id, c.cmd, c.exit_code, c.escalated, c.skill, c.ts FROM call_view c LEFT JOIN threads t ON t.id = c.thread_id"
-    for tid, kind, parent, cmd, code, esc, skill, ts in con.execute(query):
+    query = "SELECT c.thread_id, t.kind, t.parent_id, c.cmd, c.exit_code, c.escalated, c.ts FROM call_view c LEFT JOIN threads t ON t.id = c.thread_id"
+    for tid, kind, parent, cmd, code, esc, ts in con.execute(query):
         if since is None or (ts or "") >= since:
-            yield (parent if kind != "main" and parent else tid), cmd or "", code, esc, skill
+            yield (parent if kind != "main" and parent else tid), cmd or "", code, esc
+
+
+def _skill_reads(con, since: str):
+    query = ("SELECT s.skill, c.thread_id, t.kind, t.parent_id FROM skill_reads s "
+             "JOIN calls c ON c.thread_id = s.thread_id AND c.call_id = s.call_id LEFT JOIN threads t ON t.id = c.thread_id WHERE c.ts >= ?")
+    for skill, tid, kind, parent in con.execute(query, (since,)):
+        yield skill, (parent if kind != "main" and parent else tid)
 
 
 def discipline(con, owners: set[str]) -> dict:
     with_tests, runs, passed = set(), 0, 0
-    for owner, cmd, code, _, _ in _owners(con):
+    for owner, cmd, code, _ in _owners(con):
         if owner in owners and is_test(cmd):
             with_tests.add(owner)
             if code is not None:
@@ -209,11 +216,11 @@ def installed_skills() -> list[str]:
 def use(con, since: str, installed: list[str]) -> dict:
     fired: dict[str, set[str]] = defaultdict(set)
     calls = escalated = 0
-    for owner, _, _, esc, skill in _owners(con, since):
+    for _, _, _, esc in _owners(con, since):
         calls += 1
         escalated += esc
-        if skill:
-            fired[skill].add(owner)
+    for skill, owner in _skill_reads(con, since):
+        fired[skill].add(owner)
     skills = {k: len(v) for k, v in sorted(fired.items())}
     guardian = dict(con.execute("SELECT outcome, COUNT(*) FROM guardian WHERE ts >= ? GROUP BY outcome ORDER BY outcome", (since,)))
     return {"skills": skills, "never": sorted(set(installed) - set(skills)), "guardian": guardian,

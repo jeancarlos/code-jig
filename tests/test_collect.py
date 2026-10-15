@@ -140,11 +140,16 @@ class Tools(unittest.TestCase):
 
     def test_exit_codes_from_each_output_shape(self):
         rows = dict(self.con.execute("SELECT call_id, exit_code FROM call_view WHERE thread_id='tools-1'"))
-        self.assertEqual(rows, {"k1": 0, "k2": 1, "k3": 0, "k4": None})
+        self.assertEqual(rows, {"k1": 0, "k2": 1, "k3": 0, "k4": None, "k5": None, "k6": None, "k6#2": None})
 
     def test_skills_come_only_from_commands(self):
-        rows = dict(self.con.execute("SELECT call_id, skill FROM call_view WHERE thread_id='tools-1'"))
-        self.assertEqual(rows, {"k1": "bug-hunt", "k2": None, "k3": None, "k4": "grilling"})
+        rows = self.con.execute("SELECT call_id, skill FROM skill_reads WHERE thread_id='tools-1' ORDER BY call_id, skill").fetchall()
+        self.assertEqual(rows, [("k1", "bug-hunt"), ("k4", "grilling"), ("k5", "bug-hunt"), ("k5", "code-analysis"), ("k5", "using-superpowers"), ("k6#2", "regression-tests")])
+
+    def test_every_command_in_a_cell_is_recorded(self):
+        rows = self.con.execute("SELECT call_id, cmd FROM calls WHERE call_id LIKE 'k6%' ORDER BY call_id").fetchall()
+        self.assertEqual(rows, [("k6", "pytest -q tests/a"), ("k6#2", "cat /home/u/.agents/skills/regression-tests/SKILL.md")])
+        self.assertEqual(collect.cell_commands({"type": "function_call", "call_id": "f", "arguments": '{"cmd": "ls"}'}), [])
 
     def test_guardian_outcomes_only_from_guardian_threads(self):
         self.assertEqual(self.con.execute("SELECT thread_id, outcome FROM guardian").fetchall(), [("g-1", "allow")])
@@ -185,7 +190,7 @@ class Migration(unittest.TestCase):
         old.close()
         con = collect.connect(db)
         self.addCleanup(con.close)
-        self.assertEqual(con.execute("SELECT cmd, exit_code, skill FROM call_view").fetchall(), [("git status", None, None)])
+        self.assertEqual(con.execute("SELECT cmd, exit_code FROM call_view").fetchall(), [("git status", None)])
         self.assertEqual(con.execute("SELECT COUNT(*) FROM guardian").fetchone()[0], 0)
         collect.connect(db).close()
 
@@ -196,4 +201,6 @@ class Migration(unittest.TestCase):
         self.addCleanup(old.close)
         old.execute("INSERT OR IGNORE INTO calls VALUES (?,?,?,?,?,?)", ("t", "c", None, None, "git status", 0))
         old.execute("INSERT OR IGNORE INTO compactions VALUES (?,?,?)", ("t", 1, None))
-        self.assertEqual(old.execute("SELECT cmd, exit_code, skill FROM call_view").fetchall(), [("git status", None, None)])
+        old.execute("INSERT INTO call_results (thread_id, call_id, skill) VALUES (?,?,?) "
+                    "ON CONFLICT(thread_id, call_id) DO UPDATE SET skill = excluded.skill", ("t", "c", "bug-hunt"))
+        self.assertEqual(old.execute("SELECT cmd, exit_code FROM call_view").fetchall(), [("git status", None)])

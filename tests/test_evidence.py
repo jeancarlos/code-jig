@@ -146,7 +146,9 @@ def db(test, sessions=(), calls=(), usage=(), guardian=()):
         con.execute("INSERT INTO threads VALUES (?,?,?,?,?)", (tid, parent, kind, started, cwd))
     for tid, cid, ts, cmd, esc, code, skill in calls:
         con.execute("INSERT INTO calls VALUES (?,?,NULL,?,?,?)", (tid, cid, ts, cmd, esc))
-        con.execute("INSERT INTO call_results VALUES (?,?,?,?)", (tid, cid, code, skill))
+        con.execute("INSERT INTO call_results (thread_id, call_id, exit_code) VALUES (?,?,?)", (tid, cid, code))
+        if skill:
+            con.execute("INSERT INTO skill_reads VALUES (?,?,?)", (tid, cid, skill))
     for tid, key, ts, inp, cached, out in usage:
         con.execute("INSERT INTO usage VALUES (?,?,NULL,?,NULL,?,?,?,0)", (tid, key, ts, inp, cached, out))
     for tid, line, ts, outcome in guardian:
@@ -323,7 +325,7 @@ class Cli(unittest.TestCase):
         self.assertEqual(set(data), {"since", "days", "repos", "totals", "unreachable", "discipline", "use", "cost"})
         self.assertEqual(data["unreachable"], ["/w"])
         self.assertEqual(data["use"]["guardian"], {"allow": 1})
-        self.assertEqual(data["use"]["skills"], {"bug-hunt": 1, "grilling": 1})
+        self.assertEqual(data["use"]["skills"], {"bug-hunt": 1, "code-analysis": 1, "grilling": 1, "regression-tests": 1, "using-superpowers": 1})
         self.assertTrue(collect.db_path(home).is_file())
 
     def test_text_report_marks_insufficient_and_caveat(self):
