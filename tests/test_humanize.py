@@ -189,7 +189,7 @@ class HumanizeCheck(unittest.TestCase):
                 before = path.stat().st_mtime_ns
                 with contextlib.redirect_stderr(io.StringIO()) as err:
                     self.assertEqual(main(["humanize", "--check", str(target)]), 1)
-                self.assertEqual(path.read_text(), content)
+                self.assertEqual(path.read_text(encoding="utf-8"), content)
                 self.assertEqual(path.stat().st_mtime_ns, before)
                 self.assertIn(str(path), err.getvalue())
 
