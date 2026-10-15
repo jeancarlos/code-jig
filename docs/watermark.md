@@ -31,13 +31,11 @@ Lines containing only attribution are removed entirely:
 
 ### For Claude Code
 
-When you write or edit a file, the harness wires a `PostToolUse` hook on the Write, Edit, MultiEdit, and NotebookEdit tools. This hook reads the tool's input JSON, extracts the file path, and runs the stripper on the file.
-
-The hook runs after the tool completes, before you see the file in the editor. If the stripper encounters an error, it logs to stderr and does not block the tool.
+When you write or edit a file, the harness wires a `PostToolUse` hook on the Write, Edit, MultiEdit, and NotebookEdit tools. This hook reads the tool's input JSON, extracts the file path, and runs the stripper on the file immediately after the tool completes.
 
 ### For Codex
 
-When Codex completes a command, the harness runs a Stop hook that invokes the stripper on any files that were written during the session. The stripper scans for recently modified files in the working directory.
+Codex (version 0.162+) does not support per-tool PostToolUse hooks. The harness runs a `Stop` hook that fires at the end of each Codex session. This hook runs the stripper as a fallback sweep after all commands have completed. Thus, watermarks are removed from "every code add" only after the session ends, not immediately on apply.
 
 ## Files the stripper does NOT touch
 

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import stat
 import sys
 from pathlib import Path
 
@@ -53,15 +54,36 @@ def is_binary(data: bytes) -> bool:
         return True
 
 
+def safe_open_path(path_str: str) -> Path | None:
+    try:
+        p = Path(path_str)
+        try:
+            s = os.lstat(str(p))
+            if stat.S_ISLNK(s.st_mode):
+                resolved = Path(os.path.realpath(str(p)))
+                cwd = Path(os.getcwd()).resolve()
+                if not str(resolved).startswith(str(cwd)):
+                    return None
+                return None
+        except (OSError, FileNotFoundError):
+            pass
+        return p
+    except Exception:
+        return None
+
+
 def strip_watermark(path: str) -> dict:
     result = {"file": path, "zero_width": 0, "directional": 0, "attribution_lines": 0}
     try:
-        p = Path(path)
+        p = safe_open_path(path)
+        if p is None:
+            return result
         if not p.is_file():
             return result
-        if p.is_symlink() and not str(p.resolve()).startswith(str(Path.cwd())):
+        try:
+            original = p.read_bytes()
+        except (OSError, PermissionError):
             return result
-        original = p.read_bytes()
         if is_binary(original):
             return result
         text = original.decode("utf-8")

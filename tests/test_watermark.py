@@ -296,6 +296,40 @@ class WatermarkNonExistent(unittest.TestCase):
         self.assertIsInstance(result, dict)
 
 
+class WatermarkSymlinks(unittest.TestCase):
+    def setUp(self):
+        self.root = tree(self)
+
+    def test_symlink_inside_root_is_skipped(self):
+        target = self.root / "real.py"
+        write(target, f"code\n{chr(0x200b)}remove\n")
+        symlink = self.root / "link.py"
+        symlink.symlink_to(target)
+        result = strip_watermark(str(symlink))
+        self.assertIsInstance(result, dict)
+        self.assertFalse(result.get("changed"))
+
+    def test_symlink_outside_root_is_skipped(self):
+        external = self.root.parent / "external.py"
+        write(external, f"code\n{chr(0x200b)}remove\n")
+        try:
+            symlink = self.root / "link.py"
+            symlink.symlink_to(external)
+            result = strip_watermark(str(symlink))
+            self.assertIsInstance(result, dict)
+            self.assertFalse(result.get("changed"))
+        finally:
+            if external.exists():
+                external.unlink()
+
+    def test_regular_file_is_stripped(self):
+        path = self.root / "test.py"
+        write(path, f"code\n{chr(0x200b)}remove\nCo-Authored-By: Claude\n")
+        result = strip_watermark(str(path))
+        self.assertTrue(result.get("changed"))
+        self.assertEqual(path.read_text(encoding="utf-8"), "code\nremove\n")
+
+
 class WatermarkClaudeCodeHook(unittest.TestCase):
     def setUp(self):
         self.root = tree(self)
