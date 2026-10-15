@@ -42,6 +42,12 @@ def build_parser() -> argparse.ArgumentParser:
     tr.add_argument("--path", default=".")
     tr.add_argument("--pattern", default="REQ-{id}")
     tr.add_argument("--json", action="store_true")
+    ev = sub.add_parser("evidence")
+    ev.add_argument("--days", type=int, default=90)
+    ev.add_argument("--repo")
+    ev.add_argument("--analyze", type=int, default=0)
+    ev.add_argument("--timeout", type=int, default=600)
+    ev.add_argument("--json", action="store_true")
     return p
 
 
@@ -62,6 +68,8 @@ def main(argv: list[str] | None = None) -> int:
         from harness.analyze import cli
     elif args.cmd == "trace":
         from harness.trace import cli
+    elif args.cmd == "evidence":
+        from harness.evidence import cli
     elif args.cmd == "hooks":
         from harness.hooks import cli
     elif args.cmd == "humanize":
