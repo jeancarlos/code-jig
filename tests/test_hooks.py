@@ -11,6 +11,10 @@ from harness.atomicwrite import atomic_write, resolve_inside
 from harness.humanize import cli as humanize_cli
 from tests.util import tree, write
 
+ZWSP = chr(0x200B)
+ZWJ = chr(0x200D)
+EM_DASH = chr(0x2014)
+
 
 def run_hook(payload: object) -> tuple[int, str]:
     stdin, stdout = sys.stdin, sys.stdout
@@ -28,24 +32,25 @@ class PostToolUseHook(unittest.TestCase):
         self.root = tree(self)
 
     def test_claude_code_write_is_cleaned_and_reported_to_the_model(self):
-        path = write(self.root / "a.py", "x = 1\n# Certainly\nCo-Authored-By: Claude <x@y>\n")
+        path = write(self.root / "a.py", f"x = 1{ZWSP}\n# Certainly\nCo-Authored-By: Claude <x@y>\n")
         code, out = run_hook({"cwd": str(self.root), "tool_name": "Write", "tool_input": {"file_path": str(path)}})
         self.assertEqual(code, 0)
         self.assertEqual(path.read_text(encoding="utf-8"), "x = 1\n")
         report = json.loads(out)
         self.assertEqual(report["hookSpecificOutput"]["hookEventName"], "PostToolUse")
-        self.assertIn("attribution", report["systemMessage"])
+        self.assertIn("1 invisible chars, 1 attribution lines", report["systemMessage"])
         self.assertIn("boilerplate", report["hookSpecificOutput"]["additionalContext"])
 
     def test_codex_apply_patch_targets_are_cleaned(self):
-        added = write(self.root / "new.py", "# done — ok\n")
-        moved = write(self.root / "sub" / "moved.py", "y = 2\n")
+        added = write(self.root / "new.py", f"# done {EM_DASH} ok\n")
+        moved = write(self.root / "sub" / "moved.py", f"y = 2{ZWJ}\n")
         patch = "*** Begin Patch\n*** Add File: new.py\n+x\n*** Update File: old.py\n*** Move to: sub/moved.py\n*** End Patch\n"
         code, out = run_hook({"cwd": str(self.root), "tool_name": "apply_patch", "tool_input": {"command": ["apply_patch", patch]}})
         self.assertEqual(code, 0)
         self.assertEqual(added.read_text(encoding="utf-8"), "# done - ok\n")
         self.assertEqual(moved.read_text(encoding="utf-8"), "y = 2\n")
         self.assertIn("new.py", out)
+        self.assertIn("moved.py: stripped 1 invisible chars", out)
 
     def test_clean_files_produce_no_output_and_stay_untouched(self):
         path = write(self.root / "a.py", "x = 1\n")
@@ -59,9 +64,9 @@ class PostToolUseHook(unittest.TestCase):
         self.assertEqual(run_hook({"tool_input": {}})[0], 0)
 
     def test_files_outside_the_session_root_are_left_alone(self):
-        outside = write(self.root.parent / "outside.py", "x\n")
+        outside = write(self.root.parent / "outside.py", f"x{ZWSP}\n")
         run_hook({"cwd": str(self.root), "tool_input": {"file_path": str(outside)}})
-        self.assertEqual(outside.read_text(encoding="utf-8"), "x\n")
+        self.assertEqual(outside.read_text(encoding="utf-8"), f"x{ZWSP}\n")
 
 
 class SafeWrites(unittest.TestCase):
