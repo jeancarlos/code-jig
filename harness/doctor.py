@@ -9,7 +9,7 @@ import tomllib
 from pathlib import Path
 
 from harness import managed, paths, probe, tiers
-from harness.install import HOOK_STATUS, ROLE_TIERS, render_agents, render_profile, role_files, skill_sources, valid_hook_groups
+from harness.install import HOOK_STATUS, _git_config, _same_path, ROLE_TIERS, render_agents, render_profile, role_files, skill_sources, valid_hook_groups
 from harness.overlay import Overlay, load
 
 Check = tuple[str, str, str]
@@ -211,6 +211,21 @@ def check_roles(home: Path, core: Path, ov: Overlay) -> list[Check]:
     return checks
 
 
+def check_git_gate(home: Path, ov: Overlay, cwd: Path) -> list[Check]:
+    target = home / "codex-harness" / "git-hooks"
+    current = _git_config("--get", "core.hooksPath") or ""
+    if not ov.git_gate:
+        return [("warn", "git gate", f"off in overlay.toml but core.hooksPath still points at {target}; run harness install")
+                if _same_path(current, target) else ("ok", "git gate", "off")]
+    if not _same_path(current, target):
+        return [("warn", "git gate", f"not active: global core.hooksPath is {current or 'unset'}, expected {target}")]
+    local = subprocess.run(["git", "-C", str(cwd), "config", "--local", "--get", "core.hooksPath"],
+                           capture_output=True, text=True).stdout.strip()
+    if local:
+        return [("warn", "git gate", f"this repo sets core.hooksPath = {local}, which bypasses the gate here")]
+    return [("ok", "git gate", f"active{' with the prose gate' if ov.prose_gate else ''}")]
+
+
 def check_hook(home: Path) -> list[Check]:
     path = home / "hooks.json"
     if not path.is_file():
@@ -290,6 +305,7 @@ def cli(args) -> int:
             checks += check_tiers(home, paths.CORE, ov)
             checks += check_roles(home, paths.CORE, ov)
             checks += check_hook(home)
+            checks += check_git_gate(home, ov, Path.cwd())
             checks += check_knowledge(ov)
             checks += check_superpowers(home)
             try:

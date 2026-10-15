@@ -20,7 +20,7 @@ Turn something learned into a durable change, in the right place, without leakin
 | Something Guardian should treat as riskier or safer | `guardian-policy.md` (additions to the upstream policy, never a replacement) |
 | A model for a tier | `profiles.toml` |
 | A command rule | `rules/<name>.rules`. Prefer `forbidden` rules. An `allow` rule runs the command outside the sandbox with no review, and the agent can change what a test or build command runs, so allow only what you would run unsupervised in that repo. |
-| A repeatable workflow | `skills/<name>/SKILL.md` |
+| A repeatable workflow | `skills/<name>/SKILL.md`, then run the `skill-validate` skill on it |
 | A fact about tools, services or conventions here | `knowledge/<slug>.md`, one fact per file, plus one line in `knowledge/INDEX.md` |
 
 With `core_writable = false`, write only to these overlay slots. Never edit the core checkout. With `core_writable = true` (a bench machine), core edits are allowed, with tests, and are committed in the core repo.

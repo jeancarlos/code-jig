@@ -48,6 +48,18 @@ def build_parser() -> argparse.ArgumentParser:
     ev.add_argument("--analyze", type=int, default=0)
     ev.add_argument("--timeout", type=int, default=600)
     ev.add_argument("--json", action="store_true")
+    ls = sub.add_parser("lint-skill")
+    ls.add_argument("path", nargs="*")
+    sc = sub.add_parser("scrub")
+    sc.add_argument("path", nargs="?", default=".")
+    sc.add_argument("--author", action="append", default=[])
+    sc.add_argument("--dry-run", action="store_true")
+    gh = sub.add_parser("git-hook")
+    gh.add_argument("name")
+    gh.add_argument("rest", nargs="*")
+    gh.add_argument("--prose", action="store_true")
+    cs = sub.add_parser("check-sources")
+    cs.add_argument("files", nargs="+")
     return p
 
 
@@ -74,6 +86,14 @@ def main(argv: list[str] | None = None) -> int:
         from harness.hooks import cli
     elif args.cmd == "humanize":
         from harness.humanize import cli
+    elif args.cmd == "lint-skill":
+        from harness.skilllint import cli
+    elif args.cmd == "scrub":
+        from harness.scrub import cli
+    elif args.cmd == "git-hook":
+        from harness.gitgate import cli
+    elif args.cmd == "check-sources":
+        from harness.sources import cli
     else:
         from harness.doctor import cli
     return cli(args)

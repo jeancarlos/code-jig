@@ -32,6 +32,7 @@ INVISIBLE_CHARS = {chr(code): name for code, name in _CHAR_CODES}
 ATTRIBUTION_LINES = re.compile(
     rb"(?mi)^[ \t]*("
     rb"co-authored-by:[^\n]*(?:claude|codex|chatgpt|an ai)[^\n]*|"
+    rb"claude-session:[^\n]*|"
     rb"generated with[^\n]*(?:claude[^\n]*|codex[^\n]*|chatgpt[^\n]*)|"
     rb"[^\n]*\xf0\x9f\xa4\x96 generated[^\n]*|"
     rb"(?:ai-assisted|ai-generated)[^\n]*"
@@ -53,7 +54,7 @@ def is_binary(data: bytes) -> bool:
         return True
 
 
-def strip_bytes(original: bytes) -> tuple[bytes, dict]:
+def strip_bytes(original: bytes, attribution: bool = True) -> tuple[bytes, dict]:
     """Watermark-free bytes and how many of each kind were removed."""
     counts = {"zero_width": 0, "directional": 0, "attribution_lines": 0}
     text = original.decode("utf-8")
@@ -70,8 +71,9 @@ def strip_bytes(original: bytes) -> tuple[bytes, dict]:
         else:
             out.append(ch)
     data = "".join(out).encode("utf-8")
-    counts["attribution_lines"] = len(ATTRIBUTION_LINES.findall(data))
-    data = ATTRIBUTION_LINES.sub(b"", data)
+    if attribution:
+        counts["attribution_lines"] = len(ATTRIBUTION_LINES.findall(data))
+        data = ATTRIBUTION_LINES.sub(b"", data)
     return (BOM + data if had_bom else data), counts
 
 
