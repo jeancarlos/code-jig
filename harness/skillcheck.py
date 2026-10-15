@@ -82,6 +82,21 @@ def unknown_commands(text: str) -> list[str]:
     return sorted({c for c in HARNESS_CMD.findall(code) if c not in known})
 
 
+def _linked(p: Path) -> bool:
+    return p.is_symlink() or (hasattr(p, "is_junction") and p.is_junction())
+
+
+def check_fixture(skill: Path, name: str) -> Path:
+    evals = skill / "evals"
+    src = evals / name
+    if not FIXTURE_NAME.fullmatch(name) or not src.is_dir():
+        raise ValueError("fixture must name a folder directly inside evals/")
+    if _linked(evals) or _linked(src) or any(_linked(f) for f in src.rglob("*")) \
+            or not src.resolve().is_relative_to(skill.resolve() / "evals"):
+        raise ValueError("the fixture is or holds a symlink, which could hand Codex files from outside it")
+    return src
+
+
 def load_cases(skill: Path) -> list[Case]:
     data = tomllib.loads((skill / "evals.toml").read_text(encoding="utf-8-sig"))
     cases = data.get("case")
@@ -97,15 +112,16 @@ def load_cases(skill: Path) -> list[Case]:
             raise ValueError(f"case {i}: {e}") from None
         if case.sandbox not in SANDBOXES:
             raise ValueError(f"case {i}: sandbox must be one of {', '.join(SANDBOXES)}")
-        if case.fixture and (not FIXTURE_NAME.fullmatch(case.fixture) or not (skill / "evals" / case.fixture).is_dir()):
-            raise ValueError(f"case {i}: fixture must name a folder directly inside evals/")
+        if case.fixture:
+            try:
+                check_fixture(skill, case.fixture)
+            except ValueError as e:
+                raise ValueError(f"case {i}: {e}") from None
         if not all(isinstance(c, dict) and isinstance(c.get("message"), str) and set(c) == {"message"} for c in case.commits):
             raise ValueError(f"case {i}: each commits entry is a table with only a message")
         if not (all(isinstance(x, str) for x in [*case.commands, *case.output]) and isinstance(case.commands, list)
                 and isinstance(case.output, list) and type(case.spawns) is int and type(case.read_skill) is bool):
             raise ValueError(f"case {i}: commands and output are lists of strings, spawns a number, read_skill true or false")
-        if case.fixture and any(f.is_symlink() for f in (skill / "evals" / case.fixture).rglob("*")):
-            raise ValueError(f"case {i}: the fixture holds a symlink, which could hand Codex files from outside it")
         for pattern in case.output:
             re.compile(pattern)
         out.append(case)
@@ -191,7 +207,7 @@ def review(skill: Path, bin_path: Path, home: Path) -> tuple[bool, str]:
 
 
 def copy_fixture(skill: Path, name: str, work: Path) -> None:
-    shutil.copytree(skill / "evals" / name, work, symlinks=True, ignore=shutil.ignore_patterns(".git"))
+    shutil.copytree(check_fixture(skill, name), work, symlinks=True, ignore=shutil.ignore_patterns(".git"))
 
 
 def make_commits(work: Path, commits: list[dict]) -> None:
@@ -214,7 +230,7 @@ def live(skill: Path, case: Case, bin_path: Path, home: Path, profile: str) -> t
                 copy_fixture(skill, case.fixture, work)
             else:
                 work.mkdir()
-        except OSError as e:
+        except (OSError, ValueError) as e:
             return [f"could not copy the fixture: {e}"], Run()
         subprocess.run(["git", "init", "-q", str(work)], capture_output=True)
         try:

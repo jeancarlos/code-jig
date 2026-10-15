@@ -82,6 +82,30 @@ class Static(unittest.TestCase):
         write(d / "evals.toml", "[[case]]\nprompt = 'x'\nfixture = 'repo'\n")
         self.assertTrue(any("symlink" in m for lv, m in skillcheck.static(d) if lv == "FAIL"))
 
+    def test_a_fixture_that_is_itself_a_link_fails_and_is_never_copied(self):
+        d = write(self.root / "demo" / "SKILL.md", SKILL).parent
+        outside = write(self.root / "outside" / "secret.txt", "s\n").parent
+        (d / "evals").mkdir()
+        try:
+            (d / "evals" / "repo").symlink_to(outside, target_is_directory=True)
+        except OSError:
+            self.skipTest("no symlinks here")
+        write(d / "evals.toml", "[[case]]\nprompt = 'x'\nfixture = 'repo'\n")
+        self.assertTrue(any("symlink" in m for lv, m in skillcheck.static(d) if lv == "FAIL"))
+        with self.assertRaises(ValueError):
+            skillcheck.copy_fixture(d, "repo", self.root / "work")
+        self.assertFalse((self.root / "work" / "secret.txt").exists())
+
+    def test_an_evals_folder_that_is_a_link_fails(self):
+        d = write(self.root / "demo" / "SKILL.md", SKILL).parent
+        outside = write(self.root / "outside" / "repo" / "a.txt", "s\n").parent.parent
+        try:
+            (d / "evals").symlink_to(outside, target_is_directory=True)
+        except OSError:
+            self.skipTest("no symlinks here")
+        write(d / "evals.toml", "[[case]]\nprompt = 'x'\nfixture = 'repo'\n")
+        self.assertTrue(any("symlink" in m for lv, m in skillcheck.static(d) if lv == "FAIL"))
+
     def test_nested_files_named_like_check_files_are_installed(self):
         d = write(self.root / "demo" / "SKILL.md", SKILL).parent
         write(d / "templates" / "evals.toml", "[[case]]\n")
