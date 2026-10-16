@@ -53,19 +53,18 @@ Windows (PowerShell):
 irm https://setup-harness.jeansouza.dev/bootstrap.py | py -3 -I - --overlay <path|git-url>
 ```
 
-A piped script cannot check itself. To check what you run, download the files, compare the zip's checksum, then run the script:
+A piped script cannot check itself. To read what you run, download only `bootstrap.py`, read it, then run it:
 
 ```sh
-curl -fsSLO https://github.com/jeancarlos/codex-harness/releases/latest/download/bootstrap.py
-curl -fsSLO https://github.com/jeancarlos/codex-harness/releases/latest/download/SHA256SUMS
-curl -fsSLO https://github.com/jeancarlos/codex-harness/releases/latest/download/codex-harness.zip
-sha256sum -c SHA256SUMS
+curl -fsSLO https://setup-harness.jeansouza.dev/bootstrap.py
 python3 -I bootstrap.py --overlay <path|git-url>
 ```
 
-On Windows, compare `(Get-FileHash codex-harness.zip -Algorithm SHA256).Hash` with the line in `SHA256SUMS`, then run `py -3 -I bootstrap.py --overlay <path|git-url>`.
+On Windows: `py -3 -I bootstrap.py --overlay <path|git-url>`. The same file is at `https://github.com/jeancarlos/codex-harness/releases/latest/download/bootstrap.py`.
 
-The GitHub URLs above work when `setup-harness.jeansouza.dev` is down. The bootstrap also falls back to GitHub on its own. Releases before v0.11.0 have no zip.
+`bootstrap.py` has no checksum of its own; reading it is the check. The bootstrap downloads the zip itself and checks it against the release's `SHA256SUMS`. That catches a corrupted download, but not a compromised GitHub release.
+
+The GitHub URL above works when `setup-harness.jeansouza.dev` is down. The bootstrap also falls back to GitHub on its own. Releases before v0.11.0 have no zip.
 
 The bootstrap unpacks the release into `~/.local/share/codex-harness/vX.Y.Z/` (`%LOCALAPPDATA%\codex-harness\vX.Y.Z\` on Windows), runs `install`, writes a `harness` launcher in `~/.local/bin` and runs `doctor`. The overlay's `core_version` picks the release. To change it, edit `core_version` and run the bootstrap again; see [upgrade and rollback](docs/runbooks/upgrade-and-rollback.md).
 
