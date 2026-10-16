@@ -35,6 +35,12 @@ RENAME: list[tuple[str, str | Callable[[re.Match], str]]] = [
     (r'(?m)^description: (Use when AI attribution leaked.*)$',
      lambda m: 'description: "' + m[1].replace('"', '\\"') + '"'),
     (re.escape("<HOME>/code-jig/lib"), "<STATE>/lib"),
+    (r"(?m)^python -m codejig cross-review", "code-jig cross-review"),
+    (re.escape("A tag on a test that checks something else is worse than no tag.\n"),
+     "A tag on a test that checks something else is worse than no tag.\n- After changing any test or tag, rerun step 3 so the report uses current results.\n"),
+    (re.escape("Run it from the repository under review, with the code-jig core on `PYTHONPATH` (POSIX: `PYTHONPATH=<core> python -m codejig cross-review`; "
+               'Windows PowerShell: `$env:PYTHONPATH = "<core>"; py -3 -m codejig cross-review`).'),
+     "Run it from the repository under review with the installed launcher: `code-jig cross-review` (alias `cjig cross-review`; the URL bootstrap installs both)."),
 ]
 EXAMPLES = ("enterprise", "personal", "release")
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "golden"

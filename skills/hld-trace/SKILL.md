@@ -62,6 +62,7 @@ It reads test files that git tracks or would track (`tests/`, `__tests__/`, `*.t
 - Missing: write the test (the `regression-tests` skill), tagged.
 - Unknown: the requirement was renamed or removed, or the tag has a typo. Ask before deleting a test.
 - Covered: read each requirement next to its tests and confirm the assertions prove it. A tag on a test that checks something else is worse than no tag.
+- After changing any test or tag, rerun step 3 so the report uses current results.
 
 ## 5. Report
 
