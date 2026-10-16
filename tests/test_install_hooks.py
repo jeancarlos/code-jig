@@ -92,7 +92,8 @@ class HookIsolation(unittest.TestCase):
         posix, _ = hook_commands(paths.CORE, root / "codex home", sys.executable)
         args = posix.split(" -m codejig ", 1)[0].split()
         exe = [a.strip("'") for a in args if not a.startswith("PYTHONPATH=")]
-        env = {"PYTHONPATH": str(paths.CORE), "PATH": "/usr/bin:/bin", "SYSTEMROOT": __import__("os").environ.get("SYSTEMROOT", "")}
+        env = {"PYTHONPATH": str(paths.CORE), "PATH": "/usr/bin:/bin", "SYSTEMROOT": __import__("os").environ.get("SYSTEMROOT", ""),
+               "XDG_DATA_HOME": str(root / "state data"), "LOCALAPPDATA": str(root / "state data")}
         r = subprocess.run([*exe, "-m", "codejig", "--codex-home", str(root / "codex home"), "collect"],
                            cwd=cwd, env=env, capture_output=True, text=True, stdin=subprocess.DEVNULL)
         self.assertEqual(r.stdout, "{}\n")

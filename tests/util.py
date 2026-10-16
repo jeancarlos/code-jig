@@ -1,5 +1,5 @@
-import shutil
 import os
+import shutil
 import tempfile
 import unittest
 from unittest import mock

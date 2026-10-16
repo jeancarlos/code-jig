@@ -11,12 +11,13 @@ from tests.util import tree
 
 class StateDir(unittest.TestCase):
     def test_state_dir_follows_xdg_data_home(self):
-        with mock.patch("os.name", "posix"), mock.patch.dict(os.environ, {"XDG_DATA_HOME": "/x/data"}):
+        fake = types.SimpleNamespace(name="posix", environ={"XDG_DATA_HOME": "/x/data"})
+        with mock.patch.object(paths, "os", fake):
             self.assertEqual(paths.state_dir(), Path("/x/data") / "code-jig")
 
     def test_state_dir_defaults_under_home(self):
-        env = {k: v for k, v in os.environ.items() if k != "XDG_DATA_HOME"}
-        with mock.patch("os.name", "posix"), mock.patch.dict(os.environ, env, clear=True):
+        fake = types.SimpleNamespace(name="posix", environ={})
+        with mock.patch.object(paths, "os", fake):
             self.assertEqual(paths.state_dir(), Path.home() / ".local" / "share" / "code-jig")
 
     def test_state_dir_uses_localappdata_on_windows(self):
