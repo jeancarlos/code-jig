@@ -2,7 +2,6 @@ import contextlib
 import io
 import json
 import subprocess
-import types
 import unittest
 from unittest import mock
 

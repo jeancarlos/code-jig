@@ -7,7 +7,7 @@ from unittest import mock
 
 from codejig import collect
 from codejig.__main__ import build_parser
-from tests.util import tree, write
+from tests.util import tree
 
 
 class Cli(unittest.TestCase):

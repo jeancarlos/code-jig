@@ -1,5 +1,15 @@
 # code-jig
 
+[![CI](https://github.com/jeancarlos/code-jig/actions/workflows/ci.yml/badge.svg)](https://github.com/jeancarlos/code-jig/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/jeancarlos/code-jig/actions/workflows/security.yml/badge.svg)](https://github.com/jeancarlos/code-jig/actions/workflows/security.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/jeancarlos/code-jig/badge)](https://scorecard.dev/viewer/?uri=github.com/jeancarlos/code-jig)
+[![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jeancarlos/code-jig/badges/coverage.json)](https://github.com/jeancarlos/code-jig/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/jeancarlos/code-jig)](https://github.com/jeancarlos/code-jig/releases/latest)
+[![license](https://img.shields.io/github/license/jeancarlos/code-jig)](LICENSE)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+![platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
+![dependencies: none (stdlib)](https://img.shields.io/badge/dependencies-none%20(stdlib)-brightgreen)
+
 **Make the official Codex CLI cheaper, safer and smarter, by configuration alone.**
 
 code-jig is an open-source config pack for [OpenAI Codex](https://github.com/openai/codex). One command turns a stock install into a tuned setup: model tiers, automatic command review, a local token tracker, a set of battle-tested skills and a knowledge base that grows with you. No proxy, no daemon, no fork, no extra binaries. Just Python's standard library and the settings Codex already ships.

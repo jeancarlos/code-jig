@@ -1,5 +1,7 @@
 name: ci
 on: [push, pull_request, workflow_call]
+permissions:
+  contents: read
 jobs:
   unit:
     strategy:
@@ -9,11 +11,28 @@ jobs:
         python: ["3.11", "3.13"]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python }}
-      - run: python -m unittest discover -s tests -v
+      - name: unit tests
+        shell: bash
+        run: |
+          if python -c 'import sys; sys.exit(sys.version_info < (3, 12))'; then durations="--durations 10"; else durations=""; fi
+          python -m unittest discover -s tests -v $durations 2>&1 | tee "$RUNNER_TEMP/unit.log"
+      - name: unit summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### unit: $RUNNER_OS, Python $(python -V | cut -d' ' -f2)"
+            echo '```'
+            grep -E '^(Ran |OK|FAILED)' "$RUNNER_TEMP/unit.log" || echo "no result line"
+            grep -A11 'Slowest test durations' "$RUNNER_TEMP/unit.log" || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: install.sh smoke
         if: runner.os == 'Linux'
         shell: bash
@@ -35,11 +54,13 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
       - run: npm install -g @openai/codex@0.162.1
@@ -66,22 +87,31 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
       - run: python -m pip install lizard==1.24.1 ruff==0.17.0 vulture==2.16
       - run: npm install -g knip@6.41.0
+      - name: ruff pyflakes
+        if: runner.os == 'Linux'
+        run: ruff check --select F codejig tests bootstrap.py
       - name: gitleaks and osv-scanner (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
           mkdir -p "$RUNNER_TEMP/bin"
-          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz | tar xz -C "$RUNNER_TEMP/bin" gitleaks
+          cd "$RUNNER_TEMP"
+          curl -sSLO https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks_8.30.1_linux_x64.tar.gz" | sha256sum -c -
+          tar xzf gitleaks_8.30.1_linux_x64.tar.gz -C bin gitleaks
           curl -sSL -o "$RUNNER_TEMP/bin/osv-scanner" https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_linux_amd64
+          echo "160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b  $RUNNER_TEMP/bin/osv-scanner" | sha256sum -c -
           chmod +x "$RUNNER_TEMP/bin/osv-scanner"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: gitleaks and osv-scanner (Windows)
@@ -106,11 +136,59 @@ jobs:
           printf '999999\n' > "$RUNNER_TEMP/ids.txt"
           python -m codejig trace "$RUNNER_TEMP/ids.txt" --json > "$RUNNER_TEMP/trace.json" || test $? -eq 1
           python -c "import json, sys; d = json.load(open(sys.argv[1], encoding='utf-8')); assert d['missing'] == ['999999'], d" "$RUNNER_TEMP/trace.json"
+  coverage:
+    runs-on: ubuntu-latest
+    outputs:
+      percent: ${{ steps.measure.outputs.percent }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - run: python -m pip install coverage==7.16.2
+      - name: measure
+        id: measure
+        run: |
+          coverage run --branch --include='codejig/*,bootstrap.py' -m unittest discover -s tests -t .
+          echo "percent=$(coverage report --format=total)" >> "$GITHUB_OUTPUT"
+          {
+            echo "### coverage"
+            coverage report --format=markdown
+          } >> "$GITHUB_STEP_SUMMARY"
+          coverage report --fail-under=93
+  badge:
+    needs: coverage
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository_owner == 'jeancarlos'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: write coverage badge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PERCENT: ${{ needs.coverage.outputs.percent }}
+        run: |
+          url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git init -q badge
+          cd badge
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch -q --depth 1 "$url" badges; then git checkout -q -B badges FETCH_HEAD; else git checkout -q --orphan badges; fi
+          if [ "$PERCENT" -ge 90 ]; then color=brightgreen; elif [ "$PERCENT" -ge 80 ]; then color=green; elif [ "$PERCENT" -ge 70 ]; then color=yellowgreen; elif [ "$PERCENT" -ge 60 ]; then color=yellow; else color=orange; fi
+          printf '{"schemaVersion":1,"label":"coverage","message":"%s%%","color":"%s"}\n' "$PERCENT" "$color" > coverage.json
+          git add coverage.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -q -m "coverage ${PERCENT}%"
+          git push -q "$url" HEAD:badges
   lint-agents:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
       - run: npx --yes agnix@0.57.0 .
@@ -121,11 +199,13 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
       - run: npm install -g @openai/codex@0.162.1
@@ -162,8 +242,10 @@ jobs:
   worker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
       - run: node --test worker/index.test.mjs

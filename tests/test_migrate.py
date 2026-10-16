@@ -337,7 +337,7 @@ class Migrate(unittest.TestCase):
     def test_sidecars_are_renamed(self):
         claude = self.user / ".claude" / "skills"
         old = write(claude / "mine" / ".codex-harness", "abc\n")
-        both = write(self.skills / "other" / ".codex-harness", "abc\n")
+        write(self.skills / "other" / ".codex-harness", "abc\n")
         write(self.skills / "other" / ".code-jig", "def\n")
         migrate.move_skill_sidecars([claude, self.skills])
         self.assertFalse(old.exists())

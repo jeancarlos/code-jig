@@ -2,7 +2,6 @@ import contextlib
 import hashlib
 import io
 import os
-import sys
 import unittest
 from unittest import mock
 
