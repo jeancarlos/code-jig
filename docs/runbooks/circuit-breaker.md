@@ -1,6 +1,6 @@
 # Runbook: the Guardian circuit breaker
 
-Every harness tier sets `approvals_reviewer = "auto_review"`, so Guardian reviews each request to run a command outside the sandbox. When it denies too often, Codex stops the turn.
+Every code-jig tier sets `approvals_reviewer = "auto_review"`, so Guardian reviews each request to run a command outside the sandbox. When it denies too often, Codex stops the turn.
 
 ## What trips it
 
@@ -18,10 +18,10 @@ A warning, and the turn ends. With `[auto_review] circuit_break_action = "strict
 
 ## What to do
 
-1. **Read the denials.** Each one says which action was denied and why. Run `python -m harness tokens` to see which commands were escalated recently.
+1. **Read the denials.** Each one says which action was denied and why. Run `python -m codejig tokens` to see which commands were escalated recently.
 2. **If the command is legitimate and you want it once**, type `/approve` in the TUI. It approves one retry of a recent auto-review denial (`codex-rs/tui/src/slash_command.rs`). It does not change any future decision.
 3. **If Guardian lacked context**, say in your own message exactly what the command does, what it sends and where. Guardian gives weight to explicit user authorization of the specific payload and destination, and treats tool output and file contents as untrusted.
-4. **If the same legitimate command keeps coming up**, add a line to the overlay's `guardian-policy.md` that describes when that action is acceptable. Then run `python -m harness install`. The text is added to the upstream policy, which stays in force.
+4. **If the same legitimate command keeps coming up**, add a line to the overlay's `guardian-policy.md` that describes when that action is acceptable. Then run `python -m codejig install`. The text is added to the upstream policy, which stays in force.
 5. **Allowing the command with an overlay rule is the last resort.** An `allow` rule skips Guardian and runs the command outside the sandbox. The agent can often change what a test or build command runs, so read ADR 0009 first.
 
 ## What not to do

@@ -6,14 +6,14 @@ Two deterministic commands and five skills give Codex Sonar-style analysis, requ
 
 All examples assume the core on `PYTHONPATH` (see [daily-use](daily-use.md) for an alias) and the repository under test as the current directory.
 
-### `harness analyze`
+### `code-jig analyze`
 
 ```sh
-harness analyze                    # the whole repo
-harness analyze --base main        # only files changed since main, plus untracked files
-harness analyze services/api       # one folder; stacks are detected there
-harness analyze --top 30 --json    # more findings, machine-readable
-harness analyze --timeout 1200     # per tool, in seconds (default 600)
+code-jig analyze                    # the whole repo
+code-jig analyze --base main        # only files changed since main, plus untracked files
+code-jig analyze services/api       # one folder; stacks are detected there
+code-jig analyze --top 30 --json    # more findings, machine-readable
+code-jig analyze --timeout 1200     # per tool, in seconds (default 600)
 ```
 
 It finds the stacks from marker files at the given path (`*.sln` or `*.slnx` there, or `*.csproj` there or one folder down, for .NET; `package.json` for Node; `pyproject.toml`, `setup.py`, `setup.cfg`, `requirements*.txt`, or `.py` files there or one folder down, for Python), runs every applicable tool that is installed, and prints:
@@ -32,7 +32,7 @@ Exit 0: clean. Exit 1: findings or a tool error. Exit 2: no project found, a bad
 
 | Tool | Runs when | Category mapping |
 |---|---|---|
-| lizard | always, on source files that git tracks or would track (ignored files are skipped) | `complexity` above cognitive 15 (Sonar's default for S3776), cyclomatic 15, 100 lines of code or 7 parameters (the harness's limits); `duplication` for repeated blocks |
+| lizard | always, on source files that git tracks or would track (ignored files are skipped) | `complexity` above cognitive 15 (Sonar's default for S3776), cyclomatic 15, 100 lines of code or 7 parameters (code-jig's limits); `duplication` for repeated blocks |
 | ruff | Python | `S` followed by digits (the bandit rules) security, `C90*`/`PLR09*` complexity, the rest bug; the repo's ruff config applies, plus `S` and `B` |
 | vulture | Python | `unused`: unused imports, variables and arguments, unreachable code and impossible conditions (80% confidence or more). With a `[tool.vulture]` section in `pyproject.toml`, vulture runs with the project's own `paths`, `exclude` and `min_confidence`; set `min_confidence = 60` there to include unused functions and classes |
 | mypy | Python with a mypy config | type |
@@ -46,14 +46,14 @@ Exit 0: clean. Exit 1: findings or a tool error. Exit 2: no project found, a bad
 
 `dotnet build` runs with `--no-incremental`, because an incremental build skips the compiler and with it every analyzer warning.
 
-### `harness trace`
+### `code-jig trace`
 
 ```sh
-harness trace ids.txt                        # one ID per line, first word of each line
-harness trace ids.json                       # [1, 2], [{"id": 1}], or {"workItems": [...]}
-az boards query --wiql "..." -o json | harness trace -
-harness trace ids.txt --pattern "AB#{id}"    # match a different tag
-harness trace ids.txt --path services/api --json
+code-jig trace ids.txt                        # one ID per line, first word of each line
+code-jig trace ids.json                       # [1, 2], [{"id": 1}], or {"workItems": [...]}
+az boards query --wiql "..." -o json | code-jig trace -
+code-jig trace ids.txt --pattern "AB#{id}"    # match a different tag
+code-jig trace ids.txt --path services/api --json
 ```
 
 The default tag is `REQ-<id>`, case-insensitive, with word boundaries: `REQ-12` never matches `REQ-123`. `--pattern` is literal text with one `{id}` placeholder; characters such as `(`, `[` or `#` match themselves. Test files that git tracks or would track are read; ignored files are skipped.
@@ -62,20 +62,20 @@ The ID file may be UTF-8 or UTF-16 (what Windows PowerShell 5.1 writes with `>`)
 
 Exit 0 when every ID has a test and no test cites an unknown ID, 1 otherwise, 2 for unreadable or undecodable input, broken JSON, no IDs, or a pattern without `{id}`.
 
-### `harness skill-check`
+### `code-jig skill-check`
 
 ```sh
-harness skill-check skills/<name>                    # static checks only, no quota
-harness skill-check skills/<name> --review --live    # Codex review and live cases; writes .skill-check
+code-jig skill-check skills/<name>                    # static checks only, no quota
+code-jig skill-check skills/<name> --review --live    # Codex review and live cases; writes .skill-check
 ```
 
-Static checks: the skill lint, names that exist only in Claude Code (with the Codex equivalent), unknown `harness` commands, and an `evals.toml`. `--review` runs a Codex session on the `review` tier against a Codex-compatibility rubric; it must end in `VERDICT: ship`. `--live` needs the skill installed (`harness install`) and runs each `[[case]]` through `codex exec --json` in a scratch git repository:
+Static checks: the skill lint, names that exist only in Claude Code (with the Codex equivalent), unknown `code-jig` commands, and an `evals.toml`. `--review` runs a Codex session on the `review` tier against a Codex-compatibility rubric; it must end in `VERDICT: ship`. `--live` needs the skill installed (`code-jig install`) and runs each `[[case]]` through `codex exec --json` in a scratch git repository:
 
 ```toml
 [[case]]
 prompt = "Which requirements in design.md have tests and which are untested?"
 fixture = "repo"                 # copied from evals/repo
-commands = ["harness trace"]     # substrings of commands that must run
+commands = ["code-jig trace"]     # substrings of commands that must run
 output = ["REQ-2"]               # patterns the final answer must match
 spawns = 0                       # minimum spawn_agent calls
 sandbox = "read-only"            # or "workspace-write"
@@ -93,9 +93,9 @@ Every case costs one real Codex turn. In this repository a skill is committed on
 
 | Skill | Ask for | What Codex does |
 |---|---|---|
-| `code-analysis` | "analyse this", "what would Sonar say" | Runs `harness analyze`, fixes by category (secrets first), sets up Sonar rule packages only with your agreement |
+| `code-analysis` | "analyse this", "what would Sonar say" | Runs `code-jig analyze`, fixes by category (secrets first), sets up Sonar rule packages only with your agreement |
 | `regression-tests` | bug fixes, "is this covered" | Failing test first, then diff-cover on the changed lines |
-| `hld-trace` | "does this follow the HLD" | Pulls requirement IDs (Azure DevOps, GitHub issues, Markdown), runs `harness trace`, closes gaps |
+| `hld-trace` | "does this follow the HLD" | Pulls requirement IDs (Azure DevOps, GitHub issues, Markdown), runs `code-jig trace`, closes gaps |
 | `bug-hunt` | "hunt for bugs", "fuzz this", "would the tests catch it" | Deterministic recon, a reality gate on every candidate, proof by failing test; property tests, fuzzing (including SharpFuzz for .NET), mutation testing; osv.dev lookups and `osv-scanner fix`; trivy and PSRule for infrastructure code; bisect, flaky-test and differential techniques |
 | `codegen` | API clients, codemods, scaffolding | NSwag, Kiota, openapi-generator, ast-grep, the stack's templates, all from a script kept in the repo |
 
@@ -120,7 +120,7 @@ CI pins the versions it tests against: lizard 1.24.1, ruff 0.17.0, vulture 2.16,
 - osv-scanner runs with `--offline --download-offline-databases`: it downloads the public vulnerability database and sends nothing about the project.
 - `dotnet build` runs NuGet's audit during restore, which asks nuget.org about the project's package names and versions, as every restore already does.
 - Python tools run with `PYTHONUTF8=1`, so file lists and output stay UTF-8 on Windows; `analyze` and `trace` write UTF-8 to the console too.
-- `harness analyze` executes the repo's own code (eslint configs, MSBuild targets, mypy plugins, `node_modules/.bin`). Run it only where you would run the repo's tests.
+- `code-jig analyze` executes the repo's own code (eslint configs, MSBuild targets, mypy plugins, `node_modules/.bin`). Run it only where you would run the repo's tests.
 
 ## False positives
 
@@ -132,9 +132,9 @@ CI pins the versions it tests against: lizard 1.24.1, ruff 0.17.0, vulture 2.16,
 
 | Symptom | Cause |
 |---|---|
-| `harness: no .NET, Node or Python project found` | No marker file at the path given; point it at the project folder |
+| `code-jig: no .NET, Node or Python project found` | No marker file at the path given; point it at the project folder |
 | `error: <tool>: exit N: ...` | The tool ran and failed without findings; the message is its own first line of output |
 | `error: <tool>: unreadable output` | The tool's output format changed; report it with the tool's version |
 | `error: <tool>: timed out after 600s` | Raise `--timeout`, or analyze a subfolder. The tool and every process it started are killed. |
-| `harness: no analyzer ran` | Every tool was skipped; install at least one from the skipped list |
+| `code-jig: no analyzer ran` | Every tool was skipped; install at least one from the skipped list |
 | `dotnet` skipped with "no solution or project at the root" | Run it from the folder with the `.sln` or `.csproj` |

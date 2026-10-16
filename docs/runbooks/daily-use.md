@@ -5,8 +5,8 @@
 Add to your shell profile, with your own paths:
 
 ```sh
-export CODEX_HARNESS_OVERLAY=~/codex-overlay
-alias harness='PYTHONPATH=~/codex-harness python3 -m harness'
+export CODE_JIG_OVERLAY=~/code-jig-overlay
+alias code-jig='PYTHONPATH=~/code-jig python3 -m codejig'
 alias cx='codex --profile default'
 ```
 
@@ -36,7 +36,7 @@ The picks below follow each model's own description in the account catalog (`mod
 | `bulk`, and every `explorer` | Lookups, searches, web research for `web-consensus`, mechanical edits | `gpt-6-luna` ("fast and affordable for easier tasks") | `gpt-6-luna` |
 | `review`, and every `reviewer` | `cross-review`, the `web-consensus` challenger, checking a finding before acting on it | `gpt-6-astra`: the strongest model checks the workhorse's work | `gpt-5.6-sol`: another generation, so different blind spots |
 
-The two example overlays carry these picks: `overlay-examples/personal` for the public catalog, `overlay-examples/enterprise` for the work one. `harness doctor` checks every pick against the account it runs on, and lists the models available when one is missing.
+The two example overlays carry these picks: `overlay-examples/personal` for the public catalog, `overlay-examples/enterprise` for the work one. `code-jig doctor` checks every pick against the account it runs on, and lists the models available when one is missing.
 
 ## Subagent roles
 
@@ -56,31 +56,31 @@ Installed into `~/.agents/skills`, picked up by every session. Ask for them by n
 |---|---|
 | `cross-review` | Before you commit a plan, design or diff, get a review from a model of another family. |
 | `grilling` | Stress-test a plan or decision; it asks at most three questions per round and keeps the settled answers. |
-| `web-consensus` | Settle a factual question against live sources instead of memory: cheap parallel researchers, a cross-family challenger, `harness check-sources` on every quote, a verdict on the strongest model. |
+| `web-consensus` | Settle a factual question against live sources instead of memory: cheap parallel researchers, a cross-family challenger, `code-jig check-sources` on every quote, a verdict on the strongest model. |
 | `improve` | "Remember this", "make this a rule": turns a lesson into an overlay change, then reinstalls. |
-| `code-analysis` | "What would Sonar say": runs `harness analyze` and fixes by category. |
+| `code-analysis` | "What would Sonar say": runs `code-jig analyze` and fixes by category. |
 | `regression-tests` | Bug fixes and behaviour changes: failing test first, then coverage of the changed lines. |
-| `hld-trace` | "Does this follow the design": requirement IDs to tests with `harness trace`. |
+| `hld-trace` | "Does this follow the design": requirement IDs to tests with `code-jig trace`. |
 | `bug-hunt` | Property tests, fuzzing, mutation testing on the changed files. |
 | `codegen` | OpenAPI clients, codemods, scaffolding from a script kept in the repo. |
-| `skill-validate` | Before shipping a new or edited skill: `harness lint-skill`, then a `reviewer` pass against a fixed rubric. |
-| `remove-ai-attribution` | AI co-author or "Generated with" lines already in commits: `harness scrub`, with your approval before each push. |
+| `skill-validate` | Before shipping a new or edited skill: `code-jig lint-skill`, then a `reviewer` pass against a fixed rubric. |
+| `remove-ai-attribution` | AI co-author or "Generated with" lines already in commits: `code-jig scrub`, with your approval before each push. |
 
 superpowers (`codex plugin add superpowers@openai-curated-remote`) adds brainstorming, planning, TDD and debugging workflows.
 
 ## Review your own change before pushing
 
 ```sh
-harness cross-review                 # uncommitted changes against HEAD
-harness cross-review --base main     # the whole branch
-harness cross-review src/a.py docs/b.md
+code-jig cross-review                 # uncommitted changes against HEAD
+code-jig cross-review --base main     # the whole branch
+code-jig cross-review src/a.py docs/b.md
 ```
 
 It runs the `review` tier read-only and prints findings. Verify each one before acting. New files that were never added are not in `git diff`; run `git add -N <file>` first so they show up.
 
 ## The repo's own AGENTS.md
 
-Codex reads `AGENTS.md` from the repo root down to the current directory, after the global one. Keep the repo's file short and concrete: how to build, test and lint, where things live, what not to touch. `harness doctor`, run inside the repo, shows how much of the 32 KiB budget the chain uses.
+Codex reads `AGENTS.md` from the repo root down to the current directory, after the global one. Keep the repo's file short and concrete: how to build, test and lint, where things live, what not to touch. `code-jig doctor`, run inside the repo, shows how much of the 32 KiB budget the chain uses.
 
 ## When something looks wrong
 

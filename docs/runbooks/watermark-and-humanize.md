@@ -1,6 +1,6 @@
 # Runbook: watermark stripping, humanizing and edit feedback
 
-After every file Claude Code or Codex writes, the harness cleans that file and tells you, and the agent, what it changed. Nothing runs on files the agent did not just write.
+After every file Claude Code or Codex writes, code-jig cleans that file and tells you, and the agent, what it changed. Nothing runs on files the agent did not just write.
 
 ## When it runs
 
@@ -9,7 +9,7 @@ After every file Claude Code or Codex writes, the harness cleans that file and t
 | Claude Code | `PostToolUse`, matcher `Write\|Edit\|MultiEdit\|NotebookEdit`, in `~/.claude/settings.json` | `tool_input.file_path` / `notebook_path` |
 | Codex | `PostToolUse` in `~/.codex/hooks.json` | `apply_patch` calls only: the `*** Add File:`, `*** Update File:` and `*** Move to:` targets of the patch argument |
 
-Any other tool call, including one that only reads a file or writes text that looks like a patch, touches nothing. Both entries carry the status message `codex-harness watermark`; `harness install` replaces them in place and leaves your own hooks alone. Relative paths resolve against the `cwd` in the hook payload, and only regular files inside that directory are touched: symlinks, directories and paths that resolve outside it are skipped.
+Any other tool call, including one that only reads a file or writes text that looks like a patch, touches nothing. Both entries carry the status message `code-jig watermark`; `code-jig install` replaces them in place and leaves your own hooks alone. Relative paths resolve against the `cwd` in the hook payload, and only regular files inside that directory are touched: symlinks, directories and paths that resolve outside it are skipped.
 
 When something changed, the hook prints one JSON object with `systemMessage` (shown to you) and `hookSpecificOutput.additionalContext` (given to the model), for example `watermark: src/app.py: stripped 2 invisible chars, 1 attribution lines`, and logs the same line to stderr. A clean file produces no output and keeps its modification time. The hook always exits 0, so a failure never blocks the tool call.
 
@@ -40,24 +40,24 @@ After cleaning, the same hook tells the model about two kinds of problems in wha
 | `.py` | `ruff check --isolated --no-cache --select E9,F63,F7,F82`: syntax errors and undefined names. `--isolated` ignores the repo's ruff config, so a project with hundreds of rules does not flood the model. Without ruff on `PATH`, a standard-library parse catches syntax errors only. A `ruff` that resolves inside the workspace is never run. |
 | `.json`, `.toml` | Standard-library parse. |
 
-At most 10 lines per file reach the model, for example `lint: src/app.py` followed by `src/app.py:12:5: F821 Undefined name 'cfg'`. TypeScript, C# and other stacks get nothing here: every checker for them executes repository code (eslint configs, tsc plugins, `dotnet build`, `node_modules/.bin`) or takes longer than the hook's 10 seconds. Run them through `harness analyze` or the repo's own commands instead.
+At most 10 lines per file reach the model, for example `lint: src/app.py` followed by `src/app.py:12:5: F821 Undefined name 'cfg'`. TypeScript, C# and other stacks get nothing here: every checker for them executes repository code (eslint configs, tsc plugins, `dotnet build`, `node_modules/.bin`) or takes longer than the hook's 10 seconds. Run them through `code-jig analyze` or the repo's own commands instead.
 
 **Test tampering.** A write that deletes a test file or adds a skip marker gets a notice, for example `tests: tests/test_api.py: added @pytest.mark.skip. Unless the user asked for this, restore the test and fix the code instead.` Agents under pressure to make tests pass sometimes skip or delete them; the notice puts the question back in front of the model. It looks at:
 
 - Codex `apply_patch`: `*** Delete File:` lines naming a test file, and added `+` lines with a skip marker.
 - Claude Code `Edit` and `MultiEdit`: skip markers in the new text that were not in the old text. A full-file `Write` is not compared, because the hook only sees the result.
 
-Test files are recognised by path: a `test`, `tests`, `__tests__`, `spec` or `specs` folder, `test_*.py`, `*_test.py`, `*_test.go`, `*.test.ts`, `*.spec.js` and their variants, `*Tests.cs`, and `.Tests/` projects. The skip markers are `SKIP_MARKER` in `harness/feedback.py` (pytest, unittest, Jest, Mocha and Vitest, xUnit, NUnit and MSTest, JUnit, Go). A test deleted with `rm` from the shell is not seen.
+Test files are recognised by path: a `test`, `tests`, `__tests__`, `spec` or `specs` folder, `test_*.py`, `*_test.py`, `*_test.go`, `*.test.ts`, `*.spec.js` and their variants, `*Tests.cs`, and `.Tests/` projects. The skip markers are `SKIP_MARKER` in `codejig/feedback.py` (pytest, unittest, Jest, Mocha and Vitest, xUnit, NUnit and MSTest, JUnit, Go). A test deleted with `rm` from the shell is not seen.
 
 ## Run it by hand
 
 ```sh
-harness humanize --check path/   # list what would change; exits 1 if anything would
-harness humanize path/           # apply
+code-jig humanize --check path/   # list what would change; exits 1 if anything would
+code-jig humanize path/           # apply
 ```
 
 Directories are walked without entering `.git`, `node_modules`, virtualenvs, `dist`, `build` or hidden folders.
 
 ## Turn it off
 
-Remove the `codex-harness watermark` entries from `~/.claude/settings.json` and `~/.codex/hooks.json`. The next `harness install` adds them back.
+Remove the `code-jig watermark` entries from `~/.claude/settings.json` and `~/.codex/hooks.json`. The next `code-jig install` adds them back.

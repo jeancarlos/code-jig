@@ -1,16 +1,16 @@
-# Runbook: is the harness paying off?
+# Runbook: is code-jig paying off?
 
-`harness evidence` answers three questions with numbers: do commits made in Codex sessions need less rework than the rest of the same repos, which parts of the harness actually fire, and what it all costs. It reads two things only: the tracker database the `Stop` hook fills (`$CODEX_HOME/codex-harness/usage.sqlite3`) and `git log` of the repos your sessions ran in. Nothing leaves the machine.
+`code-jig evidence` answers three questions with numbers: do commits made in Codex sessions need less rework than the rest of the same repos, which parts of code-jig actually fire, and what it all costs. It reads two things only: the tracker database the `Stop` hook fills (`~/.local/share/code-jig/usage.sqlite3`) and `git log` of the repos your sessions ran in. Nothing leaves the machine.
 
 ```sh
-PYTHONPATH=<core> python3 -m harness evidence                    # last 90 days, every repo Codex worked in
-PYTHONPATH=<core> python3 -m harness evidence --days 30          # a shorter window
-PYTHONPATH=<core> python3 -m harness evidence --repo ~/src/app   # one repo, even one Codex never ran in
-PYTHONPATH=<core> python3 -m harness evidence --analyze 10       # add analyze findings on 10 sampled commits per group (slow)
-PYTHONPATH=<core> python3 -m harness evidence --json > evidence.json
+PYTHONPATH=<core> python3 -m codejig evidence                    # last 90 days, every repo Codex worked in
+PYTHONPATH=<core> python3 -m codejig evidence --days 30          # a shorter window
+PYTHONPATH=<core> python3 -m codejig evidence --repo ~/src/app   # one repo, even one Codex never ran in
+PYTHONPATH=<core> python3 -m codejig evidence --analyze 10       # add analyze findings on 10 sampled commits per group (slow)
+PYTHONPATH=<core> python3 -m codejig evidence --json > evidence.json
 ```
 
-It runs `collect` first, so a session that ended in an error (which skips the `Stop` hook) is still counted. After upgrading from a version before v0.7.0, run `harness collect --rescan` once so older sessions get their exit codes, skill reads and Guardian outcomes too.
+It runs `collect` first, so a session that ended in an error (which skips the `Stop` hook) is still counted. After upgrading from a version before v0.7.0, run `code-jig collect --rescan` once so older sessions get their exit codes, skill reads and Guardian outcomes too.
 
 ## How commits are split
 
@@ -52,7 +52,7 @@ Mature means at least 14 days old: a younger commit has not had the time to be r
 Run it once a week for a month and keep the JSON:
 
 ```sh
-PYTHONPATH=<core> python3 -m harness evidence --days 90 --json > evidence-$(date +%F).json
+PYTHONPATH=<core> python3 -m codejig evidence --days 90 --json > evidence-$(date +%F).json
 ```
 
 Compare the files month to month. The database, the repos and the report all stay on the machine.

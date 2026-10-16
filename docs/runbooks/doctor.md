@@ -3,9 +3,9 @@
 `doctor` checks that Codex, the core, the overlay and the files `install` wrote all agree. Run it after every `install`, after every Codex update, and whenever Codex behaves differently than you expect.
 
 ```sh
-PYTHONPATH=<core> python3 -m harness --overlay <overlay> doctor          # free
-PYTHONPATH=<core> python3 -m harness --overlay <overlay> doctor --live   # spends a few tokens
-PYTHONPATH=<core> python3 -m harness doctor --check-binary               # only the binary scan
+PYTHONPATH=<core> python3 -m codejig --overlay <overlay> doctor          # free
+PYTHONPATH=<core> python3 -m codejig --overlay <overlay> doctor --live   # spends a few tokens
+PYTHONPATH=<core> python3 -m codejig doctor --check-binary               # only the binary scan
 ```
 
 Each line is `<level> <check>: <detail>`. `ok` is fine, `warn` needs a look, `FAIL` makes doctor exit 1. Run it from inside a repo you work in: the AGENTS.md chain and the prompt probe read the current directory.
