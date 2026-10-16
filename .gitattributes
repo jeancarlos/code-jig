@@ -10,6 +10,7 @@ skills/*/evals.toml export-ignore
 skills/*/.skill-check export-ignore
 .gitignore export-ignore
 .gitleaksignore export-ignore
+ruff.toml export-ignore
 .gitattributes export-ignore
 AGENTS.md export-ignore
 CLAUDE.md export-ignore
