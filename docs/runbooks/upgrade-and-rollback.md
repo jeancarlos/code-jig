@@ -8,7 +8,8 @@ If you installed with the bootstrap (a release install):
 
 1. Set `core_version = "vX.Y.Z"` in the overlay's `overlay.toml`, then run `bootstrap.py` again (the same command you used to install). If the bootstrap made the overlay for you (`~/code-jig-overlay`, first line `# written by code-jig bootstrap`, no `.git`), you can run it with `--version latest` or `--version vX.Y.Z` instead, and it rewrites the pin.
 2. The bootstrap downloads the new version folder, runs `install`, points the launcher at it and runs `doctor`. Fix every FAIL before the next session.
-3. An overlay that is a git repository, or that you wrote yourself, is never rewritten. `--version` with a different tag is refused there; edit `core_version` yourself.
+3. Without the web: download the newer `code-jig.zip` and `SHA256SUMS` from the release page and run `bootstrap.py --zip code-jig.zip` with the same overlay. A zip older than the installed version is refused unless `--version` names the zip's version (an explicit downgrade). `--github` makes a normal run use github.com only.
+4. An overlay that is a git repository, or that you wrote yourself, is never rewritten. `--version` with a different tag is refused there; edit `core_version` yourself.
 
 If you work from a checkout:
 

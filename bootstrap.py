@@ -155,20 +155,21 @@ def fetch(url, limit):
 
 
 def fetch_asset(tag, name, base, repo, limit):
-    primary = f"{base.rstrip('/')}/v/{tag}/{name}"
-    try:
-        return fetch(primary, limit)
-    except urllib.error.HTTPError as e:
-        e.close()
-        if e.code == 404:
-            raise Refused(f"{tag} has no {name}; {NO_ZIP}")
-        if e.code < 500:
-            raise Refused(f"{primary}: HTTP {e.code}")
-        reason = f"HTTP {e.code}"
-    except OSError as e:
-        reason = str(e)
     fallback = f"https://github.com/{repo}/releases/download/{tag}/{name}"
-    print(f"bootstrap: {primary} failed ({reason}); trying {fallback}", file=sys.stderr)
+    if base:
+        primary = f"{base.rstrip('/')}/v/{tag}/{name}"
+        try:
+            return fetch(primary, limit)
+        except urllib.error.HTTPError as e:
+            e.close()
+            if e.code == 404:
+                raise Refused(f"{tag} has no {name}; {NO_ZIP}")
+            if e.code < 500:
+                raise Refused(f"{primary}: HTTP {e.code}")
+            reason = f"HTTP {e.code}"
+        except OSError as e:
+            reason = str(e)
+        print(f"bootstrap: {primary} failed ({reason}); trying {fallback}", file=sys.stderr)
     try:
         return fetch(fallback, limit)
     except urllib.error.HTTPError as e:
@@ -201,17 +202,40 @@ def parse_sums(data):
     raise Refused(f"{SUMS} has no line for {ZIP}")
 
 
-def get_core(tag, data, base, repo):
+def version_key(tag):
+    return tuple(int(n) for n in tag[1:].split("."))
+
+
+def read_zip(path):
+    try:
+        if path.stat().st_size > MAX_ZIP:
+            raise Refused(f"{path} is larger than {MAX_ZIP} bytes")
+        blob = path.read_bytes()
+        words = zipfile.ZipFile(io.BytesIO(blob)).read("VERSION").decode("utf-8").split()
+    except (OSError, KeyError, ValueError, zipfile.BadZipFile) as e:
+        raise Refused(f"{path} is not a {ZIP} release: {e}")
+    tag = valid_tag(words[0] if words else "")
+    sums = path.with_name(SUMS)
+    if sums.is_file():
+        if hashlib.sha256(blob).hexdigest() != parse_sums(sums.read_bytes()):
+            raise Refused(f"{path} does not match {sums}")
+    else:
+        print(f"warning: no {SUMS} next to {path}; not verified", file=sys.stderr)
+    return blob, tag
+
+
+def get_core(tag, data, base, repo, blob=None):
     target = data / tag
     if target.exists():
         verify_tree(target, tag)
         print(f"bootstrap: reusing {target}")
         return target
     data.mkdir(parents=True, exist_ok=True)
-    expected = parse_sums(fetch_asset(tag, SUMS, base, repo, MAX_SUMS))
-    blob = fetch_asset(tag, ZIP, base, repo, MAX_ZIP)
-    if hashlib.sha256(blob).hexdigest() != expected:
-        raise Refused(f"{ZIP} for {tag} does not match {SUMS}")
+    if blob is None:
+        expected = parse_sums(fetch_asset(tag, SUMS, base, repo, MAX_SUMS))
+        blob = fetch_asset(tag, ZIP, base, repo, MAX_ZIP)
+        if hashlib.sha256(blob).hexdigest() != expected:
+            raise Refused(f"{ZIP} for {tag} does not match {SUMS}")
     unpack(blob, target, tag)
     print(f"bootstrap: unpacked {tag} into {target}")
     return target
@@ -329,13 +353,27 @@ def choose_tag(version, overlay, repo):
     return resolve(version, repo)
 
 
+def zip_tag(tag, version, overlay):
+    if version and version != tag:
+        raise Refused(f"--version {version} differs from the zip's version {tag}")
+    if overlay is not None:
+        pin = read_pin(overlay)
+        if pin != tag:
+            if not owned(overlay):
+                raise Refused(f"the zip is {tag} but core_version is {pin} in {overlay}; bump core_version in your overlay")
+            if version_key(tag) < version_key(pin) and version != tag:
+                raise Refused(f"the zip ({tag}) is older than the installed {pin}; pass --version {tag} to downgrade")
+    return tag
+
+
 MARK = "code-jig launcher "
 
 
 def sh_launcher(python, core, overlay, tag):
     q = shlex.quote
     return (f"#!/bin/sh\n# {MARK}{tag}\nPYTHONPATH={q(str(core))}\nCODE_JIG_OVERLAY={q(str(overlay))}\n"
-            f"export PYTHONPATH CODE_JIG_OVERLAY\nexec {q(python)} -P -s -m codejig \"$@\"\n")
+            "CODE_JIG_LAUNCHER=\"$(cd \"$(dirname \"$0\")\" && pwd)/$(basename \"$0\")\"\n"
+            f"export PYTHONPATH CODE_JIG_OVERLAY CODE_JIG_LAUNCHER\nexec {q(python)} -P -s -m codejig \"$@\"\n")
 
 
 def cmd_escape(value):
@@ -350,6 +388,7 @@ def cmd_launcher(python, core, overlay, tag):
             "chcp 65001 >nul\n"
             f"set \"PYTHONPATH={cmd_escape(core)}\"\n"
             f"set \"CODE_JIG_OVERLAY={cmd_escape(overlay)}\"\n"
+            "set \"CODE_JIG_LAUNCHER=%~f0\"\n"
             f"\"{cmd_escape(python)}\" -P -s -m codejig %*\n"
             "set \"CODE_JIG_RC=%ERRORLEVEL%\"\n"
             "chcp %CODE_JIG_CP% >nul\n"
@@ -399,6 +438,7 @@ def path_hint(bin_dir):
         first, line = hint_lines(bin_dir, os.name)
         print(f"bootstrap: {bin_dir} is not on PATH; {first}")
         print(line)
+        print("this is optional: agents get the full launcher path through AGENTS.md")
 
 
 def parse_args(argv):
@@ -406,6 +446,8 @@ def parse_args(argv):
     p.add_argument("--overlay", help="overlay folder or git URL")
     p.add_argument("--overlay-dir", help="where a cloned or new overlay goes (default ~/code-jig-overlay)")
     p.add_argument("--version", help="vX.Y.Z or latest")
+    p.add_argument("--zip", help="install from a downloaded code-jig.zip; no download")
+    p.add_argument("--github", action="store_true", help="use github.com only, never code-jig.jeansouza.dev")
     p.add_argument("--base-url", default=BASE_URL)
     p.add_argument("--repo", default=REPO)
     p.add_argument("--codex-bin")
@@ -433,14 +475,14 @@ def interpreter():
     return getattr(sys, "_base_executable", None) or sys.executable
 
 
-def run_install(python, core, overlay, codex_home):
-    env = dict(os.environ, PYTHONPATH=str(core), CODE_JIG_OVERLAY=str(overlay))
+def run_install(python, core, overlay, codex_home, launcher):
+    env = dict(os.environ, PYTHONPATH=str(core), CODE_JIG_OVERLAY=str(overlay), CODE_JIG_LAUNCHER=str(launcher))
     home = ["--codex-home", codex_home] if codex_home else []
     return subprocess.run([python, "-P", "-s", "-m", "codejig", *home, "install"], env=env).returncode
 
 
-def run_doctor(python, core, overlay, codex_home, codex_bin):
-    env = dict(os.environ, PYTHONPATH=str(core), CODE_JIG_OVERLAY=str(overlay))
+def run_doctor(python, core, overlay, codex_home, codex_bin, launcher):
+    env = dict(os.environ, PYTHONPATH=str(core), CODE_JIG_OVERLAY=str(overlay), CODE_JIG_LAUNCHER=str(launcher))
     home = ["--codex-home", codex_home] if codex_home else []
     binary = ["--codex-bin", codex_bin] if codex_bin else []
     if subprocess.run([python, "-P", "-s", "-m", "codejig", *home, "doctor", *binary], env=env).returncode:
@@ -458,12 +500,17 @@ def run(args):
         check_launcher(path)
     dest = Path(args.overlay_dir).expanduser().absolute() if args.overlay_dir else Path.home() / "code-jig-overlay"
     overlay = resolve_overlay(args.overlay or os.environ.get("CODE_JIG_OVERLAY"), dest)
-    tag = choose_tag(args.version, overlay, args.repo)
-    core = get_core(tag, data, args.base_url, args.repo)
+    blob = None
+    if args.zip:
+        blob, tag = read_zip(Path(args.zip).expanduser().absolute())
+        zip_tag(tag, args.version, overlay)
+    else:
+        tag = choose_tag(args.version, overlay, args.repo)
+    core = get_core(tag, data, None if args.github else args.base_url, args.repo, blob)
     if overlay is None:
         overlay = create_overlay(core, dest, tag)
     python = interpreter()
-    rc = run_install(python, core, overlay, args.codex_home)
+    rc = run_install(python, core, overlay, args.codex_home, launcher_paths(bins)[0])
     if rc:
         print(f"bootstrap: code-jig install failed with exit code {rc}; the launcher was not changed", file=sys.stderr)
         return rc
@@ -472,7 +519,7 @@ def run(args):
     for launcher in write_launcher(bins, python, core, overlay, tag):
         print(f"bootstrap: wrote {launcher}")
     path_hint(bins)
-    run_doctor(python, core, overlay, args.codex_home, args.codex_bin)
+    run_doctor(python, core, overlay, args.codex_home, args.codex_bin, launcher_paths(bins)[0])
     return 0
 
 

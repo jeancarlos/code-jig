@@ -51,6 +51,12 @@ test("page lists requirements", async () => {
   assert.ok(body.indexOf("Requires Python 3.11+ and git.") < body.indexOf("curl -fsSL"))
 })
 
+test("page mentions the manual zip form", async () => {
+  const body = await (await worker.fetch(req("/"), env())).text()
+  assert.ok(body.includes("--zip code-jig.zip"))
+  assert.ok(body.includes("https://github.com/jeancarlos/code-jig/releases/latest"))
+})
+
 test("root serves html and counts nothing", async () => {
   const e = env()
   const r = await worker.fetch(req("/"), e)

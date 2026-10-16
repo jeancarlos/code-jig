@@ -30,6 +30,28 @@ class Render(unittest.TestCase):
         self.assertEqual(render_agents(self.core, self.ov), stamp("core rules\n"))
 
 
+class LauncherLine(unittest.TestCase):
+    def setUp(self):
+        self.root = tree(self)
+        self.core = self.root / "core-repo"
+        write(self.core / "core" / "AGENTS.core.md", "core rules\n")
+        self.ov = self.root / "overlay"
+        self.ov.mkdir()
+        self.launcher = self.root / "off path" / "code-jig"
+
+    def render(self, path_dirs):
+        env = {"CODE_JIG_LAUNCHER": str(self.launcher), "PATH": os.pathsep.join(map(str, path_dirs))}
+        with mock.patch.dict(os.environ, env):
+            return render_agents(self.core, self.ov)
+
+    def test_agents_md_names_the_launcher_when_off_path(self):
+        text = self.render([self.root])
+        self.assertIn(f"On this machine `code-jig` is not on PATH; run it as `{self.launcher}`.", text)
+
+    def test_agents_md_unchanged_when_launcher_on_path(self):
+        self.assertEqual(self.render([self.root, self.launcher.parent]), stamp("core rules\n"))
+
+
 class WriteGenerated(unittest.TestCase):
     def setUp(self):
         self.home = tree(self) / "codex home"

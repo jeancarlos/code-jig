@@ -66,6 +66,8 @@ On Windows: `py -3 -I bootstrap.py --overlay <path|git-url>`. The same file is a
 
 The GitHub URL above works when `code-jig.jeansouza.dev` is down. The bootstrap also falls back to GitHub on its own. Releases before v0.11.0 have no zip.
 
+**No one-liner allowed?** On a machine that blocks the one-liner, PATH edits or `code-jig.jeansouza.dev`, download `code-jig.zip`, `SHA256SUMS` and `bootstrap.py` from the [release page](https://github.com/jeancarlos/code-jig/releases/latest) (each file is also at `https://github.com/jeancarlos/code-jig/releases/latest/download/<file>`) and run `py -3 -I bootstrap.py --zip code-jig.zip --overlay <path>` (`python3 -I` on Linux and macOS). `--github` makes the bootstrap use github.com only. The launcher does not need to be on PATH: the generated `AGENTS.md` tells agents its full path.
+
 The bootstrap unpacks the release into `~/.local/share/code-jig/vX.Y.Z/` (`%LOCALAPPDATA%\code-jig\vX.Y.Z\` on Windows), runs `install`, writes `code-jig` and `cjig` launchers in `~/.local/bin` and runs `doctor`. The overlay's `core_version` picks the release. To change it, edit `core_version` and run the bootstrap again; see [upgrade and rollback](docs/runbooks/upgrade-and-rollback.md).
 
 ### From a checkout (to change the core)

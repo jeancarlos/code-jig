@@ -33,6 +33,7 @@ a { color: var(--link) }
 python3 -I bootstrap.py --overlay &lt;path|git-url&gt;</pre>
 <pre>irm https://code-jig.jeansouza.dev/setup -OutFile bootstrap.py
 py -3 -I bootstrap.py --overlay &lt;path|git-url&gt;</pre>
+<p>No one-liner allowed? Download <code>code-jig.zip</code>, <code>SHA256SUMS</code> and <code>bootstrap.py</code> from the <a href="https://github.com/jeancarlos/code-jig/releases/latest">GitHub release</a>, then run <code>py -3 -I bootstrap.py --zip code-jig.zip --overlay &lt;path&gt;</code> (<code>python3 -I</code> on Linux and macOS).</p>
 <p class="mute">This site counts requests for the setup script and release zips: event, version, client type, country. No IP address, user-agent string or install ID is stored. The tool itself sends nothing.</p>
 <p><a href="https://github.com/jeancarlos/code-jig">Source on GitHub</a></p>
 </body>
