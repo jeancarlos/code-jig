@@ -7,7 +7,7 @@ import sys
 import tempfile
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from functools import partial
 from pathlib import Path
 
@@ -136,7 +136,7 @@ def _ts(text: str) -> datetime:
 
 
 def _iso(when: datetime) -> str:
-    return when.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return when.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def sessions(con, since: str) -> list[Session]:
@@ -150,7 +150,7 @@ def sessions(con, since: str) -> list[Session]:
 def _git(*args: str) -> subprocess.CompletedProcess | None:
     try:
         return subprocess.run(["git", "-c", "core.quotepath=false", *args], capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL)
+                              encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, check=False)
     except OSError:
         return None
 
@@ -406,7 +406,7 @@ def cli(args) -> int:
     con = collect.connect(collect.db_path())
     try:
         collect.scan(con, home)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         data = report(con, now - timedelta(days=args.days), now, repo, args.analyze, timeout=args.timeout)
     finally:
         con.close()

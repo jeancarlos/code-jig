@@ -1,0 +1,4 @@
+rules:
+  dangerous-triggers:
+    ignore:
+      - badge.yml:3

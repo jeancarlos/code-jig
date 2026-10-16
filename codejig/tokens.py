@@ -1,7 +1,7 @@
 import sqlite3
 import sys
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from codejig import collect
 
@@ -101,7 +101,7 @@ def cli(args) -> int:
         return 2
     con = collect.connect(path)
     try:
-        since = (datetime.now(timezone.utc) - timedelta(days=args.days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        since = (datetime.now(UTC) - timedelta(days=args.days)).strftime("%Y-%m-%dT%H:%M:%SZ")
         for line in render(summary(con, since, args.top), args.cache_floor):
             print(line)
     finally:

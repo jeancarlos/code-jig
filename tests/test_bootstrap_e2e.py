@@ -10,8 +10,8 @@ import sys
 import tempfile
 import threading
 import unittest
-from unittest import mock
 from pathlib import Path
+from unittest import mock
 
 import bootstrap
 from codejig import VERSION, install
@@ -53,15 +53,15 @@ class EndToEnd(unittest.TestCase):
         self.env = {k: v for k, v in os.environ.items() if k not in ("CODE_JIG_OVERLAY", "PYTHONPATH", "CODEX_HOME")}
         self.env.update(HOME=str(self.home), USERPROFILE=str(self.home), GIT_CONFIG_GLOBAL=str(self.root / "gitconfig"),
                         CODE_JIG_SKILLS_DIR=str(self.root / "skills"), CODEX_BIN=str(self.root / "no-codex"))
-        self.dirs = dict(data=self.root / "data", bins=self.root / "bin", overlay=self.root / "code-jig-overlay",
-                         codex=self.root / "codex home")
+        self.dirs = {"data": self.root / "data", "bins": self.root / "bin", "overlay": self.root / "code-jig-overlay",
+                     "codex": self.root / "codex home"}
         self.httpd.paths.clear()
 
     def run_bootstrap(self, *extra):
         cmd = [sys.executable, "-I", str(ROOT / "bootstrap.py"), "--base-url", self.base, "--repo", "invalid/none",
                "--data-dir", str(self.dirs["data"]), "--bin-dir", str(self.dirs["bins"]),
                "--overlay-dir", str(self.dirs["overlay"]), "--codex-home", str(self.dirs["codex"]), *extra]
-        return subprocess.run(cmd, env=self.env, capture_output=True, text=True, errors="replace", timeout=300)
+        return subprocess.run(cmd, env=self.env, capture_output=True, text=True, errors="replace", timeout=300, check=False)
 
     def test_fresh_install_writes_everything(self):
         done = self.run_bootstrap("--version", TAG)
@@ -81,7 +81,7 @@ class EndToEnd(unittest.TestCase):
     def test_rerun_after_running_code_jig_reuses_the_folder(self):
         self.assertEqual(self.run_bootstrap("--version", TAG).returncode, 0)
         launcher = bootstrap.launcher_paths(self.dirs["bins"])[0]
-        subprocess.run([str(launcher), "--help"], env=self.env, capture_output=True)
+        subprocess.run([str(launcher), "--help"], env=self.env, capture_output=True, check=False)
         self.httpd.paths.clear()
         done = self.run_bootstrap()
         self.assertEqual(done.returncode, 0, done.stderr)
@@ -134,7 +134,7 @@ class PipeShape(unittest.TestCase):
                 if marker.exists():
                     marker.unlink()
                 subprocess.run([sys.executable, *flags, "-", "--help"], input=SOURCE, text=True, cwd=cwd,
-                               capture_output=True)
+                               capture_output=True, check=False)
                 self.assertEqual(marker.exists(), planted)
 
     def test_truncated_source_runs_nothing(self):
@@ -143,11 +143,11 @@ class PipeShape(unittest.TestCase):
         for cut in range(0, len(lines) - 1, max(1, len(lines) // 12)):
             with self.subTest(cut=cut):
                 done = subprocess.run([sys.executable, "-I", "-", "--help"], input="".join(lines[:cut]), text=True,
-                                      cwd=cwd, capture_output=True)
+                                      cwd=cwd, capture_output=True, check=False)
                 self.assertNotIn("code-jig bootstrap", done.stdout)
 
     def test_full_source_runs(self):
-        done = subprocess.run([sys.executable, "-I", "-", "--help"], input=SOURCE, text=True, capture_output=True)
+        done = subprocess.run([sys.executable, "-I", "-", "--help"], input=SOURCE, text=True, capture_output=True, check=False)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("code-jig bootstrap", done.stdout)
 

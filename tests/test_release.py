@@ -25,7 +25,7 @@ REQUIRED = {"VERSION", "bench/requirements.toml", "codejig/__main__.py", "core/A
 def build(tag, out):
     env = dict(os.environ, PYTHONPATH=str(ROOT))
     return subprocess.run([sys.executable, str(SCRIPT), tag, str(out)], env=env, capture_output=True, text=True,
-                          encoding="utf-8")
+                          encoding="utf-8", check=False)
 
 
 @unittest.skipUnless((ROOT / ".git").exists(), "needs a git checkout")

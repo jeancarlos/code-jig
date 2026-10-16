@@ -4,8 +4,8 @@ import shutil
 import sys
 import tempfile
 import unittest
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from codejig import install, paths
 from codejig.overlay import load
@@ -24,8 +24,8 @@ RENAME: list[tuple[str, str | Callable[[re.Match], str]]] = [
     (re.escape("from harness"), "from codejig"),
     (re.escape("import harness"), "import codejig"),
     (re.escape('"harness.'), '"codejig.'),
-    (r"(?<![\w./-])harness (?=(install|doctor|collect|hooks|humanize|tokens|cross-review|analyze|trace|scrub|skill-check"
-     r"|lint-skill|check-sources|evidence|git-hook)\b)", "code-jig "),
+    ((r"(?<![\w./-])harness (?=(install|doctor|collect|hooks|humanize|tokens|cross-review|analyze|trace|scrub|skill-check"
+      r"|lint-skill|check-sources|evidence|git-hook)\b)"), "code-jig "),
     (re.escape("`harness`"), "`code-jig`"),
     (re.escape("the harness core"), "the code-jig core"),
     (re.escape("contains `harness/`"), "contains `codejig/`"),

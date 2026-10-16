@@ -86,7 +86,7 @@ def move_db(home: Path, dry_run: bool = False) -> list[str]:
 
 def _git(*args: str) -> subprocess.CompletedProcess | None:
     try:
-        return subprocess.run(["git", *args], capture_output=True, text=True, encoding="utf-8")
+        return subprocess.run(["git", *args], capture_output=True, text=True, encoding="utf-8", check=False)
     except OSError:
         return None
 

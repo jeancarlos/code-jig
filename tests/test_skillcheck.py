@@ -188,7 +188,7 @@ class Inputs(unittest.TestCase):
         subprocess.run(["git", "init", "-q", str(work)], check=True)
         skillcheck.make_commits(work, [{"message": "first"}, {"message": "second\n\nCo-authored-by: Codex <noreply@openai.com>"},
                                        {"message": "$(touch pwned); `touch pwned2`"}])
-        log = subprocess.run(["git", "-C", str(work), "log", "--format=%B%x00"], capture_output=True, text=True).stdout
+        log = subprocess.run(["git", "-C", str(work), "log", "--format=%B%x00"], capture_output=True, text=True, check=False).stdout
         self.assertIn("Co-authored-by: Codex", log)
         self.assertIn("$(touch pwned)", log)
         self.assertFalse((work / "pwned").exists() or (work / "pwned2").exists())
@@ -263,8 +263,8 @@ class WithFakeCodex(unittest.TestCase):
         install.install_skills({"demo": self.skill}, self.agents)
 
     def args(self, **kw):
-        base = dict(skills=[str(self.skill)], review=True, live=True, profile="default", codex_bin=str(self.root / "codex"),
-                    codex_home=str(self.home), trust_evals=True)
+        base = {"skills": [str(self.skill)], "review": True, "live": True, "profile": "default", "codex_bin": str(self.root / "codex"),
+                "codex_home": str(self.home), "trust_evals": True}
         return types.SimpleNamespace(**{**base, **kw})
 
     def run_cli(self, mode="good", **kw):

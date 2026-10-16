@@ -1,7 +1,7 @@
 # code-jig
 
 [![CI](https://github.com/jeancarlos/code-jig/actions/workflows/ci.yml/badge.svg)](https://github.com/jeancarlos/code-jig/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/jeancarlos/code-jig/actions/workflows/security.yml/badge.svg)](https://github.com/jeancarlos/code-jig/actions/workflows/security.yml)
+[![security](https://github.com/jeancarlos/code-jig/actions/workflows/security.yml/badge.svg)](https://github.com/jeancarlos/code-jig/actions/workflows/security.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/jeancarlos/code-jig/badge)](https://scorecard.dev/viewer/?uri=github.com/jeancarlos/code-jig)
 [![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jeancarlos/code-jig/badges/coverage.json)](https://github.com/jeancarlos/code-jig/actions/workflows/ci.yml)
 [![release](https://img.shields.io/github/v/release/jeancarlos/code-jig)](https://github.com/jeancarlos/code-jig/releases/latest)

@@ -31,7 +31,7 @@ def gather(cwd: Path, base: str | None, files: list[str]) -> str:
         text = "\n\n".join(parts)
     else:
         try:
-            r = subprocess.run(["git", "diff", base or "HEAD"], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            r = subprocess.run(["git", "diff", base or "HEAD"], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
         except OSError:
             raise ValueError("git is not installed") from None
         if r.returncode != 0:
@@ -60,7 +60,7 @@ def cli(args) -> int:
                "-c", 'approvals_reviewer="user"', "-c", 'web_search="disabled"',
                "--skip-git-repo-check", "-o", str(out), "-"]
         r = subprocess.run(cmd, input=PROMPT + material + "\nMATERIAL>>>\n", capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", cwd=Path.cwd(), env=probe.env_for(paths.codex_home(args.codex_home)))
+                           errors="replace", cwd=Path.cwd(), env=probe.env_for(paths.codex_home(args.codex_home)), check=False)
         if r.returncode != 0 or not out.is_file():
             print(f"code-jig: codex exec failed: {(r.stderr.strip().splitlines() or ['no output'])[-1]}", file=sys.stderr)
             return 1

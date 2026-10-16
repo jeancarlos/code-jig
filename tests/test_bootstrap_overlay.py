@@ -127,9 +127,9 @@ class Pins(unittest.TestCase):
         self.assertTrue(bootstrap.owned(ov))
         git(ov, "init", "-q")
         self.assertFalse(bootstrap.owned(ov))
-        with mock.patch.object(bootstrap, "resolve_latest", return_value="v0.13.0"):
-            with self.assertRaisesRegex(bootstrap.Refused, "bump core_version"):
-                bootstrap.choose_tag("v0.12.0", ov, "o/r")
+        with mock.patch.object(bootstrap, "resolve_latest", return_value="v0.13.0"), \
+                self.assertRaisesRegex(bootstrap.Refused, "bump core_version"):
+            bootstrap.choose_tag("v0.12.0", ov, "o/r")
 
     def test_create_overlay_writes_own_marker_and_pin(self):
         core = self.root / "core"

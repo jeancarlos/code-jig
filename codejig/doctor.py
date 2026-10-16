@@ -9,7 +9,18 @@ import tomllib
 from pathlib import Path
 
 from codejig import managed, migrate, paths, probe, tiers
-from codejig.install import HOOK_STATUS, _git_config, _same_path, ROLE_TIERS, release_digest, render_agents, render_profile, role_files, skill_sources, valid_hook_groups
+from codejig.install import (
+    HOOK_STATUS,
+    ROLE_TIERS,
+    _git_config,
+    _same_path,
+    release_digest,
+    render_agents,
+    render_profile,
+    role_files,
+    skill_sources,
+    valid_hook_groups,
+)
 from codejig.overlay import Overlay, load
 
 Check = tuple[str, str, str]
@@ -220,7 +231,7 @@ def check_git_gate(ov: Overlay, cwd: Path) -> list[Check]:
     if not _same_path(current, target):
         return [("warn", "git gate", f"not active: global core.hooksPath is {current or 'unset'}, expected {target}")]
     local = subprocess.run(["git", "-C", str(cwd), "config", "--local", "--get", "core.hooksPath"],
-                           capture_output=True, text=True, encoding="utf-8").stdout.strip()
+                           capture_output=True, text=True, encoding="utf-8", check=False).stdout.strip()
     if local:
         return [("warn", "git gate", f"this repo sets core.hooksPath = {local}, which bypasses the gate here")]
     return [("ok", "git gate", f"active{' with the prose gate' if ov.prose_gate else ''}")]
@@ -265,7 +276,7 @@ def check_superpowers(home: Path) -> list[Check]:
 
 def _git(core: Path, *args: str) -> subprocess.CompletedProcess | None:
     try:
-        return subprocess.run(["git", "-C", str(core), *args], capture_output=True, text=True, encoding="utf-8")
+        return subprocess.run(["git", "-C", str(core), *args], capture_output=True, text=True, encoding="utf-8", check=False)
     except OSError:
         return None
 

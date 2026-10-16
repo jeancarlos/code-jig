@@ -393,7 +393,7 @@ class Shims(unittest.TestCase):
         write(repo / "README.md", "# x\n")
         git(repo, "add", "-A")
         r = subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "docs"], env={**env, "CODEX_THREAD_ID": "t"},
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, check=False)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("README.md", r.stderr)
         self.assertTrue(all(stat.S_IMODE(p.stat().st_mode) & 0o100 for p in hooks.iterdir()))
@@ -413,10 +413,10 @@ class Shims(unittest.TestCase):
         git(repo, "config", "core.hooksPath", str(hooks))
         push = ["git", "-C", str(repo), "push", "-q", "origin", "main"]
         env = {**NO_AGENT, **ENV}
-        first = subprocess.run(push, env=env, capture_output=True, text=True)
+        first = subprocess.run(push, env=env, capture_output=True, text=True, check=False)
         self.assertNotEqual(first.returncode, 0)
         self.assertIn("cleaned AI attribution from 1 commits on main", first.stderr)
-        second = subprocess.run(push, env=env, capture_output=True, text=True)
+        second = subprocess.run(push, env=env, capture_output=True, text=True, check=False)
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertEqual(git(repo, "log", "-1", "--format=%B", "origin/main"), "mine")
 

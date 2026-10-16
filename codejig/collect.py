@@ -172,7 +172,7 @@ def _scan_file(con: sqlite3.Connection, path: Path) -> tuple[int, int]:
         line += 1
         count += 1
 
-        def quarantine(reason: str) -> None:
+        def quarantine(reason: str, line: int = line) -> None:
             nonlocal bad
             bad += 1
             con.execute("INSERT OR IGNORE INTO quarantine VALUES (?,?,?)", (str(path), line, reason))

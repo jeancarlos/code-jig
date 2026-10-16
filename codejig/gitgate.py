@@ -5,7 +5,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-from codejig.scrub import Abort, blocker, common_dir, my_emails, range_revs, rewrite_range
+from codejig.scrub import (
+    Abort,
+    blocker,
+    common_dir,
+    my_emails,
+    range_revs,
+    rewrite_range,
+)
 from codejig.watermark import clean_message, has_watermark, is_binary, strip_bytes
 
 ZERO = "0" * 40
@@ -24,7 +31,7 @@ HOOKS = ("applypatch-msg", "pre-applypatch", "post-applypatch", "pre-commit", "p
 
 
 def _git(*args: str, stdin: bytes | None = None, check: bool = True) -> bytes:
-    r = subprocess.run(["git", *args], capture_output=True, input=stdin)
+    r = subprocess.run(["git", *args], capture_output=True, input=stdin, check=False)
     if check and r.returncode:
         raise RuntimeError(f"git {' '.join(args)}: {r.stderr.decode('utf-8', 'replace').strip()}")
     return r.stdout
@@ -115,7 +122,7 @@ def pre_commit(prose: bool) -> int:
 
 
 def _known(remote: str) -> bool:
-    return remote != ZERO and subprocess.run(["git", "cat-file", "-e", f"{remote}^{{commit}}"], capture_output=True).returncode == 0
+    return remote != ZERO and subprocess.run(["git", "cat-file", "-e", f"{remote}^{{commit}}"], capture_output=True, check=False).returncode == 0
 
 
 def _outgoing(local: str, remote: str) -> list[str]:
@@ -192,9 +199,8 @@ def pre_push(lines: list[str], cleanup: bool = False) -> int:
                 ref = _git("symbolic-ref", "-q", "HEAD", check=False).decode().strip() or ref
             branches[ref] = (parts[1], parts[3], bad)
     if problems and _cleanup_on(cleanup) and all(_cleanable(ref, local, remote, bad, emails)
-                                                 for ref, (local, remote, bad) in branches.items()):
-        if _clean(branches, emails):
-            return 1
+                                                 for ref, (local, remote, bad) in branches.items()) and _clean(branches, emails):
+        return 1
     if problems:
         print("code-jig: push refused, commit messages carry AI attribution:", file=sys.stderr)
         for sha in dict.fromkeys(problems):
@@ -219,7 +225,7 @@ def _run_tests() -> int:
         print("code-jig: push refused, cannot find the repo top level to run tests", file=sys.stderr)
         return 1
     env = {k: v for k, v in os.environ.items() if k not in HOOK_GIT_ENV}
-    rc = subprocess.run(cmd, shell=True, cwd=top, env=env).returncode
+    rc = subprocess.run(cmd, shell=True, cwd=top, env=env, check=False).returncode
     if rc:
         print(f"code-jig: push refused, tests fail ({cmd} exited {rc})", file=sys.stderr)
         return 1

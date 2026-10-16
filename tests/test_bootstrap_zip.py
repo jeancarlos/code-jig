@@ -102,5 +102,5 @@ class LauncherPath(unittest.TestCase):
         path = root / "bin" / "code-jig"
         write(path, bootstrap.sh_launcher("/bin/sh", "/c", "/o", "v1.2.3").replace(
             'exec /bin/sh -P -s -m codejig "$@"', 'echo "$CODE_JIG_LAUNCHER"'))
-        done = subprocess.run(["sh", "./code-jig"], cwd=root / "bin", capture_output=True, text=True)
+        done = subprocess.run(["sh", "./code-jig"], cwd=root / "bin", capture_output=True, text=True, check=False)
         self.assertEqual(done.stdout.strip(), os.path.realpath(path))

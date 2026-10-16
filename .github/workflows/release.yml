@@ -6,8 +6,6 @@ permissions:
   contents: read
 jobs:
   ci:
-    permissions:
-      contents: write
     uses: ./.github/workflows/ci.yml
   publish:
     needs: ci

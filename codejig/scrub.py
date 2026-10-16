@@ -21,7 +21,7 @@ class Abort(Exception):
 
 
 def _git(repo: Path, *args: str, stdin: bytes | None = None, check: bool = True) -> bytes:
-    r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, input=stdin)
+    r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, input=stdin, check=False)
     if check and r.returncode:
         raise Abort(f"git {' '.join(args)} failed: {r.stderr.decode('utf-8', 'replace').strip()}")
     return r.stdout
@@ -31,7 +31,7 @@ def my_emails(repo: Path, extra: list[str] = ()) -> set[str]:
     """user.email, every codejig.email value, and `extra`, lower-cased."""
     found = []
     for key in ("user.email", "codejig.email"):
-        r = subprocess.run(["git", "-C", str(repo), "config", "--get-all", key], capture_output=True, text=True, encoding="utf-8")
+        r = subprocess.run(["git", "-C", str(repo), "config", "--get-all", key], capture_output=True, text=True, encoding="utf-8", check=False)
         found += r.stdout.split()
     return {e.lower() for e in [*found, *extra] if e}
 
@@ -226,7 +226,7 @@ def _report(repo: Path, before: dict[str, str]) -> list[str]:
 def cli(args) -> int:
     repo = Path(args.path).resolve()
     r = subprocess.run(["git", "-C", str(repo), "rev-parse", "--git-common-dir"], capture_output=True, text=True,
-                       encoding="utf-8")
+                       encoding="utf-8", check=False)
     if r.returncode:
         print(f"code-jig: {repo} is not a git repository", file=sys.stderr)
         return 2

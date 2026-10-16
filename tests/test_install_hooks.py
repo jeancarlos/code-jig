@@ -4,7 +4,15 @@ import stat
 import unittest
 
 from codejig import paths
-from codejig.install import CLAUDE_CODE_WATERMARK_STATUS, HOOK_STATUS, hook_commands, merged_claude_code_hooks, merged_hooks, run, write_merged
+from codejig.install import (
+    CLAUDE_CODE_WATERMARK_STATUS,
+    HOOK_STATUS,
+    hook_commands,
+    merged_claude_code_hooks,
+    merged_hooks,
+    run,
+    write_merged,
+)
 from codejig.overlay import Overlay
 from tests.util import tree, write
 
@@ -82,6 +90,7 @@ class HookIsolation(unittest.TestCase):
     def test_hook_ignores_modules_planted_in_the_session_cwd(self):
         import subprocess
         import sys
+
         from codejig import paths
         root = tree(self)
         cwd = root / "repo"
@@ -95,7 +104,7 @@ class HookIsolation(unittest.TestCase):
         env = {"PYTHONPATH": str(paths.CORE), "PATH": "/usr/bin:/bin", "SYSTEMROOT": __import__("os").environ.get("SYSTEMROOT", ""),
                "XDG_DATA_HOME": str(root / "state data"), "LOCALAPPDATA": str(root / "state data")}
         r = subprocess.run([*exe, "-m", "codejig", "--codex-home", str(root / "codex home"), "collect"],
-                           cwd=cwd, env=env, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+                           cwd=cwd, env=env, capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False)
         self.assertEqual(r.stdout, "{}\n")
         self.assertFalse(marker.exists())
 
@@ -123,6 +132,7 @@ class HookInterpreter(unittest.TestCase):
     def test_flags_and_base_interpreter(self):
         import sys
         from unittest import mock
+
         from codejig import install
         posix, windows = hook_commands(tree(self), tree(self), "/usr/bin/python3")
         self.assertIn(" -P -s -m codejig ", posix)

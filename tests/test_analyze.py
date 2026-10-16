@@ -175,14 +175,10 @@ class Parsers(unittest.TestCase):
         self.assertEqual((f.category, f.rule, f.path, f.line), ("type", "TS2322", "src/x.ts", 4))
 
     def test_dotnet_dedupes_and_categorises(self):
-        line = str(self.root / "Svc" / "A.cs") + "(10,5): warning S3776: Refactor this method [{}]".format(self.root / "Svc" / "Svc.csproj")
-        out = "\n".join([
-            line, line,
-            "Svc/B.cs(3,1): warning CA5350: Weak crypto",
-            "Svc/C.cs(8,2): error CS0103: The name 'x' does not exist",
-            "Svc/D.cs(1,1): warning RCS1163: Unused parameter",
-            "Build FAILED.",
-        ])
+        line = f"{self.root / 'Svc' / 'A.cs'}(10,5): warning S3776: Refactor this method [{self.root / 'Svc' / 'Svc.csproj'}]"
+        out = (f"{line}\n{line}\nSvc/B.cs(3,1): warning CA5350: Weak crypto\n"
+               "Svc/C.cs(8,2): error CS0103: The name 'x' does not exist\n"
+               "Svc/D.cs(1,1): warning RCS1163: Unused parameter\nBuild FAILED.")
         found = analyze.parse_dotnet(out, self.root, self.tmp)
         self.assertEqual([(f.category, f.rule, f.path) for f in found], [
             ("complexity", "S3776", "Svc/A.cs"), ("security", "CA5350", "Svc/B.cs"),

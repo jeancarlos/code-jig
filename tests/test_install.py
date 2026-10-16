@@ -6,8 +6,15 @@ import unittest
 from unittest import mock
 
 from codejig import install
-from codejig.install import stamp
-from codejig.install import MARKER_PREFIX, cli, is_generated, render_agents, run, write_generated
+from codejig.install import (
+    MARKER_PREFIX,
+    cli,
+    is_generated,
+    render_agents,
+    run,
+    stamp,
+    write_generated,
+)
 from codejig.overlay import Overlay
 from tests.util import tree, write
 
@@ -93,9 +100,8 @@ class WriteGenerated(unittest.TestCase):
 
     def test_failed_write_keeps_user_file(self):
         write(self.target, "mine\n")
-        with mock.patch("codejig.atomicwrite.os.fsync", side_effect=OSError("disk full")):
-            with self.assertRaises(OSError):
-                write_generated(self.target, stamp("new\n"))
+        with mock.patch("codejig.atomicwrite.os.fsync", side_effect=OSError("disk full")), self.assertRaises(OSError):
+            write_generated(self.target, stamp("new\n"))
         self.assertEqual(self.target.read_text(encoding="utf-8"), "mine\n")
 
     def test_non_utf8_user_file_backed_up(self):
@@ -284,9 +290,8 @@ class AtomicInstall(unittest.TestCase):
                 raise OSError("replacement failed")
             return replace(source, target)
 
-        with mock.patch("os.replace", side_effect=fail_target):
-            with self.assertRaises(OSError):
-                write_generated(path, "new\n")
+        with mock.patch("os.replace", side_effect=fail_target), self.assertRaises(OSError):
+            write_generated(path, "new\n")
         self.assertTrue(path.exists())
         self.assertEqual(path.read_text(encoding="utf-8"), "old\n")
 

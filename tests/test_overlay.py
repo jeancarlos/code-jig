@@ -62,9 +62,8 @@ class Encodings(unittest.TestCase):
 
 class OverlayDir(unittest.TestCase):
     def test_unset_exits_with_hint(self):
-        with mock.patch.dict(os.environ, {}, clear=True):
-            with self.assertRaisesRegex(SystemExit, "CODE_JIG_OVERLAY"):
-                paths.overlay_dir(None)
+        with mock.patch.dict(os.environ, {}, clear=True), self.assertRaisesRegex(SystemExit, "CODE_JIG_OVERLAY"):
+            paths.overlay_dir(None)
 
     def test_missing_toml_exits(self):
         root = tree(self)
@@ -90,6 +89,7 @@ if __name__ == "__main__":
 class Resolve(unittest.TestCase):
     def test_relative_overlay_becomes_absolute(self):
         import os
+
         from codejig import paths
         root = tree(self)
         write(root / "ov" / "overlay.toml", 'core_version = "v1"\ncore_writable = true\n')

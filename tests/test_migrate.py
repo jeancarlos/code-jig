@@ -20,7 +20,7 @@ from tests.util import tree, write
 
 
 def git(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], capture_output=True, text=True, encoding="utf-8", cwd=cwd)
+    return subprocess.run(["git", *args], capture_output=True, text=True, encoding="utf-8", cwd=cwd, check=False)
 
 
 def values(key: str, repo: Path | None = None) -> list[str]:

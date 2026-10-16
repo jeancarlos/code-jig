@@ -217,7 +217,7 @@ def review(skill: Path, bin_path: Path, home: Path) -> tuple[bool, str]:
         marker = f"MATERIAL-{secrets.token_hex(8)}"
         try:
             r = subprocess.run(cmd, input=_rubric(marker) + _material(skill) + f"\n{marker}>>>\n", capture_output=True, text=True,
-                               encoding="utf-8", errors="replace", cwd=tmp, env=probe.env_for(home), timeout=900)
+                               encoding="utf-8", errors="replace", cwd=tmp, env=probe.env_for(home), timeout=900, check=False)
         except subprocess.TimeoutExpired:
             return False, "codex review timed out after 900s, the skill was not reviewed"
         text = out.read_text(encoding="utf-8").strip() if out.is_file() else ""
@@ -254,7 +254,7 @@ def live(skill: Path, case: Case, bin_path: Path, home: Path, profile: str) -> t
                 work.mkdir()
         except (OSError, ValueError) as e:
             return [f"could not copy the fixture: {e}"], Run()
-        subprocess.run(["git", "init", "-q", str(work)], capture_output=True)
+        subprocess.run(["git", "init", "-q", str(work)], capture_output=True, check=False)
         try:
             make_commits(work, case.commits)
         except (OSError, subprocess.CalledProcessError) as e:
@@ -264,7 +264,7 @@ def live(skill: Path, case: Case, bin_path: Path, home: Path, profile: str) -> t
                "-c", 'approvals_reviewer="user"', "--skip-git-repo-check", "-C", str(work), "-"]
         try:
             r = subprocess.run(cmd, input=case.prompt, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                               env=probe.env_for(home), timeout=900)
+                               env=probe.env_for(home), timeout=900, check=False)
         except subprocess.TimeoutExpired:
             return ["codex exec timed out after 900s"], Run()
     run = parse_events(r.stdout)

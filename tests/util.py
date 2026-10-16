@@ -2,8 +2,8 @@ import os
 import shutil
 import tempfile
 import unittest
-from unittest import mock
 from pathlib import Path
+from unittest import mock
 
 
 def tree(test: unittest.TestCase) -> Path:

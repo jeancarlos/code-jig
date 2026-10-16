@@ -10,9 +10,9 @@ import subprocess
 import sys
 import tempfile
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Callable
 
 CATEGORIES = ("security", "secret", "dependency", "bug", "type", "unused", "complexity", "duplication")
 TOOL_ENV = {"SEMGREP_SEND_METRICS": "off", "SEMGREP_ENABLE_VERSION_CHECK": "0", "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
@@ -101,7 +101,7 @@ def rel(path: str, root: Path) -> str:
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([shutil.which("git") or "git", *args], cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    return subprocess.run([shutil.which("git") or "git", *args], cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
 
 
 def source_files(root: Path) -> list[str]:
@@ -374,7 +374,7 @@ def _first(text: str) -> str:
 
 def _kill_tree(proc: subprocess.Popen) -> None:
     if os.name == "nt":
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, check=False)
         return
     try:
         os.killpg(proc.pid, signal.SIGKILL)

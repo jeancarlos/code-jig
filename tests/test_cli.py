@@ -9,7 +9,7 @@ from codejig import VERSION
 from codejig.__main__ import build_parser
 
 ROOT = Path(__file__).resolve().parent.parent
-OLD_NAMES = ("codex-" "harness", "codex" "harness", "CODEX_" "HARNESS_", "-m " "harness", '"-m", "' 'harness"', "from " "harness")
+OLD_NAMES = (("codex-" "harness"), ("codex" "harness"), ("CODEX_" "HARNESS_"), ("-m " "harness"), ('"-m", "' 'harness"'), ("from " "harness"))
 OLD_NAMES_ALLOWED = ("tests/fixtures/", "codejig/migrate.py", "tests/test_migrate.py", "tests/test_golden.py",
                      "docs/runbooks/migrate-to-code-jig.md")
 OLD_ADR = re.compile(r"docs/adr/00(0[1-9]|1\d|2[0-7])-[^/]*\.md")

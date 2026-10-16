@@ -27,7 +27,7 @@ def run_codex(bin_path: Path, home: Path, args: list[str], cwd: Path, timeout: i
     env = env_for(home)
     try:
         return subprocess.run([*command(bin_path), *args], capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", env=env, cwd=cwd, timeout=timeout, stdin=subprocess.DEVNULL)
+                              errors="replace", env=env, cwd=cwd, timeout=timeout, stdin=subprocess.DEVNULL, check=False)
     except subprocess.TimeoutExpired:
         return f"timed out after {timeout}s"
     except OSError as e:

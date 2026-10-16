@@ -27,7 +27,7 @@ def commit(repo: Path, message: str, email: str, files: dict[str, str], when: in
     git(repo, "add", "-A")
     tree_sha = git(repo, "write-tree")
     parent = subprocess.run(["git", "-C", str(repo), "rev-parse", "-q", "--verify", "HEAD"],
-                            capture_output=True, text=True, encoding="utf-8").stdout.strip()
+                            capture_output=True, text=True, encoding="utf-8", check=False).stdout.strip()
     stamp = f"{when} +0000"
     env = {"GIT_AUTHOR_NAME": email.split("@")[0], "GIT_AUTHOR_EMAIL": email, "GIT_AUTHOR_DATE": stamp,
            "GIT_COMMITTER_NAME": email.split("@")[0], "GIT_COMMITTER_EMAIL": email, "GIT_COMMITTER_DATE": stamp}
@@ -133,7 +133,7 @@ class Scrub(unittest.TestCase):
         subprocess.run(["git", "clone", "-q", "--no-local", str(self.repo), str(clone)], check=True, env={**os.environ, **ENV})
         git(clone, "config", "user.email", ME)
         git(clone, "checkout", "-q", "-b", "x;touch$(pwned)", "--track", "origin/x;touch$(pwned)")
-        code, out = run(clone)
+        _code, out = run(clone)
         cmd = next(ln for ln in out.splitlines() if "pwned" in ln).split(": ", 1)[1]
         args = shlex.split(cmd)
         self.assertEqual(cmd, shlex.join(args))
@@ -241,9 +241,8 @@ class RewriteRange(unittest.TestCase):
         def tamper(stream, emails):
             out, marks = real(stream, emails)
             return out.replace(b"four", b"fowr"), marks
-        with mock.patch.object(scrub, "rewrite_stream", tamper):
-            with self.assertRaises(scrub.Abort):
-                scrub.rewrite_range(self.repo, "refs/heads/main", self.one, {ME})
+        with mock.patch.object(scrub, "rewrite_stream", tamper), self.assertRaises(scrub.Abort):
+            scrub.rewrite_range(self.repo, "refs/heads/main", self.one, {ME})
         self.assertEqual(git(self.repo, "rev-parse", "main"), tip)
 
 

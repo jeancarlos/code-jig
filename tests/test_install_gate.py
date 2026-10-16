@@ -13,7 +13,7 @@ from tests.util import tree, write
 
 def global_hooks(env: dict) -> str:
     return subprocess.run(["git", "config", "--global", "--get", "core.hooksPath"], capture_output=True, text=True,
-                          encoding="utf-8", env=env).stdout.strip()
+                          encoding="utf-8", env=env, check=False).stdout.strip()
 
 
 class Gate(unittest.TestCase):

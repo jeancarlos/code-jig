@@ -57,7 +57,7 @@ class Launcher(unittest.TestCase):
         path = bootstrap.write_launcher(self.bins, sys.executable, self.core, self.overlay, "v0.11.0")[0]
         env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "CODE_JIG_OVERLAY")}
         done = subprocess.run([str(path), "--help"], env=env, capture_output=True, text=True, encoding="utf-8",
-                              cwd=self.root)
+                              cwd=self.root, check=False)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("usage: code-jig", done.stdout)
         return path
@@ -75,7 +75,7 @@ class Launcher(unittest.TestCase):
 
     def test_exit_code_propagates(self):
         path = bootstrap.write_launcher(self.bins, sys.executable, self.core, self.overlay, "v0.11.0")[0]
-        done = subprocess.run([str(path), "no-such-command"], capture_output=True, text=True, encoding="utf-8")
+        done = subprocess.run([str(path), "no-such-command"], capture_output=True, text=True, encoding="utf-8", check=False)
         self.assertEqual(done.returncode, 2)
 
     def test_planted_module_in_cwd_is_ignored(self):
@@ -83,7 +83,7 @@ class Launcher(unittest.TestCase):
         cwd = self.root / "hostile"
         write(cwd / "codejig" / "__init__.py", "raise SystemExit(99)\n")
         write(cwd / "codejig" / "__main__.py", "raise SystemExit(99)\n")
-        done = subprocess.run([str(path), "--help"], capture_output=True, text=True, encoding="utf-8", cwd=cwd)
+        done = subprocess.run([str(path), "--help"], capture_output=True, text=True, encoding="utf-8", cwd=cwd, check=False)
         self.assertEqual(done.returncode, 0, done.stderr)
 
 
