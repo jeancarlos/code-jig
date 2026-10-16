@@ -159,6 +159,13 @@ class Sources(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             sources.load([str(root / "evidnce-*.jsonl")])
 
+    def test_a_file_named_with_brackets_is_opened_as_is(self):
+        root = tree(self)
+        write(root / "report [final].jsonl", "")
+        self.assertEqual(sources.expand([str(root / "report [final].jsonl")]), [str(root / "report [final].jsonl")])
+        with self.assertRaises(FileNotFoundError):
+            sources.expand([str(root / "report [draft].jsonl")])
+
     def test_sandboxed_network_stops_early(self):
         with mock.patch.dict(os.environ, {"CODEX_SANDBOX_NETWORK_DISABLED": "1"}):
             out = io.StringIO()

@@ -176,7 +176,7 @@ def expand(patterns: list[str]) -> list[str]:
     """File names with shell patterns expanded here, so PowerShell and cmd behave like a POSIX shell."""
     out = []
     for p in patterns:
-        hits = sorted(glob.glob(p)) if glob.has_magic(p) else [p]
+        hits = (sorted(glob.glob(p)) or ([p] if os.path.exists(p) else [])) if glob.has_magic(p) else [p]
         if not hits:
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), p)
         out += hits
