@@ -2,14 +2,14 @@
   "__inputs": [
     {
       "name": "DS",
-      "label": "codex-harness SQLite",
+      "label": "code-jig SQLite",
       "type": "datasource",
       "pluginId": "frser-sqlite-datasource",
       "pluginName": "SQLite"
     }
   ],
-  "title": "codex-harness",
-  "uid": "codex-harness",
+  "title": "code-jig",
+  "uid": "code-jig",
   "schemaVersion": 39,
   "time": {
     "from": "now-7d",

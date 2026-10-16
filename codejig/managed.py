@@ -3,7 +3,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-from harness.tiers import Tier
+from codejig.tiers import Tier
 
 Check = tuple[str, str, str]
 

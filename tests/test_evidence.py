@@ -9,9 +9,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
-from harness import collect, evidence
-from harness.analyze import Finding
-from harness.evidence import Commit, group_stats, in_window, is_test, parse_log, reworked
+from codejig import collect, evidence
+from codejig.analyze import Finding
+from codejig.evidence import Commit, group_stats, in_window, is_test, parse_log, reworked
 from tests.test_collect import home_with
 from tests.util import tree, write
 
@@ -266,7 +266,7 @@ class FromDatabase(unittest.TestCase):
         for name in ("b", "a"):
             write(root / name / "SKILL.md", "x\n")
         (root / "not-a-skill").mkdir()
-        with mock.patch("harness.paths.agents_skills", return_value=root):
+        with mock.patch("codejig.paths.agents_skills", return_value=root):
             self.assertEqual(evidence.installed_skills(), ["a", "b"])
 
 
@@ -311,7 +311,7 @@ class Quality(unittest.TestCase):
 
 class Cli(unittest.TestCase):
     def run_cli(self, *argv):
-        from harness.__main__ import main
+        from codejig.__main__ import main
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = main(list(argv))

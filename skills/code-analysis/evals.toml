@@ -1,5 +1,5 @@
 [[case]]
 prompt = "What would Sonar complain about in this code? Report by category; do not change anything."
 fixture = "repo"
-commands = ["harness analyze"]
+commands = ["code-jig analyze"]
 output = ["(?i)unused"]

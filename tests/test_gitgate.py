@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from harness import gitgate
+from codejig import gitgate
 from tests.test_scrub import CODEX, ENV, ME, OTHER, commit, git, new_repo
 from tests.util import tree, write
 
@@ -78,7 +78,7 @@ class PreCommit(unittest.TestCase):
 
     def test_command_line_config_cannot_allow_prose(self):
         self.stage({"README.md": "# Hi\n"})
-        env = {"CODEX_THREAD_ID": "t", "GIT_CONFIG_PARAMETERS": "'codexharness.allowprose'='true'"}
+        env = {"CODEX_THREAD_ID": "t", "GIT_CONFIG_PARAMETERS": "'codejig.allowprose'='true'"}
         self.assertEqual(in_repo(self.repo, gitgate.pre_commit, True, env=env)[0], 1)
 
     def test_prose_from_an_agent_session_is_refused(self):
@@ -93,7 +93,7 @@ class PreCommit(unittest.TestCase):
         self.stage({"README.md": "# Hi\n"})
         self.assertEqual(in_repo(self.repo, gitgate.pre_commit, True)[0], 0)
         self.assertEqual(in_repo(self.repo, gitgate.pre_commit, False, env={"CLAUDECODE": "1"})[0], 0)
-        git(self.repo, "config", "codexharness.allowProse", "true")
+        git(self.repo, "config", "codejig.allowProse", "true")
         self.assertEqual(in_repo(self.repo, gitgate.pre_commit, True, env={"CLAUDECODE": "1"})[0], 0)
 
     def test_agent_instruction_files_and_specs_are_not_prose(self):
@@ -113,7 +113,7 @@ class PrePush(unittest.TestCase):
         code, err = in_repo(repo, gitgate.pre_push, [f"refs/heads/main {tip} refs/heads/main {base}"])
         self.assertEqual(code, 1)
         self.assertIn(tip[:10], err)
-        self.assertIn("harness scrub", err)
+        self.assertIn("code-jig scrub", err)
 
     def test_unknown_remote_tip_falls_back_to_unpushed_commits(self):
         repo = new_repo(self)

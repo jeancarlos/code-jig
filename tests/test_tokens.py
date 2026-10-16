@@ -1,6 +1,6 @@
 import unittest
 
-from harness import collect, tokens
+from codejig import collect, tokens
 from tests.test_collect import home_with
 from tests.util import tree
 

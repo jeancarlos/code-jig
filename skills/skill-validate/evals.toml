@@ -1,6 +1,6 @@
 [[case]]
 prompt = "Validate the skill in skills/demo before I ship it. Report only; do not edit it."
 fixture = "repo"
-commands = ["harness lint-skill"]
+commands = ["code-jig lint-skill"]
 spawns = 1
 output = ["(?i)use when"]

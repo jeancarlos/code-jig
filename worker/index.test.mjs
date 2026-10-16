@@ -11,16 +11,16 @@ function env() {
 }
 
 function req(path, ua = "curl/8.9.1", method = "GET") {
-  return new Request(`https://setup-harness.jeansouza.dev${path}`, { method, headers: { "user-agent": ua } })
+  return new Request(`https://code-jig.jeansouza.dev${path}`, { method, headers: { "user-agent": ua } })
 }
 
-const RELEASES = "https://github.com/jeancarlos/codex-harness/releases"
+const RELEASES = "https://github.com/jeancarlos/code-jig/releases"
 
 test("zip redirects to the tag and counts a download, query ignored", async () => {
   const e = env()
-  const r = await worker.fetch(req("/v/v0.11.0/codex-harness.zip?from=v0.10.0&os=linux"), e)
+  const r = await worker.fetch(req("/v/v0.11.0/code-jig.zip?from=v0.10.0&os=linux"), e)
   assert.equal(r.status, 302)
-  assert.equal(r.headers.get("location"), `${RELEASES}/download/v0.11.0/codex-harness.zip`)
+  assert.equal(r.headers.get("location"), `${RELEASES}/download/v0.11.0/code-jig.zip`)
   assert.deepEqual(e.points, [{ blobs: ["download", "v0.11.0", "curl", ""], indexes: ["download"] }])
 })
 
@@ -35,8 +35,8 @@ test("sums and bootstrap under a tag redirect without counting", async () => {
 })
 
 test("bad tags, files and paths are 404 and not counted", async () => {
-  for (const path of ["/v/v0.11.0.evil/codex-harness.zip", "/v/latest/codex-harness.zip", "/v/0.11.0/codex-harness.zip",
-    "/v/v0.11.0/other.zip", "/v/v0.11.0/../x", "/latest/codex-harness.zip", "/stats", "/v/v0.11.0/codex-harness.zip/x"]) {
+  for (const path of ["/v/v0.11.0.evil/code-jig.zip", "/v/latest/code-jig.zip", "/v/0.11.0/code-jig.zip",
+    "/v/v0.11.0/other.zip", "/v/v0.11.0/../x", "/latest/code-jig.zip", "/stats", "/v/v0.11.0/code-jig.zip/x"]) {
     const e = env()
     const r = await worker.fetch(req(path), e)
     assert.equal(r.status, 404, path)
@@ -49,8 +49,8 @@ test("root page lists both one-liners", async () => {
   assert.equal(r.status, 200)
   assert.match(r.headers.get("content-type"), /^text\/plain/)
   const body = await r.text()
-  assert.match(body, /curl -fsSL https:\/\/setup-harness\.jeansouza\.dev\/bootstrap\.py \| python3 -I -/)
-  assert.match(body, /irm https:\/\/setup-harness\.jeansouza\.dev\/bootstrap\.py \| py -3 -I -/)
+  assert.match(body, /curl -fsSL https:\/\/code-jig\.jeansouza\.dev\/bootstrap\.py \| python3 -I -/)
+  assert.match(body, /irm https:\/\/code-jig\.jeansouza\.dev\/bootstrap\.py \| py -3 -I -/)
 })
 
 test("bootstrap.py is proxied as text and counted", async () => {
@@ -88,15 +88,15 @@ test("client mapping keeps no raw user-agent", () => {
 })
 
 test("missing binding never breaks a download", async () => {
-  const r = await worker.fetch(req("/v/v0.11.0/codex-harness.zip"), {})
+  const r = await worker.fetch(req("/v/v0.11.0/code-jig.zip"), {})
   assert.equal(r.status, 302)
 })
 
 test("HEAD on the zip redirects without counting", async () => {
   const e = env()
-  const r = await worker.fetch(req("/v/v0.11.0/codex-harness.zip", "curl/8.9.1", "HEAD"), e)
+  const r = await worker.fetch(req("/v/v0.11.0/code-jig.zip", "curl/8.9.1", "HEAD"), e)
   assert.equal(r.status, 302)
-  assert.equal(r.headers.get("location"), `${RELEASES}/download/v0.11.0/codex-harness.zip`)
+  assert.equal(r.headers.get("location"), `${RELEASES}/download/v0.11.0/code-jig.zip`)
   assert.deepEqual(e.points, [])
 })
 

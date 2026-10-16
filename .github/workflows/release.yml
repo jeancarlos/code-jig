@@ -22,4 +22,4 @@ jobs:
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/codex-harness.zip dist/SHA256SUMS dist/bootstrap.py --title "$GITHUB_REF_NAME" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" dist/code-jig.zip dist/SHA256SUMS dist/bootstrap.py --title "$GITHUB_REF_NAME" --generate-notes

@@ -1,6 +1,6 @@
 import unittest
 
-from harness.doctor import DEFAULT_DOC_MAX, chain_files, check_chain
+from codejig.doctor import DEFAULT_DOC_MAX, chain_files, check_chain
 from tests.util import tree, write
 
 

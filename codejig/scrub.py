@@ -7,7 +7,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from harness.watermark import ATTRIBUTION_LINES
+from codejig.watermark import ATTRIBUTION_LINES
 
 EXPORT = ["fast-export", "--branches", "--tags", "--no-data", "--show-original-ids", "--reencode=no",
           "--signed-tags=strip", "--tag-of-filtered-object=rewrite"]
@@ -27,9 +27,9 @@ def _git(repo: Path, *args: str, stdin: bytes | None = None, check: bool = True)
 
 
 def my_emails(repo: Path, extra: list[str] = ()) -> set[str]:
-    """user.email, every codexharness.email value, and `extra`, lower-cased."""
+    """user.email, every codejig.email value, and `extra`, lower-cased."""
     found = []
-    for key in ("user.email", "codexharness.email"):
+    for key in ("user.email", "codejig.email"):
         r = subprocess.run(["git", "-C", str(repo), "config", "--get-all", key], capture_output=True, text=True, encoding="utf-8")
         found += r.stdout.split()
     return {e.lower() for e in [*found, *extra] if e}
@@ -134,7 +134,7 @@ def _restore(repo: Path, bundle: Path) -> None:
 
 def rewrite(repo: Path, gitdir: Path, emails: set[str], expected: int) -> tuple[int, dict[str, str], Path]:
     before = _refs(repo)
-    bundle = gitdir / f"codex-harness-scrub-{time.strftime('%Y%m%d-%H%M%S')}.bundle"
+    bundle = gitdir / f"code-jig-scrub-{time.strftime('%Y%m%d-%H%M%S')}.bundle"
     _git(repo, "bundle", "create", "-q", str(bundle), "--branches", "--tags")
     stream, origin = rewrite_stream(_git(repo, *EXPORT), emails)
     fd, marks_file = tempfile.mkstemp(prefix="scrub-marks-", dir=gitdir)
@@ -174,12 +174,12 @@ def cli(args) -> int:
     r = subprocess.run(["git", "-C", str(repo), "rev-parse", "--absolute-git-dir"], capture_output=True, text=True,
                        encoding="utf-8")
     if r.returncode:
-        print(f"harness: {repo} is not a git repository", file=sys.stderr)
+        print(f"code-jig: {repo} is not a git repository", file=sys.stderr)
         return 2
     gitdir = Path(r.stdout.strip())
     emails = my_emails(repo, args.author)
     if not emails:
-        print("harness: set git config user.email or codexharness.email, or pass --author EMAIL", file=sys.stderr)
+        print("code-jig: set git config user.email or codejig.email, or pass --author EMAIL", file=sys.stderr)
         return 2
     try:
         hits = attributed(repo, emails)
@@ -192,7 +192,7 @@ def cli(args) -> int:
             return 0
         changed, before, bundle = rewrite(repo, gitdir, emails, len(hits))
     except Abort as e:
-        print(f"harness: ABORT, nothing changed: {e}", file=sys.stderr)
+        print(f"code-jig: ABORT, nothing changed: {e}", file=sys.stderr)
         return 1
     print(f"rewrote {changed} commits, message only; trees, authors and dates verified unchanged")
     print(f"backup: {bundle}")

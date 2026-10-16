@@ -6,9 +6,9 @@ import unittest
 from argparse import Namespace
 from io import StringIO
 
-from harness import hooks
-from harness.atomicwrite import atomic_write, resolve_inside
-from harness.humanize import cli as humanize_cli
+from codejig import hooks
+from codejig.atomicwrite import atomic_write, resolve_inside
+from codejig.humanize import cli as humanize_cli
 from tests.util import tree, write
 
 ZWSP = chr(0x200B)
@@ -113,7 +113,7 @@ class HumanizePython(unittest.TestCase):
         self.root = tree(self)
 
     def test_hash_lines_inside_string_literals_are_code_not_comments(self):
-        from harness.humanize import humanize_file
+        from codejig.humanize import humanize_file
         source = f'SCRIPT = """\n# Here is the updated config {EM_DASH} keep\n"""\n# real {EM_DASH} comment\n'
         path = write(self.root / "a.py", source)
         humanize_file(str(path), root=str(self.root))

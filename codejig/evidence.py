@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from functools import partial
 from pathlib import Path
 
-from harness import analyze, collect, paths
+from codejig import analyze, collect, paths
 
 TEST_MARKERS = ("pytest", "unittest", "dotnet test", "npm test", "pnpm test", "yarn test", "run test", "vitest", "jest")
 GRACE = timedelta(hours=2)
@@ -400,7 +400,7 @@ def cli(args) -> int:
     if args.repo:
         repo = repo_root(args.repo)
         if repo is None:
-            print(f"harness: {args.repo} is not a git repository", file=sys.stderr)
+            print(f"code-jig: {args.repo} is not a git repository", file=sys.stderr)
             return 2
     home = paths.codex_home(args.codex_home)
     con = collect.connect(collect.db_path(home))

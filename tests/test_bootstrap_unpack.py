@@ -5,7 +5,7 @@ import zipfile
 from unittest import mock
 
 import bootstrap
-from harness.install import release_digest
+from codejig.install import release_digest
 from tests.util import tree, write
 
 TAG = "v1.2.3"
@@ -28,11 +28,11 @@ def make_zip(files, tag=TAG, digest=None, extra=()):
     return buf.getvalue()
 
 
-FILES = {"harness/__init__.py": "VERSION = '1.2.3'\n", "README.md": "readme\n", "core/AGENTS.core.md": "rules\n"}
+FILES = {"codejig/__init__.py": "VERSION = '1.2.3'\n", "README.md": "readme\n", "core/AGENTS.core.md": "rules\n"}
 
 
 class Digest(unittest.TestCase):
-    def test_same_as_harness(self):
+    def test_same_as_code_jig(self):
         root = tree(self)
         write(root / "a-b" / "x", "1")
         write(root / "a" / "b", "2")
@@ -56,7 +56,7 @@ class Names(unittest.TestCase):
                 self.refused(name)
 
     def test_pycache_refused(self):
-        self.refused("harness/__pycache__/x.pyc")
+        self.refused("codejig/__pycache__/x.pyc")
 
     def test_case_collision_refused(self):
         buf = io.BytesIO()
@@ -85,8 +85,8 @@ class Names(unittest.TestCase):
     def test_console_and_dirs_are_fine(self):
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
-            zf.writestr("harness/", "")
-            zf.writestr("harness/console.py", "x")
+            zf.writestr("codejig/", "")
+            zf.writestr("codejig/console.py", "x")
         bootstrap.check_names(zipfile.ZipFile(buf))
 
 

@@ -5,9 +5,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from harness import probe
-from harness.install import stamp
-from harness.tiers import Tier
+from codejig import probe
+from codejig.install import stamp
+from codejig.tiers import Tier
 from tests.util import tree, write
 
 FAKE = r'''
@@ -83,17 +83,17 @@ class Probe(unittest.TestCase):
 
     def test_rules_load(self):
         write(self.home / "rules" / "default.rules", "ok\n")
-        write(self.home / "rules" / "codex-harness-a.rules", "ok\n")
+        write(self.home / "rules" / "code-jig-a.rules", "ok\n")
         [(level, _, detail)] = probe.check_rules(self.bin, self.home, self.cwd)
         self.assertEqual(level, "ok")
         self.assertIn("2", detail)
 
     def test_broken_rules_file_fails_naming_it(self):
         write(self.home / "rules" / "default.rules", "ok\n")
-        write(self.home / "rules" / "codex-harness-bad.rules", "BROKEN\n")
+        write(self.home / "rules" / "code-jig-bad.rules", "BROKEN\n")
         [(level, _, detail)] = probe.check_rules(self.bin, self.home, self.cwd)
         self.assertEqual(level, "FAIL")
-        self.assertIn("codex-harness-bad.rules", detail)
+        self.assertIn("code-jig-bad.rules", detail)
 
     def test_no_rules_dir_is_ok(self):
         [(level, _, _)] = probe.check_rules(self.bin, self.home, self.cwd)

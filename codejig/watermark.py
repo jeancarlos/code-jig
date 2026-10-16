@@ -1,7 +1,7 @@
 import re
 import sys
 
-from harness.atomicwrite import atomic_write, resolve_inside
+from codejig.atomicwrite import atomic_write, resolve_inside
 
 _CHAR_CODES = [
     (0x200b, "ZERO WIDTH SPACE"),

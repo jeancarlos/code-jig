@@ -1,5 +1,5 @@
 [[case]]
 prompt = "Which requirements in design.md have tests and which are untested?"
 fixture = "repo"
-commands = ["harness trace"]
+commands = ["code-jig trace"]
 output = ["REQ-2"]

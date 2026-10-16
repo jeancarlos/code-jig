@@ -7,11 +7,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from harness import install, paths, probe, skillcheck
+from codejig import install, paths, probe, skillcheck
 from tests.util import tree, write
 
-SKILL = "---\nname: demo\ndescription: Use when the user asks for a demo.\n---\n\n# Demo\n\nRun `harness doctor`.\n\n## Common mistakes\n\nNone.\n"
-EVALS = '[[case]]\nprompt = "show me a demo"\ncommands = ["harness doctor"]\noutput = ["(?i)done"]\n'
+SKILL = "---\nname: demo\ndescription: Use when the user asks for a demo.\n---\n\n# Demo\n\nRun `code-jig doctor`.\n\n## Common mistakes\n\nNone.\n"
+EVALS = '[[case]]\nprompt = "show me a demo"\ncommands = ["code-jig doctor"]\noutput = ["(?i)done"]\n'
 
 FAKE = r'''
 import json, os, sys
@@ -28,7 +28,7 @@ if mode == "good":
     events.append({"type": "item.completed", "item": {"id": "1", "type": "command_execution",
                    "command": "/bin/bash -lc 'cat ~/.agents/skills/demo/SKILL.md'", "aggregated_output": "", "exit_code": 0, "status": "completed"}})
     events.append({"type": "item.completed", "item": {"id": "2", "type": "command_execution",
-                   "command": "/bin/bash -lc 'harness doctor'", "aggregated_output": "", "exit_code": 0, "status": "completed"}})
+                   "command": "/bin/bash -lc 'code-jig doctor'", "aggregated_output": "", "exit_code": 0, "status": "completed"}})
     events.append({"type": "item.completed", "item": {"id": "3", "type": "collab_tool_call", "tool": "spawn_agent",
                    "sender_thread_id": "t", "receiver_thread_ids": ["c"], "agents_states": {}, "status": "completed"}})
 events.append({"type": "item.completed", "item": {"id": "4", "type": "agent_message", "text": "Done." if mode == "good" else "No."}})
@@ -47,10 +47,10 @@ class Static(unittest.TestCase):
         found = skillcheck.claude_only(text)
         self.assertEqual([name for name, _ in found], ["Agent tool", "subagent_type", "TodoWrite", "WebFetch", "~/.claude"])
         self.assertTrue(any("spawn_agent" in hint for _, hint in found))
-        self.assertEqual(skillcheck.claude_only("Spawn an `explorer` subagent and run `harness doctor`."), [])
+        self.assertEqual(skillcheck.claude_only("Spawn an `explorer` subagent and run `code-jig doctor`."), [])
 
-    def test_unknown_harness_commands_fail(self):
-        text = "Run `harness doctor`, then\n```sh\npython -m harness nope --x\nharness lint-skill dir\n```\nThe harness core is fine."
+    def test_unknown_code_jig_commands_fail(self):
+        text = "Run `code-jig doctor`, then\n```sh\npython -m codejig nope --x\ncode-jig lint-skill dir\n```\nThe code-jig core is fine."
         self.assertEqual(skillcheck.unknown_commands(text), ["nope"])
 
     def test_evals_are_required_and_parsed(self):
@@ -59,7 +59,7 @@ class Static(unittest.TestCase):
         write(d / "evals.toml", EVALS)
         self.assertNotIn("FAIL", [lv for lv, _ in skillcheck.static(d)])
         [case] = skillcheck.load_cases(d)
-        self.assertEqual((case.prompt, case.commands, case.read_skill, case.sandbox), ("show me a demo", ["harness doctor"], True, "read-only"))
+        self.assertEqual((case.prompt, case.commands, case.read_skill, case.sandbox), ("show me a demo", ["code-jig doctor"], True, "read-only"))
 
     def test_bad_evals_fail(self):
         d = write(self.root / "demo" / "SKILL.md", SKILL).parent
@@ -128,7 +128,7 @@ class Events(unittest.TestCase):
         self.assertEqual((run.spawns, run.message, run.input_tokens), (1, "all done", 10))
         case = skillcheck.Case(prompt="p", commands=["SKILL.md"], output=["(?i)DONE"], spawns=1)
         self.assertEqual(skillcheck.judge("demo", case, run), [])
-        miss = skillcheck.Case(prompt="p", commands=["harness doctor"], output=["nope"], spawns=2)
+        miss = skillcheck.Case(prompt="p", commands=["code-jig doctor"], output=["nope"], spawns=2)
         self.assertEqual(len(skillcheck.judge("other", miss, run)), 4)
 
     def test_spawns_missing_from_the_json_stream_are_counted_from_the_session_log(self):
@@ -305,7 +305,7 @@ class WithFakeCodex(unittest.TestCase):
         write(self.skill / "SKILL.md", SKILL + "Changed.\n")
         code, out = self.run_cli(review=False)
         self.assertEqual(code, 1)
-        self.assertIn("harness install", out)
+        self.assertIn("code-jig install", out)
 
     def test_static_only_never_stamps(self):
         code, _ = self.run_cli(review=False, live=False)
@@ -329,7 +329,7 @@ class CoreSkills(unittest.TestCase):
         for d in sorted(p.parent for p in (paths.CORE / "skills").glob("*/SKILL.md")):
             with self.subTest(skill=d.name):
                 self.assertTrue(skillcheck.stamp_current(d),
-                                f"run: harness skill-check skills/{d.name} --review --live (after harness install)")
+                                f"run: code-jig skill-check skills/{d.name} --review --live (after code-jig install)")
 
 
 if __name__ == "__main__":

@@ -2,11 +2,11 @@ import json
 import re
 import sys
 
-from harness.feedback import lint, patch_bodies, tamper
-from harness.humanize import humanize_file
-from harness.humanize import report_result as report_humanize
-from harness.watermark import report_result as report_watermark
-from harness.watermark import strip_watermark
+from codejig.feedback import lint, patch_bodies, tamper
+from codejig.humanize import humanize_file
+from codejig.humanize import report_result as report_humanize
+from codejig.watermark import report_result as report_watermark
+from codejig.watermark import strip_watermark
 
 PATCH_PATH = re.compile(r"^\*\*\* (?:Add File|Update File|Move to): (.+?)\s*$", re.MULTILINE)
 CLAUDE_WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}

@@ -5,8 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from harness.scrub import my_emails, scrub_message
-from harness.watermark import ATTRIBUTION_LINES, is_binary, strip_bytes
+from codejig.scrub import my_emails, scrub_message
+from codejig.watermark import ATTRIBUTION_LINES, is_binary, strip_bytes
 
 ZERO = "0" * 40
 AGENT_ENV = ("CODEX_THREAD_ID", "CLAUDECODE")
@@ -44,7 +44,7 @@ def commit_msg(path: str) -> int:
         return 0
     if new != data:
         p.write_bytes(new)
-        print("codex-harness: cleaned the commit message (AI attribution, dashes)", file=sys.stderr)
+        print("code-jig: cleaned the commit message (AI attribution, dashes)", file=sys.stderr)
     return 0
 
 
@@ -66,7 +66,7 @@ def _from_agent() -> bool:
 
 
 def _prose_allowed() -> bool:
-    return _git("config", "--local", "--bool", "codexharness.allowProse", check=False).strip() == b"true"
+    return _git("config", "--local", "--bool", "codejig.allowProse", check=False).strip() == b"true"
 
 
 def _fix_staged(path: str, mode: str, sha: str) -> bool:
@@ -100,13 +100,13 @@ def pre_commit(prose: bool) -> int:
     prose_files = [path for path, _, _ in staged if is_prose(path)]
     fixed = [path for path, mode, sha in staged if not VENDORED.search(path) and _fix_staged(path, mode, sha)]
     if fixed:
-        print(f"codex-harness: replaced invisible characters in {', '.join(fixed)}", file=sys.stderr)
+        print(f"code-jig: replaced invisible characters in {', '.join(fixed)}", file=sys.stderr)
     if prose and prose_files and _from_agent() and not _prose_allowed():
-        print("codex-harness: refusing to commit prose written in an agent session:", file=sys.stderr)
+        print("code-jig: refusing to commit prose written in an agent session:", file=sys.stderr)
         for path in prose_files:
             print(f"  {path}", file=sys.stderr)
         print("Unstage these files (git restore --staged <file>) and commit the rest; the user reviews and commits "
-              "the prose. A repo where agents may commit prose: git config codexharness.allowProse true",
+              "the prose. A repo where agents may commit prose: git config codejig.allowProse true",
               file=sys.stderr)
         return 1
     return 0
@@ -130,17 +130,17 @@ def pre_push(lines: list[str]) -> int:
             if email.decode("utf-8", "replace").lower() in emails and ATTRIBUTION_LINES.search(body):
                 problems.append(sha)
     if problems:
-        print("codex-harness: push refused, commit messages carry AI attribution:", file=sys.stderr)
+        print("code-jig: push refused, commit messages carry AI attribution:", file=sys.stderr)
         for sha in dict.fromkeys(problems):
             print(f"  {sha[:10]} {_git('log', '-1', '--format=%s', sha).decode().strip()}", file=sys.stderr)
-        print("Remove it with: harness scrub (rewrites messages only, then prints the push commands)", file=sys.stderr)
+        print("Remove it with: code-jig scrub (rewrites messages only, then prints the push commands)", file=sys.stderr)
         return 1
     return 0
 
 
 def shims(lib: Path, python: str, prose: bool) -> dict[str, str]:
     """One POSIX shell hook per git hook name: the gate for the gated ones, then the repo's own hook."""
-    run = f"PYTHONPATH={shlex.quote(Path(lib).as_posix())} {shlex.quote(Path(python).as_posix())} -P -s -m harness git-hook"
+    run = f"PYTHONPATH={shlex.quote(Path(lib).as_posix())} {shlex.quote(Path(python).as_posix())} -P -s -m codejig git-hook"
     local = 'dir="$(git rev-parse --git-common-dir 2>/dev/null)/hooks"'
     out = {}
     for name in HOOKS:
@@ -164,5 +164,5 @@ def cli(args) -> int:
         if args.name == "pre-push":
             return pre_push(sys.stdin.read().splitlines())
     except (OSError, RuntimeError) as e:
-        print(f"codex-harness: git hook {args.name} skipped: {e}", file=sys.stderr)
+        print(f"code-jig: git hook {args.name} skipped: {e}", file=sys.stderr)
     return 0

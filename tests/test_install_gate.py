@@ -3,9 +3,9 @@ import subprocess
 import unittest
 from unittest import mock
 
-from harness import install
-from harness.doctor import check_git_gate
-from harness.overlay import Overlay
+from codejig import install
+from codejig.doctor import check_git_gate
+from codejig.overlay import Overlay
 from tests.util import tree, write
 
 
@@ -25,7 +25,7 @@ class Gate(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.on = Overlay(root / "ov", "v1", True, git_gate=True, prose_gate=True)
         self.off = Overlay(root / "ov", "v1", True)
-        self.target = self.home / "codex-harness" / "git-hooks"
+        self.target = self.home / "code-jig" / "git-hooks"
 
     def test_enables_when_unset_and_doctor_agrees(self):
         lines = install.git_gate(self.home, self.on)

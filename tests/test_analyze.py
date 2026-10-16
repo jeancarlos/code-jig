@@ -11,7 +11,7 @@ import types
 import unittest
 from pathlib import Path
 
-from harness import analyze
+from codejig import analyze
 from tests.util import tree, write
 
 LIZARD_CSV = textwrap.dedent('''\
@@ -509,7 +509,7 @@ class Cli(unittest.TestCase):
         self.assertEqual(analyze.cli(args), 2)
 
 
-@unittest.skipUnless(os.environ.get("HARNESS_REAL_TOOLS"), "set HARNESS_REAL_TOOLS=1 to run the real-tool tests")
+@unittest.skipUnless(os.environ.get("CODE_JIG_REAL_TOOLS"), "set CODE_JIG_REAL_TOOLS=1 to run the real-tool tests")
 class RealTools(unittest.TestCase):
     def test_real_lizard_and_ruff(self):
         root = tree(self)

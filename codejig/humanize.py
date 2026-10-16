@@ -5,7 +5,7 @@ import sys
 import tokenize
 from pathlib import Path
 
-from harness.atomicwrite import atomic_write, resolve_inside
+from codejig.atomicwrite import atomic_write, resolve_inside
 
 DASHES = str.maketrans({"—": "-", "–": "-", "―": "-"})
 CURLY_QUOTES = str.maketrans({

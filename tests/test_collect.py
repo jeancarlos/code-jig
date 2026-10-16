@@ -4,7 +4,7 @@ import sqlite3
 import unittest
 from pathlib import Path
 
-from harness import collect
+from codejig import collect
 from tests.util import tree, write
 
 FIX = Path(__file__).parent / "fixtures" / "rollouts"

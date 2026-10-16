@@ -1,9 +1,9 @@
 import json
 import unittest
 
-from harness.doctor import catalog, check_tiers, family
-from harness.install import run
-from harness.overlay import Overlay
+from codejig.doctor import catalog, check_tiers, family
+from codejig.install import run
+from codejig.overlay import Overlay
 from tests.util import tree, write
 
 CATALOG = {"models": [

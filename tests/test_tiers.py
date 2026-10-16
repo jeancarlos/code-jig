@@ -1,9 +1,9 @@
 import tomllib
 import unittest
 
-from harness import tiers
-from harness.install import render_profile
-from harness.tiers import Tier
+from codejig import tiers
+from codejig.install import render_profile
+from codejig.tiers import Tier
 from tests.util import tree, write
 
 EFFORTS = 'default = "medium"\ndeep = "high"\nbulk = "low"\nreview = "high"\n'

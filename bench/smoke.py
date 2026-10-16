@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from harness import collect, paths
+from codejig import collect, paths
 
 CASES = {
     "routine": "Run `git status --short` and reply with its output.",

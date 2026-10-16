@@ -3,8 +3,8 @@ import os
 import stat
 import unittest
 
-from harness.install import CLAUDE_CODE_WATERMARK_STATUS, HOOK_STATUS, hook_commands, merged_claude_code_hooks, merged_hooks, run, write_merged
-from harness.overlay import Overlay
+from codejig.install import CLAUDE_CODE_WATERMARK_STATUS, HOOK_STATUS, hook_commands, merged_claude_code_hooks, merged_hooks, run, write_merged
+from codejig.overlay import Overlay
 from tests.util import tree, write
 
 USER = {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "notify-send done"}]}],
@@ -81,18 +81,18 @@ class HookIsolation(unittest.TestCase):
     def test_hook_ignores_modules_planted_in_the_session_cwd(self):
         import subprocess
         import sys
-        from harness import paths
+        from codejig import paths
         root = tree(self)
         cwd = root / "repo"
         marker = root / "pwned"
         planted = f"open({str(marker)!r}, 'w').close()\n"
-        write(cwd / "harness" / "__init__.py", planted)
+        write(cwd / "codejig" / "__init__.py", planted)
         write(cwd / "json.py", planted)
         posix, _ = hook_commands(paths.CORE, root / "codex home", sys.executable)
-        args = posix.split(" -m harness ", 1)[0].split()
+        args = posix.split(" -m codejig ", 1)[0].split()
         exe = [a.strip("'") for a in args if not a.startswith("PYTHONPATH=")]
         env = {"PYTHONPATH": str(paths.CORE), "PATH": "/usr/bin:/bin", "SYSTEMROOT": __import__("os").environ.get("SYSTEMROOT", "")}
-        r = subprocess.run([*exe, "-m", "harness", "--codex-home", str(root / "codex home"), "collect"],
+        r = subprocess.run([*exe, "-m", "codejig", "--codex-home", str(root / "codex home"), "collect"],
                            cwd=cwd, env=env, capture_output=True, text=True, stdin=subprocess.DEVNULL)
         self.assertEqual(r.stdout, "{}\n")
         self.assertFalse(marker.exists())
@@ -104,14 +104,14 @@ class HookRunsInstalledCopy(unittest.TestCase):
         core = root / "core-repo"
         write(core / "core" / "AGENTS.core.md", "core\n")
         write(core / "core" / "tiers.toml", 'default = "medium"\n')
-        write(core / "harness" / "__init__.py", 'VERSION = "x"\n')
-        write(core / "harness" / "collect.py", "A = 1\n")
+        write(core / "codejig" / "__init__.py", 'VERSION = "x"\n')
+        write(core / "codejig" / "collect.py", "A = 1\n")
         ov = root / "overlay"
         write(ov / "profiles.toml", 'default = "m"\n')
         home = root / "codex home"
         run(core, Overlay(ov, "v0.3.0", True), home)
-        lib = home / "codex-harness" / "lib"
-        self.assertIn("A = 1", (lib / "harness" / "collect.py").read_text(encoding="utf-8"))
+        lib = home / "code-jig" / "lib"
+        self.assertIn("A = 1", (lib / "codejig" / "collect.py").read_text(encoding="utf-8"))
         command = json.loads((home / "hooks.json").read_text(encoding="utf-8"))["hooks"]["Stop"][-1]["hooks"][0]["command"]
         self.assertIn(str(lib), command)
         self.assertNotIn(str(core), command)
@@ -121,10 +121,10 @@ class HookInterpreter(unittest.TestCase):
     def test_flags_and_base_interpreter(self):
         import sys
         from unittest import mock
-        from harness import install
+        from codejig import install
         posix, windows = hook_commands(tree(self), tree(self), "/usr/bin/python3")
-        self.assertIn(" -P -s -m harness ", posix)
-        self.assertIn(" -P -s -m harness ", windows)
+        self.assertIn(" -P -s -m codejig ", posix)
+        self.assertIn(" -P -s -m codejig ", windows)
         with mock.patch.object(sys, "_base_executable", "/opt/base/python3", create=True):
             self.assertEqual(install.interpreter(), "/opt/base/python3")
 

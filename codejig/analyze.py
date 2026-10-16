@@ -477,12 +477,12 @@ def cli(args) -> int:
     root = Path(args.path).resolve()
     stacks = detect(root)
     if not stacks:
-        print(f"harness: no .NET, Node or Python project found in {root}", file=sys.stderr)
+        print(f"code-jig: no .NET, Node or Python project found in {root}", file=sys.stderr)
         return 2
     try:
         keep = changed(root, args.base) if args.base else None
     except (ValueError, OSError) as e:
-        print(f"harness: {e}", file=sys.stderr)
+        print(f"code-jig: {e}", file=sys.stderr)
         return 2
     report = run_tools(TOOLS, root, stacks, timeout=args.timeout)
     if keep is not None:
@@ -494,6 +494,6 @@ def cli(args) -> int:
         for line in render(report, stacks, args.top):
             print(line)
     if not report.ran:
-        print("harness: no analyzer ran; install at least one of the skipped tools", file=sys.stderr)
+        print("code-jig: no analyzer ran; install at least one of the skipped tools", file=sys.stderr)
         return 2
     return 1 if report.findings or report.errors else 0

@@ -31,7 +31,7 @@ OUTPUTS = ("function_call_output", "custom_tool_call_output")
 
 
 def db_path(home: Path) -> Path:
-    return home / "codex-harness" / "usage.sqlite3"
+    return home / "code-jig" / "usage.sqlite3"
 
 
 def connect(path: Path) -> sqlite3.Connection:
@@ -248,7 +248,7 @@ def scan(con: sqlite3.Connection, home: Path, rescan: bool = False) -> dict[str,
 
 
 def cli(args) -> int:
-    from harness import paths
+    from codejig import paths
     try:
         home = paths.codex_home(args.codex_home)
         con = connect(db_path(home))
@@ -256,8 +256,8 @@ def cli(args) -> int:
             summary = scan(con, home, rescan=args.rescan)
         finally:
             con.close()
-        print(f"harness collect: {summary['files']} files, {summary['lines']} new lines, {summary['quarantined']} quarantined", file=sys.stderr)
+        print(f"code-jig collect: {summary['files']} files, {summary['lines']} new lines, {summary['quarantined']} quarantined", file=sys.stderr)
     except Exception as e:
-        print(f"harness collect: {type(e).__name__}: {e}", file=sys.stderr)
+        print(f"code-jig collect: {type(e).__name__}: {e}", file=sys.stderr)
     print("{}")
     return 0

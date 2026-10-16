@@ -5,7 +5,7 @@ import sys
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="harness")
+    p = argparse.ArgumentParser(prog="code-jig")
     p.add_argument("--overlay")
     p.add_argument("--codex-home")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -72,39 +72,39 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     if sys.version_info < (3, 11):
-        print("harness: Python 3.11 or newer is required", file=sys.stderr)
+        print("code-jig: Python 3.11 or newer is required", file=sys.stderr)
         return 2
     args = build_parser().parse_args(argv)
     if args.cmd == "install":
-        from harness.install import cli
+        from codejig.install import cli
     elif args.cmd == "collect":
-        from harness.collect import cli
+        from codejig.collect import cli
     elif args.cmd == "tokens":
-        from harness.tokens import cli
+        from codejig.tokens import cli
     elif args.cmd == "cross-review":
-        from harness.review import cli
+        from codejig.review import cli
     elif args.cmd == "analyze":
-        from harness.analyze import cli
+        from codejig.analyze import cli
     elif args.cmd == "trace":
-        from harness.trace import cli
+        from codejig.trace import cli
     elif args.cmd == "evidence":
-        from harness.evidence import cli
+        from codejig.evidence import cli
     elif args.cmd == "hooks":
-        from harness.hooks import cli
+        from codejig.hooks import cli
     elif args.cmd == "humanize":
-        from harness.humanize import cli
+        from codejig.humanize import cli
     elif args.cmd == "lint-skill":
-        from harness.skilllint import cli
+        from codejig.skilllint import cli
     elif args.cmd == "scrub":
-        from harness.scrub import cli
+        from codejig.scrub import cli
     elif args.cmd == "git-hook":
-        from harness.gitgate import cli
+        from codejig.gitgate import cli
     elif args.cmd == "skill-check":
-        from harness.skillcheck import cli
+        from codejig.skillcheck import cli
     elif args.cmd == "check-sources":
-        from harness.sources import cli
+        from codejig.sources import cli
     else:
-        from harness.doctor import cli
+        from codejig.doctor import cli
     return cli(args)
 
 

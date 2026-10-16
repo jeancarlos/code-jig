@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from harness.analyze import printable, source_files, utf8_stdout
+from codejig.analyze import printable, source_files, utf8_stdout
 
 TEST_PATH = re.compile(
     r"(^|/)(tests?|__tests__|specs?)/"
@@ -116,18 +116,18 @@ def cli(args) -> int:
     try:
         ids = read_ids(_read(args.ids))
     except OSError as e:
-        print(f"harness: {args.ids}: {e.strerror or e}", file=sys.stderr)
+        print(f"code-jig: {args.ids}: {e.strerror or e}", file=sys.stderr)
         return 2
     except ValueError as e:
-        print(f"harness: {args.ids}: {e}", file=sys.stderr)
+        print(f"code-jig: {args.ids}: {e}", file=sys.stderr)
         return 2
     if not ids:
-        print(f"harness: no requirement IDs in {args.ids}", file=sys.stderr)
+        print(f"code-jig: no requirement IDs in {args.ids}", file=sys.stderr)
         return 2
     try:
         result = trace(Path(args.path).resolve(), ids, args.pattern)
     except (ValueError, re.error) as e:
-        print(f"harness: --pattern: {e}", file=sys.stderr)
+        print(f"code-jig: --pattern: {e}", file=sys.stderr)
         return 2
     if args.json:
         print(json.dumps({"covered": result.covered, "missing": result.missing, "unknown": result.unknown}, ensure_ascii=False, indent=1))

@@ -7,7 +7,7 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-from harness.atomicwrite import resolve_inside
+from codejig.atomicwrite import resolve_inside
 
 MAX_LINES = 10
 MAX_BYTES = 1_000_000

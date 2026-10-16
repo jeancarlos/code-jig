@@ -3,8 +3,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from harness import paths, probe
-from harness.doctor import resolve_codex_bin
+from codejig import paths, probe
+from codejig.doctor import resolve_codex_bin
 
 MAX_BYTES = 200_000
 PROMPT = """You are reviewing work produced by a model from a different family. Find real defects only: wrong behaviour, security problems, data loss, unhandled inputs, contradictions with the stated intent. No style or naming remarks.
@@ -48,11 +48,11 @@ def cli(args) -> int:
     try:
         material = gather(Path.cwd(), args.base, args.files)
     except ValueError as e:
-        print(f"harness: {e}", file=sys.stderr)
+        print(f"code-jig: {e}", file=sys.stderr)
         return 2
     bin_path = resolve_codex_bin(args.codex_bin)
     if bin_path is None:
-        print("harness: codex not found; pass --codex-bin PATH", file=sys.stderr)
+        print("code-jig: codex not found; pass --codex-bin PATH", file=sys.stderr)
         return 2
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "findings.md"
@@ -62,7 +62,7 @@ def cli(args) -> int:
         r = subprocess.run(cmd, input=PROMPT + material + "\nMATERIAL>>>\n", capture_output=True, text=True, encoding="utf-8",
                            errors="replace", cwd=Path.cwd(), env=probe.env_for(paths.codex_home(args.codex_home)))
         if r.returncode != 0 or not out.is_file():
-            print(f"harness: codex exec failed: {(r.stderr.strip().splitlines() or ['no output'])[-1]}", file=sys.stderr)
+            print(f"code-jig: codex exec failed: {(r.stderr.strip().splitlines() or ['no output'])[-1]}", file=sys.stderr)
             return 1
         print(out.read_text(encoding="utf-8").strip())
     return 0

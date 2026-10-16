@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from harness import collect, evidence, paths
+from codejig import collect, evidence, paths
 from tests.test_collect import home_with
 from tests.util import tree
 

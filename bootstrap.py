@@ -15,9 +15,9 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-BASE_URL = "https://setup-harness.jeansouza.dev"
-REPO = "jeancarlos/codex-harness"
-ZIP = "codex-harness.zip"
+BASE_URL = "https://code-jig.jeansouza.dev"
+REPO = "jeancarlos/code-jig"
+ZIP = "code-jig.zip"
 SUMS = "SHA256SUMS"
 TAG = re.compile(r"v\d+\.\d+\.\d+", re.ASCII)
 TIMEOUT = 30
@@ -217,7 +217,7 @@ def get_core(tag, data, base, repo):
     return target
 
 
-OWN = "# written by codex-harness bootstrap"
+OWN = "# written by code-jig bootstrap"
 PIN = re.compile(r"(?m)^core_version\s*=.*$")
 SCP = re.compile(r"[\w.-]+@[\w.-]+:\S+")
 CLONE_CONFIG = ["-c", "protocol.ext.allow=never", "-c", "protocol.file.allow=never"]
@@ -329,13 +329,13 @@ def choose_tag(version, overlay, repo):
     return resolve(version, repo)
 
 
-MARK = "codex-harness launcher "
+MARK = "code-jig launcher "
 
 
 def sh_launcher(python, core, overlay, tag):
     q = shlex.quote
-    return (f"#!/bin/sh\n# {MARK}{tag}\nPYTHONPATH={q(str(core))}\nCODEX_HARNESS_OVERLAY={q(str(overlay))}\n"
-            f"export PYTHONPATH CODEX_HARNESS_OVERLAY\nexec {q(python)} -P -s -m harness \"$@\"\n")
+    return (f"#!/bin/sh\n# {MARK}{tag}\nPYTHONPATH={q(str(core))}\nCODE_JIG_OVERLAY={q(str(overlay))}\n"
+            f"export PYTHONPATH CODE_JIG_OVERLAY\nexec {q(python)} -P -s -m codejig \"$@\"\n")
 
 
 def cmd_escape(value):
@@ -346,14 +346,14 @@ def cmd_launcher(python, core, overlay, tag):
     return ("@echo off\n"
             f"rem {MARK}{tag}\n"
             "setlocal\n"
-            "for /f \"tokens=2 delims=:.\" %%c in ('chcp') do set \"HARNESS_CP=%%c\"\n"
+            "for /f \"tokens=2 delims=:.\" %%c in ('chcp') do set \"CODE_JIG_CP=%%c\"\n"
             "chcp 65001 >nul\n"
             f"set \"PYTHONPATH={cmd_escape(core)}\"\n"
-            f"set \"CODEX_HARNESS_OVERLAY={cmd_escape(overlay)}\"\n"
-            f"\"{cmd_escape(python)}\" -P -s -m harness %*\n"
-            "set \"HARNESS_RC=%ERRORLEVEL%\"\n"
-            "chcp %HARNESS_CP% >nul\n"
-            "exit /b %HARNESS_RC%\n")
+            f"set \"CODE_JIG_OVERLAY={cmd_escape(overlay)}\"\n"
+            f"\"{cmd_escape(python)}\" -P -s -m codejig %*\n"
+            "set \"CODE_JIG_RC=%ERRORLEVEL%\"\n"
+            "chcp %CODE_JIG_CP% >nul\n"
+            "exit /b %CODE_JIG_RC%\n")
 
 
 def launcher_path(bin_dir):
@@ -399,9 +399,9 @@ def path_hint(bin_dir):
 
 
 def parse_args(argv):
-    p = argparse.ArgumentParser(prog="bootstrap.py", description="Install codex-harness from a release.")
+    p = argparse.ArgumentParser(prog="bootstrap.py", description="Install code-jig from a release.")
     p.add_argument("--overlay", help="overlay folder or git URL")
-    p.add_argument("--overlay-dir", help="where a cloned or new overlay goes (default ~/codex-overlay)")
+    p.add_argument("--overlay-dir", help="where a cloned or new overlay goes (default ~/code-jig-overlay)")
     p.add_argument("--version", help="vX.Y.Z or latest")
     p.add_argument("--base-url", default=BASE_URL)
     p.add_argument("--repo", default=REPO)
@@ -416,8 +416,8 @@ def data_dir(arg):
     if arg:
         return Path(arg).expanduser().absolute()
     if os.name == "nt":
-        return Path(os.environ["LOCALAPPDATA"]) / "codex-harness"
-    return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "codex-harness"
+        return Path(os.environ["LOCALAPPDATA"]) / "code-jig"
+    return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "code-jig"
 
 
 def bin_dir(arg, data):
@@ -431,16 +431,16 @@ def interpreter():
 
 
 def run_install(python, core, overlay, codex_home):
-    env = dict(os.environ, PYTHONPATH=str(core), CODEX_HARNESS_OVERLAY=str(overlay))
+    env = dict(os.environ, PYTHONPATH=str(core), CODE_JIG_OVERLAY=str(overlay))
     home = ["--codex-home", codex_home] if codex_home else []
-    return subprocess.run([python, "-P", "-s", "-m", "harness", *home, "install"], env=env).returncode
+    return subprocess.run([python, "-P", "-s", "-m", "codejig", *home, "install"], env=env).returncode
 
 
 def run_doctor(python, core, overlay, codex_home, codex_bin):
-    env = dict(os.environ, PYTHONPATH=str(core), CODEX_HARNESS_OVERLAY=str(overlay))
+    env = dict(os.environ, PYTHONPATH=str(core), CODE_JIG_OVERLAY=str(overlay))
     home = ["--codex-home", codex_home] if codex_home else []
     binary = ["--codex-bin", codex_bin] if codex_bin else []
-    if subprocess.run([python, "-P", "-s", "-m", "harness", *home, "doctor", *binary], env=env).returncode:
+    if subprocess.run([python, "-P", "-s", "-m", "codejig", *home, "doctor", *binary], env=env).returncode:
         print("bootstrap: installed; doctor reported problems above")
 
 
@@ -452,8 +452,8 @@ def run(args):
     data = data_dir(args.data_dir)
     bins = bin_dir(args.bin_dir, data)
     check_launcher(launcher_path(bins))
-    dest = Path(args.overlay_dir).expanduser().absolute() if args.overlay_dir else Path.home() / "codex-overlay"
-    overlay = resolve_overlay(args.overlay or os.environ.get("CODEX_HARNESS_OVERLAY"), dest)
+    dest = Path(args.overlay_dir).expanduser().absolute() if args.overlay_dir else Path.home() / "code-jig-overlay"
+    overlay = resolve_overlay(args.overlay or os.environ.get("CODE_JIG_OVERLAY"), dest)
     tag = choose_tag(args.version, overlay, args.repo)
     core = get_core(tag, data, args.base_url, args.repo)
     if overlay is None:
@@ -461,7 +461,7 @@ def run(args):
     python = interpreter()
     rc = run_install(python, core, overlay, args.codex_home)
     if rc:
-        print(f"bootstrap: harness install failed with exit code {rc}; the launcher was not changed", file=sys.stderr)
+        print(f"bootstrap: code-jig install failed with exit code {rc}; the launcher was not changed", file=sys.stderr)
         return rc
     if owned(overlay) and read_pin(overlay) != tag:
         write_pin(overlay, tag)
@@ -476,7 +476,7 @@ def main(argv=None):
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(errors="backslashreplace")
-    print("codex-harness bootstrap", flush=True)
+    print("code-jig bootstrap", flush=True)
     if sys.version_info < (3, 11):
         print("bootstrap: Python 3.11 or newer is required", file=sys.stderr)
         return 2

@@ -3,8 +3,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from harness import paths, tiers
-from harness.overlay import load
+from codejig import paths, tiers
+from codejig.overlay import load
 from tests.util import tree, write
 
 
@@ -63,7 +63,7 @@ class Encodings(unittest.TestCase):
 class OverlayDir(unittest.TestCase):
     def test_unset_exits_with_hint(self):
         with mock.patch.dict(os.environ, {}, clear=True):
-            with self.assertRaisesRegex(SystemExit, "CODEX_HARNESS_OVERLAY"):
+            with self.assertRaisesRegex(SystemExit, "CODE_JIG_OVERLAY"):
                 paths.overlay_dir(None)
 
     def test_missing_toml_exits(self):
@@ -74,7 +74,7 @@ class OverlayDir(unittest.TestCase):
     def test_env_used(self):
         root = tree(self)
         write(root / "overlay.toml", 'core_version = "v0.1.0"\ncore_writable = true\n')
-        with mock.patch.dict(os.environ, {"CODEX_HARNESS_OVERLAY": str(root)}):
+        with mock.patch.dict(os.environ, {"CODE_JIG_OVERLAY": str(root)}):
             self.assertEqual(paths.overlay_dir(None), root)
 
     def test_codex_home_precedence(self):
@@ -90,7 +90,7 @@ if __name__ == "__main__":
 class Resolve(unittest.TestCase):
     def test_relative_overlay_becomes_absolute(self):
         import os
-        from harness import paths
+        from codejig import paths
         root = tree(self)
         write(root / "ov" / "overlay.toml", 'core_version = "v1"\ncore_writable = true\n')
         old = os.getcwd()

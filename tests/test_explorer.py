@@ -1,9 +1,9 @@
 import tomllib
 import unittest
 
-from harness.doctor import check_roles
-from harness.install import is_generated, run
-from harness.overlay import Overlay
+from codejig.doctor import check_roles
+from codejig.install import is_generated, run
+from codejig.overlay import Overlay
 from tests.util import tree, write
 
 
@@ -54,12 +54,12 @@ class ExplorerRole(unittest.TestCase):
         core, ov, home = setup(self)
         [(level, _, detail)] = check_roles(home, core, ov)
         self.assertEqual(level, "warn")
-        self.assertIn("harness install", detail)
+        self.assertIn("code-jig install", detail)
 
 
 class ShippedRole(unittest.TestCase):
     def test_core_role_parses_and_keeps_its_contract(self):
-        from harness import paths
+        from codejig import paths
         data = tomllib.loads((paths.CORE / "core" / "agents" / "explorer.toml").read_text(encoding="utf-8"))
         self.assertEqual(data["name"], "explorer")
         self.assertNotIn("model", data)

@@ -1,7 +1,8 @@
+import json
 import re
 import unittest
 
-from harness import paths
+from codejig import paths
 
 SKILLS = paths.CORE / "skills"
 EXPECTED = {"bug-hunt", "code-analysis", "codegen", "cross-review", "grilling", "hld-trace", "improve", "redacao", "regression-tests", "remove-ai-attribution", "skill-validate", "web-consensus"}
@@ -19,7 +20,8 @@ def frontmatter(text: str) -> dict[str, str]:
     if not lines or lines[0] != "---" or "---" not in lines[1:]:
         return {}
     end = lines.index("---", 1)
-    return dict(line.split(": ", 1) for line in lines[1:end] if ": " in line)
+    meta = dict(line.split(": ", 1) for line in lines[1:end] if ": " in line)
+    return {k: json.loads(v) if v.startswith('"') else v for k, v in meta.items()}
 
 
 class CoreSkills(unittest.TestCase):

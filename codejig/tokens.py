@@ -3,7 +3,7 @@ import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
-from harness import collect, paths
+from codejig import collect, paths
 
 TWO_WORD = {"git", "npm", "pnpm", "yarn", "cargo", "go", "uv", "dotnet", "docker", "kubectl", "gh"}
 POLL = ("sleep", "wait")
@@ -98,7 +98,7 @@ def cli(args) -> int:
     home = paths.codex_home(args.codex_home)
     path = collect.db_path(home)
     if not path.is_file():
-        print(f"harness: {path} not found; run harness collect", file=sys.stderr)
+        print(f"code-jig: {path} not found; run code-jig collect", file=sys.stderr)
         return 2
     con = collect.connect(path)
     try:

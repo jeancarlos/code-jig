@@ -16,7 +16,7 @@ from html.parser import HTMLParser
 
 MAX_BYTES = 3_000_000
 TIMEOUT = 20
-USER_AGENT = "Mozilla/5.0 (compatible; codex-harness check-sources)"
+USER_AGENT = "Mozilla/5.0 (compatible; code-jig check-sources)"
 BLOCKED = {401, 403, 429, 451}
 SKIP_TAGS = {"script", "style", "noscript", "template"}
 TEXT_TYPES = ("text/", "application/xhtml", "application/xml", "application/json")
@@ -225,12 +225,12 @@ def check(claims: list[Claim]) -> list[Claim]:
 
 def cli(args) -> int:
     if os.environ.get("CODEX_SANDBOX_NETWORK_DISABLED") == "1":
-        print("harness: network is disabled in this sandbox; run check-sources with escalation", file=sys.stderr)
+        print("code-jig: network is disabled in this sandbox; run check-sources with escalation", file=sys.stderr)
         return 2
     try:
         claims = check(load(args.files))
     except OSError as e:
-        print(f"harness: {e}", file=sys.stderr)
+        print(f"code-jig: {e}", file=sys.stderr)
         return 2
     counts: dict[str, int] = {}
     for c in claims:

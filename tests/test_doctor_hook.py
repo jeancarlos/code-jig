@@ -1,8 +1,8 @@
 import json
 import unittest
 
-from harness.doctor import check_hook
-from harness.install import HOOK_STATUS
+from codejig.doctor import check_hook
+from codejig.install import HOOK_STATUS
 from tests.util import tree, write
 
 

@@ -24,7 +24,7 @@ class Classify(unittest.TestCase):
                 self.assertEqual(bootstrap.classify(url), "git")
 
     def test_paths(self):
-        for p in ("~/codex-overlay", "/srv/ov", "C:\\Users\\João\\ov", "rel/ov"):
+        for p in ("~/code-jig-overlay", "/srv/ov", "C:\\Users\\João\\ov", "rel/ov"):
             with self.subTest(p=p):
                 self.assertEqual(bootstrap.classify(p), "path")
 
@@ -89,7 +89,7 @@ class Clone(unittest.TestCase):
 class Resolve(unittest.TestCase):
     def setUp(self):
         self.root = tree(self)
-        self.dest = self.root / "codex-overlay"
+        self.dest = self.root / "code-jig-overlay"
 
     def test_path_needs_overlay_toml(self):
         with self.assertRaises(bootstrap.Refused):

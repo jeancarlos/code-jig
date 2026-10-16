@@ -8,9 +8,9 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-from harness import managed, paths, probe, tiers
-from harness.install import HOOK_STATUS, _git_config, _same_path, ROLE_TIERS, release_digest, render_agents, render_profile, role_files, skill_sources, valid_hook_groups
-from harness.overlay import Overlay, load
+from codejig import managed, paths, probe, tiers
+from codejig.install import HOOK_STATUS, _git_config, _same_path, ROLE_TIERS, release_digest, render_agents, render_profile, role_files, skill_sources, valid_hook_groups
+from codejig.overlay import Overlay, load
 
 Check = tuple[str, str, str]
 
@@ -122,9 +122,9 @@ def check_global(home: Path, core: Path, ov: Overlay) -> list[Check]:
         return [("FAIL", name, f"{override} is non-empty; Codex loads it instead of the generated AGENTS.md")]
     target = home / "AGENTS.md"
     if not target.is_file():
-        return [("warn", name, f"{target} is missing; run harness install")]
+        return [("warn", name, f"{target} is missing; run code-jig install")]
     if target.read_bytes() != render_agents(core, ov.root).encode("utf-8"):
-        return [("warn", name, f"{target} is stale; run harness install")]
+        return [("warn", name, f"{target} is stale; run code-jig install")]
     return [("ok", name, f"{target} is current")]
 
 
@@ -164,9 +164,9 @@ def check_tiers(home: Path, core: Path, ov: Overlay) -> list[Check]:
         f = home / f"{t.name}.config.toml"
         name = f"tier {t.name} profile"
         if not f.is_file():
-            checks.append(("warn", name, f"{f} is missing; Codex silently uses the base config; run harness install"))
+            checks.append(("warn", name, f"{f} is missing; Codex silently uses the base config; run code-jig install"))
         elif f.read_bytes() != render_profile(t, policy, ov.auto_compact_token_limit).encode("utf-8"):
-            checks.append(("warn", name, f"{f} is stale or edited; run harness install"))
+            checks.append(("warn", name, f"{f} is stale or edited; run code-jig install"))
         else:
             checks.append(("ok", name, f"{t.model} at {t.effort}"))
     cat = catalog(home)
@@ -201,9 +201,9 @@ def check_roles(home: Path, core: Path, ov: Overlay) -> list[Check]:
         t = by[ROLE_TIERS[role]]
         f = home / "agents" / name
         if not f.is_file():
-            checks.append(("warn", f"{role} role", f"{f} is missing; subagents of that kind use the parent's model; run harness install"))
+            checks.append(("warn", f"{role} role", f"{f} is missing; subagents of that kind use the parent's model; run code-jig install"))
         elif f.read_bytes() != text.encode("utf-8"):
-            checks.append(("warn", f"{role} role", f"{f} is stale or edited; run harness install"))
+            checks.append(("warn", f"{role} role", f"{f} is stale or edited; run code-jig install"))
         elif "default" in by and t.model == by["default"].model and t.effort == by["default"].effort:
             checks.append(("warn", f"{role} role", f"{t.name} tier is the same as default ({t.model} at {t.effort}); the role saves nothing"))
         else:
@@ -212,10 +212,10 @@ def check_roles(home: Path, core: Path, ov: Overlay) -> list[Check]:
 
 
 def check_git_gate(home: Path, ov: Overlay, cwd: Path) -> list[Check]:
-    target = home / "codex-harness" / "git-hooks"
+    target = home / "code-jig" / "git-hooks"
     current = _git_config("--get", "core.hooksPath") or ""
     if not ov.git_gate:
-        return [("warn", "git gate", f"off in overlay.toml but core.hooksPath still points at {target}; run harness install")
+        return [("warn", "git gate", f"off in overlay.toml but core.hooksPath still points at {target}; run code-jig install")
                 if _same_path(current, target) else ("ok", "git gate", "off")]
     if not _same_path(current, target):
         return [("warn", "git gate", f"not active: global core.hooksPath is {current or 'unset'}, expected {target}")]
@@ -229,7 +229,7 @@ def check_git_gate(home: Path, ov: Overlay, cwd: Path) -> list[Check]:
 def check_hook(home: Path) -> list[Check]:
     path = home / "hooks.json"
     if not path.is_file():
-        return [("warn", "stop hook", f"{path} missing; run harness install")]
+        return [("warn", "stop hook", f"{path} missing; run code-jig install")]
     try:
         groups = json.loads(path.read_text(encoding="utf-8-sig"))["hooks"]["Stop"]
         if not valid_hook_groups(groups):
@@ -240,7 +240,7 @@ def check_hook(home: Path) -> list[Check]:
         isinstance(g, dict) and any(isinstance(h, dict) and h.get("statusMessage") == HOOK_STATUS for h in g.get("hooks") or [])
         for g in groups)
     return [("ok", "stop hook", "registered; Codex asks to trust it once") if found
-            else ("warn", "stop hook", "not registered; run harness install")]
+            else ("warn", "stop hook", "not registered; run code-jig install")]
 
 
 def check_knowledge(ov: Overlay) -> list[Check]:

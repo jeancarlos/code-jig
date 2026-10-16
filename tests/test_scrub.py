@@ -6,7 +6,7 @@ import types
 import unittest
 from pathlib import Path
 
-from harness import scrub
+from codejig import scrub
 from tests.util import tree, write
 
 ME, OTHER = "me@example.com", "other@example.com"
@@ -80,7 +80,7 @@ class Scrub(unittest.TestCase):
         self.assertEqual([r[3] for r in after if r is not after[2]], [r[3] for r in before if r is not before[2]])
         self.assertEqual((self.repo / "a.txt").read_text(encoding="utf-8"), "uncommitted\n")
         self.assertIn("1 commits", out)
-        self.assertTrue(list(Path(git(self.repo, "rev-parse", "--absolute-git-dir")).glob("codex-harness-scrub-*.bundle")))
+        self.assertTrue(list(Path(git(self.repo, "rev-parse", "--absolute-git-dir")).glob("code-jig-scrub-*.bundle")))
 
     def test_tags_follow_the_rewritten_commit(self):
         run(self.repo)

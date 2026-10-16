@@ -1,14 +1,14 @@
-const RELEASES = "https://github.com/jeancarlos/codex-harness/releases"
+const RELEASES = "https://github.com/jeancarlos/code-jig/releases"
 const TAG = /^v\d+\.\d+\.\d+$/
-const FILES = new Set(["codex-harness.zip", "SHA256SUMS", "bootstrap.py"])
+const FILES = new Set(["code-jig.zip", "SHA256SUMS", "bootstrap.py"])
 const TEXT = { "content-type": "text/plain; charset=utf-8" }
-const PAGE = `codex-harness setup
+const PAGE = `code-jig setup
 
 Linux and macOS:
-  curl -fsSL https://setup-harness.jeansouza.dev/bootstrap.py | python3 -I - --overlay <path|git-url>
+  curl -fsSL https://code-jig.jeansouza.dev/bootstrap.py | python3 -I - --overlay <path|git-url>
 
 Windows (PowerShell):
-  irm https://setup-harness.jeansouza.dev/bootstrap.py | py -3 -I - --overlay <path|git-url>
+  irm https://code-jig.jeansouza.dev/bootstrap.py | py -3 -I - --overlay <path|git-url>
 
 Download, read and run:
   ${RELEASES}/latest/download/bootstrap.py
@@ -17,7 +17,7 @@ Download, read and run:
 This site counts requests for bootstrap.py and release zips: event, version, client type, country.
 No IP address, user-agent string or install ID is stored. The tool itself sends nothing.
 
-Source: https://github.com/jeancarlos/codex-harness
+Source: https://github.com/jeancarlos/code-jig
 `
 
 export function client(ua) {
@@ -51,7 +51,7 @@ export default {
     }
     const m = pathname.match(/^\/v\/([^/]+)\/([^/]+)$/)
     if (m && TAG.test(m[1]) && FILES.has(m[2])) {
-      if (m[2] === "codex-harness.zip") count(env, request, "download", m[1])
+      if (m[2] === "code-jig.zip") count(env, request, "download", m[1])
       return Response.redirect(`${RELEASES}/download/${m[1]}/${m[2]}`, 302)
     }
     return new Response("not found\n", { status: 404, headers: TEXT })

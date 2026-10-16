@@ -9,7 +9,7 @@ from pathlib import Path
 import unittest
 from unittest import mock
 
-from harness import sources
+from codejig import sources
 from tests.util import tree, write
 
 PAGES = {

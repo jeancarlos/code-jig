@@ -4,7 +4,7 @@ import types
 import unittest
 from unittest import mock
 
-from harness import probe, review
+from codejig import probe, review
 from tests.util import tree, write
 
 

@@ -5,13 +5,36 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Callable
 
-from harness import install
-from harness.overlay import load
-from harness.paths import CORE
+from codejig import install
+from codejig.overlay import load
+from codejig.paths import CORE
 from tests.util import tree
 
-RENAME: list[tuple[str, str]] = []
+RENAME: list[tuple[str, str | Callable[[re.Match], str]]] = [
+    (re.escape("setup-harness.jeansouza.dev"), "code-jig.jeansouza.dev"),
+    (re.escape("codex-harness-overlay"), "code-jig-overlay"),
+    (re.escape("codex-overlay"), "code-jig-overlay"),
+    (re.escape("codex-harness"), "code-jig"),
+    (re.escape("codex_harness"), "code_jig"),
+    (re.escape("codexharness"), "codejig"),
+    (re.escape("CODEX_HARNESS_"), "CODE_JIG_"),
+    (re.escape("-m harness"), "-m codejig"),
+    (re.escape("from harness"), "from codejig"),
+    (re.escape("import harness"), "import codejig"),
+    (re.escape('"harness.'), '"codejig.'),
+    (r"(?<![\w./-])harness (?=(install|doctor|collect|hooks|humanize|tokens|cross-review|analyze|trace|scrub|skill-check"
+     r"|lint-skill|check-sources|evidence|git-hook)\b)", "code-jig "),
+    (re.escape("`harness`"), "`code-jig`"),
+    (re.escape("the harness core"), "the code-jig core"),
+    (re.escape("contains `harness/`"), "contains `codejig/`"),
+    (re.escape("improve the harness,"), "improve code-jig,"),
+    (re.escape('"teach the harness"'), '"teach code-jig"'),
+    (re.escape("The harness git gate"), "The code-jig git gate"),
+    (r'(?m)^description: (Use when AI attribution leaked.*)$',
+     lambda m: 'description: "' + m[1].replace('"', '\\"') + '"'),
+]
 EXAMPLES = ("enterprise", "personal", "release")
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "golden"
 KEPT = ("AGENTS.md", "hooks.json")

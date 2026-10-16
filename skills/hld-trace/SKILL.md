@@ -5,7 +5,7 @@ description: Use when the user asks whether the code follows the high-level desi
 
 # HLD trace
 
-Requirements get IDs, tests cite them, and `harness trace` checks the links deterministically. Judging whether a test really proves its requirement stays with you.
+Requirements get IDs, tests cite them, and `code-jig trace` checks the links deterministically. Judging whether a test really proves its requirement stays with you.
 
 ## 1. Get the requirement IDs
 
@@ -50,9 +50,9 @@ Teams that already write Azure Boards links in tests can keep them: `--pattern "
 ## 3. Run the trace
 
 ```
-harness trace ids.txt                     # or ids.json, or - for stdin
-harness trace ids.txt --path services/api
-harness trace ids.txt --pattern "AB#{id}" --json
+code-jig trace ids.txt                     # or ids.json, or - for stdin
+code-jig trace ids.txt --path services/api
+code-jig trace ids.txt --pattern "AB#{id}" --json
 ```
 
 It reads test files that git tracks or would track (`tests/`, `__tests__/`, `*.test.ts`, `test_*.py`, `*Tests.cs`, `*.Tests/` projects and similar) and reports requirements with tests, `missing` requirements, and `unknown` IDs that tests cite but the list does not contain. Exit 0 when nothing is missing or unknown, 1 otherwise, 2 for unusable input.

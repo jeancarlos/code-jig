@@ -20,13 +20,13 @@ class Launcher(unittest.TestCase):
         self.root = tree(self)
         odd = "it's 100% & ação" if os.name != "nt" else "100% & ação"
         self.core = self.root / odd / "core"
-        shutil.copytree(ROOT / "harness", self.core / "harness", ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copytree(ROOT / "codejig", self.core / "codejig", ignore=shutil.ignore_patterns("__pycache__"))
         self.overlay = self.root / odd / "overlay"
         write(self.overlay / "overlay.toml", 'core_version = "v0.11.0"\ncore_writable = false\n')
         self.bins = self.root / "bin"
 
     def test_foreign_launcher_refused(self):
-        write(bootstrap.launcher_path(self.bins), "#!/bin/sh\nexec python3 -m harness \"$@\"\n")
+        write(bootstrap.launcher_path(self.bins), "#!/bin/sh\nexec python3 -m codejig \"$@\"\n")
         with self.assertRaises(bootstrap.Refused):
             bootstrap.check_launcher(bootstrap.launcher_path(self.bins))
 
@@ -39,18 +39,18 @@ class Launcher(unittest.TestCase):
 
     def round_trip(self):
         path = bootstrap.write_launcher(self.bins, sys.executable, self.core, self.overlay, "v0.11.0")
-        env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "CODEX_HARNESS_OVERLAY")}
+        env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "CODE_JIG_OVERLAY")}
         done = subprocess.run([str(path), "--help"], env=env, capture_output=True, text=True, encoding="utf-8",
                               cwd=self.root)
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertIn("usage: harness", done.stdout)
+        self.assertIn("usage: code-jig", done.stdout)
         return path
 
     @unittest.skipIf(os.name == "nt", "sh launcher")
     def test_sh_launcher_round_trip(self):
         path = self.round_trip()
         self.assertTrue(os.access(path, os.X_OK))
-        self.assertIn("-P -s -m harness", path.read_text(encoding="utf-8"))
+        self.assertIn("-P -s -m codejig", path.read_text(encoding="utf-8"))
 
     @unittest.skipUnless(os.name == "nt", "cmd launcher")
     def test_cmd_launcher_round_trip_non_ascii(self):
@@ -65,8 +65,8 @@ class Launcher(unittest.TestCase):
     def test_planted_module_in_cwd_is_ignored(self):
         path = bootstrap.write_launcher(self.bins, sys.executable, self.core, self.overlay, "v0.11.0")
         cwd = self.root / "hostile"
-        write(cwd / "harness" / "__init__.py", "raise SystemExit(99)\n")
-        write(cwd / "harness" / "__main__.py", "raise SystemExit(99)\n")
+        write(cwd / "codejig" / "__init__.py", "raise SystemExit(99)\n")
+        write(cwd / "codejig" / "__main__.py", "raise SystemExit(99)\n")
         done = subprocess.run([str(path), "--help"], capture_output=True, text=True, encoding="utf-8", cwd=cwd)
         self.assertEqual(done.returncode, 0, done.stderr)
 

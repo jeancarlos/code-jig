@@ -3,9 +3,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from harness import managed, paths
-from harness.managed import check_requirements
-from harness.tiers import Tier
+from codejig import managed, paths
+from codejig.managed import check_requirements
+from codejig.tiers import Tier
 from tests.util import tree, write
 
 TS = [Tier("default", "m-a", "medium"), Tier("review", "n-b", "high")]

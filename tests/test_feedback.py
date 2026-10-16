@@ -6,7 +6,7 @@ import unittest
 from io import StringIO
 from unittest import mock
 
-from harness import feedback, hooks
+from codejig import feedback, hooks
 from tests.util import tree, write
 
 HAS_RUFF = shutil.which("ruff") is not None

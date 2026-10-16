@@ -3,7 +3,7 @@ import io
 import unittest
 from unittest import mock
 
-from harness.doctor import SHIM_MAX_BYTES, check_binary, report
+from codejig.doctor import SHIM_MAX_BYTES, check_binary, report
 from tests.util import tree
 
 

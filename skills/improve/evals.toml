@@ -1,4 +1,4 @@
 [[case]]
 prompt = "Remember this for next time on this machine: this team always runs Python tests with pytest -q. Tell me where you would put it; do not change anything yet."
-commands = ["harness doctor"]
+commands = ["code-jig doctor"]
 output = ["(?i)knowledge|AGENTS\\.overlay\\.md"]

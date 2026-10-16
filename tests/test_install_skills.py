@@ -1,6 +1,6 @@
 import unittest
 
-from harness.install import SKILL_SIDECAR, install_skills, skill_sources, tree_digest
+from codejig.install import SKILL_SIDECAR, install_skills, skill_sources, tree_digest
 from tests.util import tree, write
 
 SKILL = "---\nname: {n}\ndescription: test skill {n}\n---\n\nbody\n"
@@ -69,10 +69,10 @@ class Skills(unittest.TestCase):
 class RealHomeIsolation(unittest.TestCase):
     def test_tests_never_target_the_real_skills_folder(self):
         from pathlib import Path
-        from harness import paths
+        from codejig import paths
         self.assertNotEqual(paths.agents_skills(), Path.home() / ".agents" / "skills")
 
     def test_tests_never_target_the_real_claude_settings(self):
         from pathlib import Path
-        from harness import paths
+        from codejig import paths
         self.assertNotEqual(paths.claude_code_settings(), Path.home() / ".claude" / "settings.json")

@@ -3,7 +3,7 @@ import io
 import unittest
 from pathlib import Path
 
-from harness.humanize import humanize_file
+from codejig.humanize import humanize_file
 from tests.util import tree, write
 
 
@@ -179,7 +179,7 @@ class HumanizeSymlinks(unittest.TestCase):
 
 class HumanizeCheck(unittest.TestCase):
     def test_check_does_not_write_files_or_directories(self):
-        from harness.__main__ import main
+        from codejig.__main__ import main
         root = tree(self)
         path = root / "check.py"
         content = "# Range — 1 to 10\n"

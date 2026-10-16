@@ -11,7 +11,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from harness import install, paths, probe, skilllint
+from codejig import install, paths, probe, skilllint
 
 STAMP = ".skill-check"
 FIXTURE_NAME = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9_.-]*")
@@ -22,17 +22,17 @@ CLAUDE_ONLY = {
     r"\bTodoWrite\b": "Codex keeps its plan with update_plan",
     r"\bAskUserQuestion\b": "ask in the reply; codex exec has no question tool",
     r"\bSkill tool\b": "Codex loads skills from its catalog; name the skill",
-    r"\bWeb(?:Fetch|Search)\b": "Codex searches with web_search; fetch pages with curl or harness check-sources",
+    r"\bWeb(?:Fetch|Search)\b": "Codex searches with web_search; fetch pages with curl or code-jig check-sources",
     r"\b(?:Read|Edit|Write|MultiEdit|Glob|Grep|NotebookEdit) tool\b": "Codex reads with shell commands and edits with apply_patch",
     r"~/\.claude\b|\$\{?CLAUDE_PLUGIN_ROOT": "Codex reads $CODEX_HOME and ~/.agents/skills",
     r"\bmodel:\s*\"(?:fable|opus|sonnet|haiku)\"": "Codex picks models by tier or role, not by name",
     r"\b(?:EnterPlanMode|ExitPlanMode|run_in_background)\b": "not a Codex tool",
 }
 CODE = re.compile(r"```[\w-]*\n(.*?)```|`([^`\n]+)`", re.DOTALL)
-HARNESS_CMD = re.compile(r"(?:^|[\s;&|(])(?:python3?\s+-m\s+)?harness\s+([a-z][a-z-]*)", re.MULTILINE)
+CODE_JIG_CMD = re.compile(r"(?:^|[\s;&|(])(?:python3?\s+-m\s+codejig|code-jig|cjig)\s+([a-z][a-z-]*)", re.MULTILINE)
 RUBRIC = """You are reviewing an agent skill (SKILL.md and its files) that must work in OpenAI Codex CLI, though it was often written with Claude Code in mind. Codex differs: it runs shell commands through its exec tool, edits files with apply_patch, spawns subagents with spawn_agent and an agent_type (explorer, reviewer, judge, default, worker), keeps a plan with update_plan, searches with web_search only when enabled, has no question tool in exec mode, keeps .git read-only in its sandbox, and needs an approved escalation for network access from the sandbox.
 
-The `harness` command ships with this pack and is installed wherever the skill runs, the same as the skill itself; its commands are: {commands}. Treat it as available, not as an external dependency. Codex asks for an escalation on its own when a command needs the network or writes outside the workspace, and Guardian or the user reviews it, so a skill does not need to say that for each download or install.
+The `code-jig` command ships with this pack and is installed wherever the skill runs, the same as the skill itself; its commands are: {commands}. Treat it as available, not as an external dependency. Codex asks for an escalation on its own when a command needs the network or writes outside the workspace, and Guardian or the user reviews it, so a skill does not need to say that for each download or install.
 
 Judge each rule, one line each, exactly in the form `N | PASS or FAIL | shortest quote that decides it | one-line fix`:
 1. Every tool, command, path and API the skill tells the agent to use exists in Codex, with the name Codex uses.
@@ -78,10 +78,10 @@ def claude_only(text: str) -> list[tuple[str, str]]:
 
 
 def unknown_commands(text: str) -> list[str]:
-    from harness.__main__ import build_parser
+    from codejig.__main__ import build_parser
     known = set(build_parser()._subparsers._group_actions[0].choices)
     code = "\n".join(a or b for a, b in CODE.findall(text))
-    return sorted({c for c in HARNESS_CMD.findall(code) if c not in known})
+    return sorted({c for c in CODE_JIG_CMD.findall(code) if c not in known})
 
 
 def _linked(p: Path) -> bool:
@@ -136,7 +136,7 @@ def static(skill: Path) -> list[tuple[str, str]]:
     text = (skill / "SKILL.md").read_text(encoding="utf-8-sig", errors="replace")
     found = list(skilllint.check(skill / "SKILL.md"))
     found += [("FAIL", f"`{name}` is not in Codex: {hint}") for name, hint in claude_only(text)]
-    found += [("FAIL", f"`harness {c}` is not a harness command") for c in unknown_commands(text)]
+    found += [("FAIL", f"`code-jig {c}` is not a code-jig command") for c in unknown_commands(text)]
     if not (skill / "evals.toml").is_file():
         found.append(("FAIL", "no evals.toml: add at least one [[case]] that a live Codex run can check"))
     else:
@@ -204,8 +204,8 @@ def _material(skill: Path) -> str:
 
 
 def _rubric(marker: str) -> str:
-    from harness.__main__ import build_parser
-    commands = ", ".join(f"harness {c}" for c in build_parser()._subparsers._group_actions[0].choices)
+    from codejig.__main__ import build_parser
+    commands = ", ".join(f"code-jig {c}" for c in build_parser()._subparsers._group_actions[0].choices)
     return RUBRIC.replace("{commands}", commands).replace("{marker}", marker)
 
 
@@ -325,7 +325,7 @@ def check(skill: Path, args, bin_path: Path | None, home: Path) -> bool:
             return False
         installed = paths.agents_skills() / skill.name
         if not installed.is_dir() or install.tree_digest(installed) != install.tree_digest(skill):
-            print(f"  FAIL {installed} is not this version; run harness install so Codex loads it")
+            print(f"  FAIL {installed} is not this version; run code-jig install so Codex loads it")
             return False
         cases = load_cases(skill)
         for i, case in enumerate(cases, 1):
@@ -347,7 +347,7 @@ def check(skill: Path, args, bin_path: Path | None, home: Path) -> bool:
 
 
 def cli(args) -> int:
-    from harness.doctor import resolve_codex_bin
+    from codejig.doctor import resolve_codex_bin
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")
     bin_path = resolve_codex_bin(args.codex_bin) if (args.review or args.live) else None
