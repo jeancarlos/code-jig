@@ -14,6 +14,8 @@ DASHES = {"\u2014": "-", "\u2013": "-", "\u2015": "-"}
 PROSE = re.compile(r"(?i)(?:^|/)(?:readme|changelog|changes|history|contributing)(?:\.[^/]*)?$|\.(?:md|mdx|markdown|rst|adoc)$")
 NOT_PROSE = re.compile(r"(?:^|/)(?:AGENTS(?:\.override)?\.md|CLAUDE\.md|SKILL\.md)$|(?:^|/)specs?/")
 VENDORED = re.compile(r"(?:^|/)(?:node_modules|vendor|dist|\.obsidian)/|\.min\.(?:js|css)$")
+HOOK_GIT_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_PREFIX",
+                "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES")
 GATED = ("commit-msg", "pre-commit", "pre-push")
 HOOKS = ("applypatch-msg", "pre-applypatch", "post-applypatch", "pre-commit", "pre-merge-commit",
          "prepare-commit-msg", "commit-msg", "post-commit", "pre-rebase", "post-checkout", "post-merge",
@@ -145,8 +147,15 @@ def _run_tests() -> int:
     if os.environ.get("CODE_JIG_SKIP_TESTS") == "1":
         print("code-jig: CODE_JIG_SKIP_TESTS=1, skipping the pre-push tests", file=sys.stderr)
         return 0
-    top = _git("rev-parse", "--show-toplevel").decode("utf-8", "replace").strip()
-    rc = subprocess.run(cmd, shell=True, cwd=top).returncode
+    try:
+        top = _git("rev-parse", "--show-toplevel").decode("utf-8", "replace").strip()
+    except RuntimeError:
+        top = ""
+    if not top:
+        print("code-jig: push refused, cannot find the repo top level to run tests", file=sys.stderr)
+        return 1
+    env = {k: v for k, v in os.environ.items() if k not in HOOK_GIT_ENV}
+    rc = subprocess.run(cmd, shell=True, cwd=top, env=env).returncode
     if rc:
         print(f"code-jig: push refused, tests fail ({cmd} exited {rc})", file=sys.stderr)
         return 1

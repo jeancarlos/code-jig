@@ -174,6 +174,21 @@ class PrePushTests(unittest.TestCase):
         self.assertIn("AI attribution", err)
         self.assertFalse((self.repo / "ran").exists())
 
+    def test_test_command_does_not_inherit_the_hook_git_environment(self):
+        cmd = f'"{sys.executable}" -c "import os; open(\'ran\', \'w\').write(os.environ.get(\'GIT_DIR\') or \'\')"'
+        git(self.repo, "config", "codejig.testCommand", cmd)
+        self.assertEqual(self.push(self.line(), env={"GIT_DIR": str(self.repo / ".git")})[0], 0)
+        self.assertEqual((self.repo / "ran").read_text(), "")
+
+    def test_a_configured_command_without_a_top_level_fails_closed(self):
+        bare = tree(self) / "bare"
+        bare.mkdir()
+        git(bare, "init", "-q", "--bare")
+        git(bare, "config", "codejig.testCommand", self.command(0))
+        code, err = in_repo(bare, gitgate.pre_push, [])
+        self.assertEqual(code, 1)
+        self.assertIn("cannot find the repo top level", err)
+
 
 @unittest.skipIf(os.name == "nt", "POSIX shell shims")
 class Shims(unittest.TestCase):
