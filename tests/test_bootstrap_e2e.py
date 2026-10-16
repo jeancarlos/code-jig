@@ -48,7 +48,7 @@ class EndToEnd(unittest.TestCase):
         self.home.mkdir()
         self.env = {k: v for k, v in os.environ.items() if k not in ("CODEX_HARNESS_OVERLAY", "PYTHONPATH", "CODEX_HOME")}
         self.env.update(HOME=str(self.home), USERPROFILE=str(self.home), GIT_CONFIG_GLOBAL=str(self.root / "gitconfig"),
-                        CODEX_HARNESS_SKILLS_DIR=str(self.root / "skills"), CODEX_BIN=str(self.root / "no-codex"), PYTHONIOENCODING="utf-8")
+                        CODEX_HARNESS_SKILLS_DIR=str(self.root / "skills"), CODEX_BIN=str(self.root / "no-codex"))
         self.dirs = dict(data=self.root / "data", bins=self.root / "bin", overlay=self.root / "codex-overlay",
                          codex=self.root / "codex home")
         self.httpd.paths.clear()
@@ -57,7 +57,7 @@ class EndToEnd(unittest.TestCase):
         cmd = [sys.executable, "-I", str(ROOT / "bootstrap.py"), "--base-url", self.base, "--repo", "invalid/none",
                "--data-dir", str(self.dirs["data"]), "--bin-dir", str(self.dirs["bins"]),
                "--overlay-dir", str(self.dirs["overlay"]), "--codex-home", str(self.dirs["codex"]), *extra]
-        return subprocess.run(cmd, env=self.env, capture_output=True, text=True, encoding="utf-8", timeout=300)
+        return subprocess.run(cmd, env=self.env, capture_output=True, text=True, errors="replace", timeout=300)
 
     def test_fresh_install_writes_everything(self):
         done = self.run_bootstrap("--version", TAG)
