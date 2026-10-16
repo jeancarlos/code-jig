@@ -5,3 +5,4 @@
 - No polling loops. Do not chain `sleep`/`wait` calls when one blocking command or a single check gives the answer.
 - Minimal code. Reuse what exists, prefer the standard library, delete before adding, no speculative abstractions.
 - Root cause over symptom. Fix the shared function, not each caller.
+- No AI attribution. Never write `Co-authored-by` or `Generated with` lines for an AI, `AI-assisted` notes or robot emoji in commits, pull requests, comments or files. If one already reached history, use the `remove-ai-attribution` skill.
