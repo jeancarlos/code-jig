@@ -1,3 +1,4 @@
+* text=auto eol=lf
 tests/** export-ignore
 docs/** export-ignore
 worker/** export-ignore
