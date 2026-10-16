@@ -1,0 +1,23 @@
+name: release
+on:
+  push:
+    tags: ["v*.*.*"]
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+  publish:
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: build
+        run: PYTHONPATH=. python .github/scripts/build_release.py "$GITHUB_REF_NAME" dist
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/codex-harness.zip dist/SHA256SUMS dist/bootstrap.py --title "$GITHUB_REF_NAME" --generate-notes
