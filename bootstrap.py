@@ -213,3 +213,111 @@ def get_core(tag, data, base, repo):
     unpack(blob, target, tag)
     print(f"bootstrap: unpacked {tag} into {target}")
     return target
+
+
+OWN = "# written by codex-harness bootstrap"
+PIN = re.compile(r"(?m)^core_version\s*=.*$")
+SCP = re.compile(r"[\w.-]+@[\w.-]+:\S+")
+CLONE_CONFIG = ["-c", "protocol.ext.allow=never", "-c", "protocol.file.allow=never"]
+
+
+def classify(value):
+    if value.startswith("-"):
+        raise Refused(f"overlay {value!r} looks like an option")
+    parts = urllib.parse.urlsplit(value)
+    if parts.scheme in ("https", "ssh"):
+        if parts.password or (parts.scheme == "https" and parts.username):
+            raise Refused("put credentials in a git credential helper or SSH key, not in the overlay URL")
+        return "git"
+    if SCP.fullmatch(value):
+        return "git"
+    if "::" in value or "://" in value:
+        raise Refused(f"unsupported overlay URL {value!r}; use https://, ssh:// or user@host:path")
+    return "path"
+
+
+def git_run(cmd):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+    except OSError as e:
+        raise Refused(f"git is needed to clone the overlay: {e}")
+
+
+def clone(url, dest):
+    if dest.exists():
+        origin = git_run(["git", "-C", str(dest), "remote", "get-url", "origin"])
+        if origin.returncode or origin.stdout.strip() != url:
+            raise Refused(f"{dest} exists and is not a clone of that URL; pass --overlay-dir")
+        cmd = ["git", "-C", str(dest), "pull", "--ff-only"]
+    else:
+        cmd = ["git", *CLONE_CONFIG, "clone", "--", url, str(dest)]
+    try:
+        done = subprocess.run(cmd)
+    except OSError as e:
+        raise Refused(f"git is needed to clone the overlay: {e}")
+    if done.returncode:
+        raise Refused(f"git could not fetch the overlay into {dest} (exit {done.returncode})")
+
+
+def resolve_overlay(value, dest):
+    if value:
+        if classify(value) == "git":
+            clone(value, dest)
+            path = dest
+        else:
+            path = Path(value).expanduser().absolute()
+        if not (path / "overlay.toml").is_file():
+            raise Refused(f"{path / 'overlay.toml'} not found")
+        return path
+    if (dest / "overlay.toml").is_file():
+        return dest
+    if dest.exists():
+        raise Refused(f"{dest} exists but holds no overlay.toml; pass --overlay or --overlay-dir")
+    return None
+
+
+def read_pin(overlay):
+    import tomllib
+    path = overlay / "overlay.toml"
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError) as e:
+        raise Refused(f"{path}: {e}")
+    return valid_tag(str(data.get("core_version", "")))
+
+
+def owned(overlay):
+    try:
+        with open(overlay / "overlay.toml", encoding="utf-8") as f:
+            return f.readline().rstrip("\r\n") == OWN
+    except (OSError, ValueError):
+        return False
+
+
+def write_pin(overlay, tag):
+    path = overlay / "overlay.toml"
+    write_atomic(path, PIN.sub(f'core_version = "{tag}"', path.read_text(encoding="utf-8"), count=1))
+
+
+def create_overlay(core, dest, tag):
+    shutil.copytree(core / "overlay-examples" / "release", dest)
+    path = dest / "overlay.toml"
+    body = PIN.sub(f'core_version = "{tag}"', path.read_text(encoding="utf-8"), count=1)
+    write_atomic(path, OWN + "\n" + body)
+    print(f"bootstrap: wrote overlay {dest}")
+    return dest
+
+
+def resolve(version, repo):
+    return resolve_latest(repo) if version == "latest" else valid_tag(version)
+
+
+def choose_tag(version, overlay, repo):
+    if overlay is None:
+        return resolve(version or "latest", repo)
+    pin = read_pin(overlay)
+    if not version or version == pin:
+        return pin
+    if not owned(overlay):
+        raise Refused(f"--version {version} differs from core_version {pin} in {overlay}; bump core_version in your overlay")
+    return resolve(version, repo)
