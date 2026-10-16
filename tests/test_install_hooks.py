@@ -3,6 +3,7 @@ import os
 import stat
 import unittest
 
+from codejig import paths
 from codejig.install import CLAUDE_CODE_WATERMARK_STATUS, HOOK_STATUS, hook_commands, merged_claude_code_hooks, merged_hooks, run, write_merged
 from codejig.overlay import Overlay
 from tests.util import tree, write
@@ -110,7 +111,7 @@ class HookRunsInstalledCopy(unittest.TestCase):
         write(ov / "profiles.toml", 'default = "m"\n')
         home = root / "codex home"
         run(core, Overlay(ov, "v0.3.0", True), home)
-        lib = home / "code-jig" / "lib"
+        lib = paths.state_dir() / "lib"
         self.assertIn("A = 1", (lib / "codejig" / "collect.py").read_text(encoding="utf-8"))
         command = json.loads((home / "hooks.json").read_text(encoding="utf-8"))["hooks"]["Stop"][-1]["hooks"][0]["command"]
         self.assertIn(str(lib), command)

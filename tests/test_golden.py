@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from typing import Callable
 
-from codejig import install
+from codejig import install, paths
 from codejig.overlay import load
 from codejig.paths import CORE
 from tests.util import tree
@@ -34,6 +34,7 @@ RENAME: list[tuple[str, str | Callable[[re.Match], str]]] = [
     (re.escape("The harness git gate"), "The code-jig git gate"),
     (r'(?m)^description: (Use when AI attribution leaked.*)$',
      lambda m: 'description: "' + m[1].replace('"', '\\"') + '"'),
+    (re.escape("<HOME>/code-jig/lib"), "<STATE>/lib"),
 ]
 EXAMPLES = ("enterprise", "personal", "release")
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "golden"
@@ -54,18 +55,21 @@ def _normalize(text: str, home: Path) -> str:
     py = install.interpreter()
     for raw in (py, Path(py).as_posix()):
         text = text.replace(raw, "<PY>")
+    state = paths.state_dir()
+    for raw in (str(state), state.as_posix()):
+        text = text.replace(raw, "<STATE>")
     for raw in (str(home), home.as_posix()):
         text = text.replace(raw, "<HOME>")
     for raw in (str(CORE), CORE.as_posix()):
         text = text.replace(raw, "<CORE>")
-    text = re.sub(r"(<(?:CORE|HOME|PY)>)([^\s`\"']*)", lambda m: m[1] + m[2].replace("\\", "/"), text)
+    text = re.sub(r"(<(?:CORE|HOME|STATE|PY)>)([^\s`\"']*)", lambda m: m[1] + m[2].replace("\\", "/"), text)
     return re.sub(r"\b[0-9a-f]{64}\b", "<sha>", text)
 
 
 def _normalize_hooks(text: str, home: Path) -> str:
     def walk(v):
         if isinstance(v, str):
-            return re.sub(r"'(<(?:CORE|HOME|PY)>[^'\s]*)'", r"\1", _normalize(v, home))
+            return re.sub(r"'(<(?:CORE|HOME|STATE|PY)>[^'\s]*)'", r"\1", _normalize(v, home))
         if isinstance(v, list):
             return [walk(x) for x in v]
         if isinstance(v, dict):
@@ -80,6 +84,8 @@ def render(example: str, base: Path) -> dict[str, str]:
     ov = load(CORE / "overlay-examples" / example)
     out = {}
     for path, text in install.plan(CORE, ov, home):
+        if not path.is_relative_to(home):
+            continue
         rel = path.relative_to(home).as_posix()
         if _kept(rel):
             out[rel] = _normalize_hooks(text, home) if rel == "hooks.json" else _normalize(text, home).replace("\r\n", "\n")

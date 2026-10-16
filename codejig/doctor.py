@@ -211,8 +211,8 @@ def check_roles(home: Path, core: Path, ov: Overlay) -> list[Check]:
     return checks
 
 
-def check_git_gate(home: Path, ov: Overlay, cwd: Path) -> list[Check]:
-    target = home / "code-jig" / "git-hooks"
+def check_git_gate(ov: Overlay, cwd: Path) -> list[Check]:
+    target = paths.state_dir() / "git-hooks"
     current = _git_config("--get", "core.hooksPath") or ""
     if not ov.git_gate:
         return [("warn", "git gate", f"off in overlay.toml but core.hooksPath still points at {target}; run code-jig install")
@@ -323,7 +323,7 @@ def cli(args) -> int:
             checks += check_tiers(home, paths.CORE, ov)
             checks += check_roles(home, paths.CORE, ov)
             checks += check_hook(home)
-            checks += check_git_gate(home, ov, Path.cwd())
+            checks += check_git_gate(ov, Path.cwd())
             checks += check_knowledge(ov)
             checks += check_superpowers(home)
             try:

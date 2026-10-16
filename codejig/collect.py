@@ -4,6 +4,8 @@ import sqlite3
 import sys
 from pathlib import Path
 
+from codejig import paths
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, offset INTEGER NOT NULL, size INTEGER NOT NULL, thread_id TEXT, model TEXT, turn_id TEXT, line INTEGER NOT NULL, last_total INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS threads (id TEXT PRIMARY KEY, parent_id TEXT, kind TEXT NOT NULL, started TEXT, cwd TEXT);
@@ -30,8 +32,8 @@ SKILL = re.compile(r"skills[/\\]+([A-Za-z0-9_.-]+)[/\\]+SKILL\.md")
 OUTPUTS = ("function_call_output", "custom_tool_call_output")
 
 
-def db_path(home: Path) -> Path:
-    return home / "code-jig" / "usage.sqlite3"
+def db_path() -> Path:
+    return paths.state_dir() / "usage.sqlite3"
 
 
 def connect(path: Path) -> sqlite3.Connection:
@@ -248,10 +250,9 @@ def scan(con: sqlite3.Connection, home: Path, rescan: bool = False) -> dict[str,
 
 
 def cli(args) -> int:
-    from codejig import paths
     try:
         home = paths.codex_home(args.codex_home)
-        con = connect(db_path(home))
+        con = connect(db_path())
         try:
             summary = scan(con, home, rescan=args.rescan)
         finally:

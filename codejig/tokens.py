@@ -96,7 +96,7 @@ def render(s: dict, floor: float) -> list[str]:
 
 def cli(args) -> int:
     home = paths.codex_home(args.codex_home)
-    path = collect.db_path(home)
+    path = collect.db_path()
     if not path.is_file():
         print(f"code-jig: {path} not found; run code-jig collect", file=sys.stderr)
         return 2

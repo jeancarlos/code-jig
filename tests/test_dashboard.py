@@ -9,7 +9,7 @@ from tests.util import tree
 class Dashboard(unittest.TestCase):
     def test_every_query_runs(self):
         home = home_with(tree(self), ["main", "guardian", "subagent", "legacy"])
-        con = collect.connect(collect.db_path(home))
+        con = collect.connect(collect.db_path())
         self.addCleanup(con.close)
         collect.scan(con, home)
         board = json.loads((paths.CORE / "dashboard.json").read_text(encoding="utf-8"))
@@ -21,7 +21,7 @@ class Dashboard(unittest.TestCase):
 
     def test_evidence_panels(self):
         home = home_with(tree(self), ["main", "guardian", "tools"])
-        con = collect.connect(collect.db_path(home))
+        con = collect.connect(collect.db_path())
         self.addCleanup(con.close)
         collect.scan(con, home)
         board = json.loads((paths.CORE / "dashboard.json").read_text(encoding="utf-8"))

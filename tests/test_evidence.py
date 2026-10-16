@@ -326,7 +326,7 @@ class Cli(unittest.TestCase):
         self.assertEqual(data["unreachable"], ["/w"])
         self.assertEqual(data["use"]["guardian"], {"allow": 1})
         self.assertEqual(data["use"]["skills"], {"bug-hunt": 1, "code-analysis": 1, "grilling": 1, "regression-tests": 1, "using-superpowers": 1})
-        self.assertTrue(collect.db_path(home).is_file())
+        self.assertTrue(collect.db_path().is_file())
 
     def test_text_report_marks_insufficient_and_caveat(self):
         home = home_with(tree(self), ["main"])

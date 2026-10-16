@@ -8,6 +8,12 @@ def codex_home(arg: str | None) -> Path:
     return Path(arg or os.environ.get("CODEX_HOME") or Path.home() / ".codex").expanduser()
 
 
+def state_dir() -> Path:
+    if os.name == "nt":
+        return Path(os.environ["LOCALAPPDATA"]) / "code-jig"
+    return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "code-jig"
+
+
 def overlay_dir(arg: str | None) -> Path:
     value = arg or os.environ.get("CODE_JIG_OVERLAY")
     if not value:

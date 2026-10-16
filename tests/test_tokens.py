@@ -8,7 +8,7 @@ from tests.util import tree
 class Summary(unittest.TestCase):
     def setUp(self):
         home = home_with(tree(self), ["main", "guardian", "subagent", "legacy", "bad"])
-        self.con = collect.connect(collect.db_path(home))
+        self.con = collect.connect(collect.db_path())
         self.addCleanup(self.con.close)
         collect.scan(self.con, home)
         self.s = tokens.summary(self.con, "2026-10-01T00:00:00Z")
@@ -45,7 +45,7 @@ class Summary(unittest.TestCase):
         self.assertIn("quarantined", text)
 
     def test_empty_db_renders(self):
-        con = collect.connect(collect.db_path(tree(self) / "h"))
+        con = collect.connect(collect.db_path())
         self.addCleanup(con.close)
         self.assertTrue(tokens.render(tokens.summary(con, "2026-10-01T00:00:00Z"), 97.5))
 

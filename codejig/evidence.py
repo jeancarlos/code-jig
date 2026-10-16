@@ -403,7 +403,7 @@ def cli(args) -> int:
             print(f"code-jig: {args.repo} is not a git repository", file=sys.stderr)
             return 2
     home = paths.codex_home(args.codex_home)
-    con = collect.connect(collect.db_path(home))
+    con = collect.connect(collect.db_path())
     try:
         collect.scan(con, home)
         now = datetime.now(timezone.utc)

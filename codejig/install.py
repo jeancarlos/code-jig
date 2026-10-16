@@ -275,7 +275,7 @@ def plan(core: Path, ov: Overlay, home: Path, claude_code_settings: Path | None 
     outputs += [(home / f"{t.name}.config.toml", render_profile(t, policy, ov.auto_compact_token_limit)) for t in ts]
     outputs += [(home / "agents" / name, text) for name, text in role_files(core, ts).items()]
     outputs += [(home / "rules" / name, text) for name, text in rule_files(ov.root).items()]
-    lib = home / "code-jig" / "lib"
+    lib = paths.state_dir() / "lib"
     outputs += [(lib / "codejig" / p.name, stamp(p.read_text(encoding="utf-8"), "hash")) for p in sorted((core / "codejig").glob("*.py"))]
     outputs.append((home / "hooks.json", merged_hooks(home / "hooks.json", *hook_commands(lib, home, interpreter()),
                                                       watermark=watermark_commands(lib, interpreter(), "codex"))))
@@ -296,8 +296,8 @@ def _same_path(a: str, b: Path) -> bool:
     return bool(a) and os.path.normcase(os.path.abspath(os.path.expanduser(a))) == os.path.normcase(os.path.abspath(b))
 
 
-def git_gate(home: Path, ov: Overlay) -> list[str]:
-    target = home / "code-jig" / "git-hooks"
+def git_gate(ov: Overlay) -> list[str]:
+    target = paths.state_dir() / "git-hooks"
     current = _git_config("--get", "core.hooksPath")
     if current is None:
         return ["warning: git not found; the git gate was not installed"] if ov.git_gate else []
@@ -306,7 +306,7 @@ def git_gate(home: Path, ov: Overlay) -> list[str]:
             _git_config("--unset", "core.hooksPath")
             return [f"removed the git gate: core.hooksPath no longer points at {target}"]
         return []
-    for name, text in gitgate.shims(home / "code-jig" / "lib", interpreter(), ov.prose_gate).items():
+    for name, text in gitgate.shims(paths.state_dir() / "lib", interpreter(), ov.prose_gate).items():
         target.mkdir(parents=True, exist_ok=True)
         atomic_write(target / name, text.encode("utf-8"), mode=0o755)
     if current and not _same_path(current, target):
@@ -326,7 +326,7 @@ def run(core: Path, ov: Overlay, home: Path) -> list[str]:
             lines.append(f"moved your previous file to {backup}")
     lines += prune_rules(home / "rules", set(rule_files(ov.root)))
     lines += install_skills(skill_sources(core, ov.root), paths.agents_skills())
-    lines += git_gate(home, ov)
+    lines += git_gate(ov)
     override = home / "AGENTS.override.md"
     if override.is_file() and override.stat().st_size > 0:
         lines.append(f"warning: {override} exists and Codex loads it instead of {home / 'AGENTS.md'}")
