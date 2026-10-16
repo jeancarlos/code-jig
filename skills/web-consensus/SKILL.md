@@ -16,7 +16,7 @@ Cheap researchers gather evidence in parallel, a reviewer from another model fam
 | Link and quote check | `harness check-sources` | no model |
 | Verdict | `judge` | `deep` tier: the strongest model |
 
-This skill asks for subagents: every role in the table runs through `spawn_agent` with that `agent_type`, even when you wait for its result before the next step, because the point is a different model and a fresh context, not speed. Each subagent gets its own brief and nothing about the others, so no role can quietly agree with another, and never a fork of this conversation. You only route: write the evidence files, run the script, pass material between roles. If `spawn_agent` is not available in this session, say so, then play each role yourself in order with its own notes file, and state in the verdict that it was not produced by the `judge` role.
+This skill asks for subagents: every role in the table runs through `spawn_agent` with that `agent_type`, even when you wait for its result before the next step, because the point is a different model and a fresh context, not speed. Each subagent gets its own brief and nothing about the others, so no role can quietly agree with another, and never a fork of this conversation. You only route: write the evidence files, run the script, pass material between roles. Run the whole flow even when the answer looks obvious or one page settles it: "it's a simple fact", "the docs already say it" and "one search is enough" are the answers from memory this skill replaces. If `spawn_agent` is not available in this session, stop and say so: a consensus from one model playing every role is not this skill's output, so do not play the roles yourself.
 
 ## Flow
 
@@ -32,9 +32,9 @@ This skill asks for subagents: every role in the table runs through `spawn_agent
 
 3. **Challenge.** A `reviewer` reads the evidence files and the check report, and is told not to search. It rules on every claim with one line each, `OK`, `DOUBT` or `MISMATCH`, then lists the questions that would settle each dispute.
 
-4. **Cold verification.** For each of those questions, a fresh `explorer` gets only the question: no evidence and no challenge. Write its triples to `evidence-cold.jsonl` and run the check on it.
+4. **Cold verification.** For each of those questions, a fresh `explorer` gets only the question: no evidence and no challenge. Write its triples to `evidence-cold.jsonl` and run the check on it. When the challenge lists no disputes, skip this step and say so in the report; there is then only the first check report.
 
-5. **Verdict.** A `judge` gets the question, every evidence file, both check reports and the challenge. It answers in a short paragraph, then lists agreed, disputed and unsourced claims with URL and quote, its confidence, and what new evidence would change the answer. Relay the verdict; do not rewrite it.
+5. **Verdict.** A `judge` gets the question, every evidence file, every check report (one, or two after cold verification) and the challenge. It answers in a short paragraph, then lists agreed, disputed and unsourced claims with URL and quote, its confidence, and what new evidence would change the answer. Relay the verdict; do not rewrite it.
 
 ## Rules
 
@@ -48,6 +48,7 @@ This skill asks for subagents: every role in the table runs through `spawn_agent
 
 | Mistake | Instead |
 |---|---|
+| Answering from one search because the question looks easy | Run every step; the user asked for sources checked by roles that did not write them. |
 | Forking this conversation into a researcher | A fresh brief; a fork re-reads everything and inherits your bias. |
 | Judging in the main session | The `judge` role exists so the verdict runs on the strongest model whatever tier this session uses. |
 | Treating `blocked` as `dead` | Say it was blocked; find a second source or quote it as unverified. |
