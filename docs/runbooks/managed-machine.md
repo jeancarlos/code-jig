@@ -11,8 +11,11 @@ A managed machine (a work laptop, a shared build box, anything someone else admi
 
 ## 1. Get the core, read-only
 
-Use a tagged release, never a branch:
-- Download the tag's source archive from the release page. This leaves no credentials on the machine.
+Use a tagged release, never a branch. The first option installs the core and your overlay in one step (the first release with a zip is v0.11.0):
+
+- Download, check, then run. From the [release page](https://github.com/jeancarlos/codex-harness/releases/latest), download `bootstrap.py`, `SHA256SUMS` and `codex-harness.zip`. Compare the zip's checksum with `SHA256SUMS` (`sha256sum -c SHA256SUMS`, or `Get-FileHash codex-harness.zip -Algorithm SHA256` on Windows). Then run `py -3 -I bootstrap.py --overlay <your enterprise overlay copy>` (`python3 -I` on Linux and macOS). The bootstrap unpacks the zip into a version folder, runs `install` and `doctor`, and writes a `harness` launcher. Skip steps 2 and 4 below if you use it; step 3 still applies to the overlay.
+- Do not pipe `bootstrap.py` into Python on a managed machine. The pipe forms on the README are for your own machines: they cannot check the script they run, and endpoint security treats a pipe into `py` the same way it treats `-ExecutionPolicy Bypass`, which this runbook already forbids.
+- Or download the tag's source archive from the release page. This leaves no credentials on the machine.
 - Or clone the tag over HTTPS: `git clone --branch v0.6.0 https://github.com/jeancarlos/codex-harness`
 
 Do not sign in to a personal account with write access on a machine someone else administers.

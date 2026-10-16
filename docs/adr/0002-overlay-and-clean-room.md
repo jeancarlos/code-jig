@@ -12,7 +12,7 @@ Personal and employer-specific content must stay out of the shared core. A pinne
 None needed. The one concrete input is the list of security triggers that must stay in the core.
 
 ## Cost
-One constraint on the `improve` skill: it honours `core_writable`. One `doctor` check: the core tree is unchanged when `core_writable = false`. `doctor` also FAILs a core that is not a git checkout or cannot be read.
+One constraint on the `improve` skill: it honours `core_writable`. One `doctor` check: the core tree is unchanged when `core_writable = false`. `doctor` also FAILs a core that is not a git checkout or cannot be read. A release install (ADR 0027) is checked by its `VERSION` digest instead.
 
 ## Kind
 Script, with a rule for people.

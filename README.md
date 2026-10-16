@@ -37,7 +37,39 @@ I use coding agents every day, and I kept running into the same four problems.
 
 ## Quick start
 
-Requires Python 3.11+ and Codex.
+Requires Python 3.11+ and Codex. Your overlay is a folder or git repository with an `overlay.toml`; see [personalizing](docs/personalizing.md). With no overlay, the installer makes `~/codex-overlay` for you.
+
+### From a release (no git checkout)
+
+Linux and macOS:
+
+```sh
+curl -fsSL https://setup-harness.jeansouza.dev/bootstrap.py | python3 -I - --overlay <path|git-url>
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://setup-harness.jeansouza.dev/bootstrap.py | py -3 -I - --overlay <path|git-url>
+```
+
+A piped script cannot check itself. To check what you run, download the files, compare the zip's checksum, then run the script:
+
+```sh
+curl -fsSLO https://github.com/jeancarlos/codex-harness/releases/latest/download/bootstrap.py
+curl -fsSLO https://github.com/jeancarlos/codex-harness/releases/latest/download/SHA256SUMS
+curl -fsSLO https://github.com/jeancarlos/codex-harness/releases/latest/download/codex-harness.zip
+sha256sum -c SHA256SUMS
+python3 -I bootstrap.py --overlay <path|git-url>
+```
+
+On Windows, compare `(Get-FileHash codex-harness.zip -Algorithm SHA256).Hash` with the line in `SHA256SUMS`, then run `py -3 -I bootstrap.py --overlay <path|git-url>`.
+
+The GitHub URLs above work when `setup-harness.jeansouza.dev` is down. The bootstrap also falls back to GitHub on its own. Releases before v0.11.0 have no zip.
+
+The bootstrap unpacks the release into `~/.local/share/codex-harness/vX.Y.Z/` (`%LOCALAPPDATA%\codex-harness\vX.Y.Z\` on Windows), runs `install`, writes a `harness` launcher in `~/.local/bin` and runs `doctor`. The overlay's `core_version` picks the release. To change it, edit `core_version` and run the bootstrap again; see [upgrade and rollback](docs/runbooks/upgrade-and-rollback.md).
+
+### From a checkout (to change the core)
 
 ```sh
 git clone https://github.com/jeancarlos/codex-harness
@@ -50,6 +82,10 @@ codex --profile default
 ```
 
 Edit `~/codex-overlay/profiles.toml` to pick your models; `doctor` lists the ones your account can use.
+
+### What the install counts
+
+The tool sends nothing. The download site counts requests for `bootstrap.py` and for release zips, and stores the event, the version, the client type (curl, PowerShell, Python or other) and the country. It does not store your IP address, your user-agent string or any install ID. The counts are request counts, not installs. See [ADR 0027](docs/adr/0027-install-from-a-release-url.md).
 
 ## Documentation
 
