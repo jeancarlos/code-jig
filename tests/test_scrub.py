@@ -27,7 +27,7 @@ def commit(repo: Path, message: str, email: str, files: dict[str, str], when: in
     git(repo, "add", "-A")
     tree_sha = git(repo, "write-tree")
     parent = subprocess.run(["git", "-C", str(repo), "rev-parse", "-q", "--verify", "HEAD"],
-                            capture_output=True, text=True).stdout.strip()
+                            capture_output=True, text=True, encoding="utf-8").stdout.strip()
     stamp = f"{when} +0000"
     env = {"GIT_AUTHOR_NAME": email.split("@")[0], "GIT_AUTHOR_EMAIL": email, "GIT_AUTHOR_DATE": stamp,
            "GIT_COMMITTER_NAME": email.split("@")[0], "GIT_COMMITTER_EMAIL": email, "GIT_COMMITTER_DATE": stamp}

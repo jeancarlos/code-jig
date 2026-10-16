@@ -220,7 +220,7 @@ def check_git_gate(home: Path, ov: Overlay, cwd: Path) -> list[Check]:
     if not _same_path(current, target):
         return [("warn", "git gate", f"not active: global core.hooksPath is {current or 'unset'}, expected {target}")]
     local = subprocess.run(["git", "-C", str(cwd), "config", "--local", "--get", "core.hooksPath"],
-                           capture_output=True, text=True).stdout.strip()
+                           capture_output=True, text=True, encoding="utf-8").stdout.strip()
     if local:
         return [("warn", "git gate", f"this repo sets core.hooksPath = {local}, which bypasses the gate here")]
     return [("ok", "git gate", f"active{' with the prose gate' if ov.prose_gate else ''}")]

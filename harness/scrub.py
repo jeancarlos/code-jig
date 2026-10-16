@@ -30,7 +30,7 @@ def my_emails(repo: Path, extra: list[str] = ()) -> set[str]:
     """user.email, every codexharness.email value, and `extra`, lower-cased."""
     found = []
     for key in ("user.email", "codexharness.email"):
-        r = subprocess.run(["git", "-C", str(repo), "config", "--get-all", key], capture_output=True, text=True)
+        r = subprocess.run(["git", "-C", str(repo), "config", "--get-all", key], capture_output=True, text=True, encoding="utf-8")
         found += r.stdout.split()
     return {e.lower() for e in [*found, *extra] if e}
 
@@ -171,7 +171,8 @@ def _report(repo: Path, before: dict[str, str]) -> list[str]:
 
 def cli(args) -> int:
     repo = Path(args.path).resolve()
-    r = subprocess.run(["git", "-C", str(repo), "rev-parse", "--absolute-git-dir"], capture_output=True, text=True)
+    r = subprocess.run(["git", "-C", str(repo), "rev-parse", "--absolute-git-dir"], capture_output=True, text=True,
+                       encoding="utf-8")
     if r.returncode:
         print(f"harness: {repo} is not a git repository", file=sys.stderr)
         return 2
