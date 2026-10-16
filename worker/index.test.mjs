@@ -54,6 +54,8 @@ test("root serves html and counts nothing", async () => {
   assert.match(body, /prefers-color-scheme: dark/)
   assert.match(body, /curl -fsSL https:\/\/code-jig\.jeansouza\.dev\/setup \| python3 -I -/)
   assert.match(body, /irm https:\/\/code-jig\.jeansouza\.dev\/setup \| py -3 -I -/)
+  assert.ok(body.includes("curl -fsSL -o bootstrap.py https://code-jig.jeansouza.dev/setup\npython3 -I bootstrap.py --overlay &lt;path|git-url&gt;"))
+  assert.ok(body.includes("irm https://code-jig.jeansouza.dev/setup -OutFile bootstrap.py\npy -3 -I bootstrap.py --overlay &lt;path|git-url&gt;"))
   assert.ok(!body.includes("\u2014"))
   assert.deepEqual(e.points, [])
 })

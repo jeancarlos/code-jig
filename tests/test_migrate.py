@@ -1,10 +1,12 @@
 import contextlib
+import dataclasses
 import errno
 import hashlib
 import io
 import json
 import ntpath
 import os
+import shutil
 import sqlite3
 import subprocess
 import types
@@ -78,7 +80,8 @@ class Migrate(unittest.TestCase):
         lines = self.run_migrate()
         self.assertEqual(thread_ids(self.old_db), ["t0", "t1"])
         self.assertEqual(thread_ids(collect.db_path()), ["t0"])
-        self.assertIn(f"refused: {collect.db_path()} already has data; move one of them away and rerun", lines)
+        self.assertIn(f"refused: {collect.db_path()} already has data; collect rebuilds it from the rollouts, "
+                      f"so move {collect.db_path()} away and rerun", lines)
 
     def test_an_empty_new_db_is_replaced(self):
         db_with_rows(self.old_db, 2)
@@ -234,7 +237,8 @@ class Migrate(unittest.TestCase):
         write(collect.db_path(), "not a database " * 100)
         lines = self.run_migrate()
         self.assertTrue(self.old_db.exists())
-        self.assertIn(f"refused: {collect.db_path()} already has data; move one of them away and rerun", lines)
+        self.assertIn(f"refused: {collect.db_path()} already has data; collect rebuilds it from the rollouts, "
+                      f"so move {collect.db_path()} away and rerun", lines)
 
     def test_a_refusal_exits_1(self):
         write(self.root / "ov" / "overlay.toml", 'core_version = "v1"\ncore_writable = true\n')
@@ -349,12 +353,13 @@ class Migrate(unittest.TestCase):
         lines = self.run_migrate()
         self.assertFalse(known.exists())
         self.assertTrue(unknown.exists())
-        self.assertIn(f"delete {unknown} yourself: not a known launcher", lines)
+        self.assertIn(f"left {unknown}: not a code-jig launcher", lines)
         for path in self.launchers():
             text = path.read_text(encoding="utf-8")
             self.assertIn("code-jig launcher ", text)
             self.assertIn(str(paths.CORE), text)
             self.assertIn(str(self.ov.root), text)
+        self.assertEqual(self.run_migrate(), ["nothing to do"])
 
     def test_leftovers_are_printed_not_edited(self):
         rc = write(self.user / ".bashrc", "alias x=y\nexport CODEX_HARNESS_OVERLAY=~/ov\n")
@@ -389,8 +394,7 @@ class Migrate(unittest.TestCase):
             return real(*args)
 
         with mock.patch.object(install, "run", flaky):
-            with self.assertRaises(OSError):
-                self.run_migrate()
+            self.assertIn("failed: code-jig install: interrupted", self.run_migrate())
             self.run_migrate()
         self.assertEqual(len(calls), 2)
         self.assertTrue(all(p.exists() for p in self.launchers()))
@@ -493,6 +497,7 @@ class Migrate(unittest.TestCase):
         self.assertIn(f"left {hooks}: global core.hooksPath still points at it", lines)
 
     def test_a_failed_install_after_the_hooks_path_went_says_the_gate_is_off(self):
+        self.ov = dataclasses.replace(self.ov, git_gate=True)
         git("config", "--global", "core.hooksPath", str(migrate.old_state(self.home) / "git-hooks"))
         with mock.patch.object(install, "run", side_effect=ValueError("bad overlay")):
             lines = self.run_migrate()
@@ -530,6 +535,111 @@ class Migrate(unittest.TestCase):
             lines = migrate.write_launchers(paths.CORE, self.ov.root)
         self.assertIn(f"delete {launcher} yourself: cannot read it", lines)
         self.assertTrue(launcher.exists())
+
+    def new_gate(self) -> Path:
+        return paths.state_dir() / "git-hooks"
+
+    def hooks_path(self) -> str:
+        return git("config", "--global", "--get", "core.hooksPath").stdout.strip()
+
+    def test_a_refused_db_move_leaves_the_old_hooks_path(self):
+        old = str(migrate.old_state(self.home) / "git-hooks")
+        git("config", "--global", "core.hooksPath", old)
+        db_with_rows(self.old_db, 2)
+        db_with_rows(collect.db_path(), 1)
+        lines = self.run_migrate()
+        self.assertEqual(self.hooks_path(), old)
+        self.assertEqual(lines[-1], migrate.SKIPPED)
+
+    def test_bootstrap_first_then_a_failed_install_ends_with_the_new_gate(self):
+        self.ov = dataclasses.replace(self.ov, git_gate=True)
+        self.old_codex_state()
+        git("config", "--global", "core.hooksPath", str(migrate.old_state(self.home) / "git-hooks"))
+        install.run(paths.CORE, self.ov, self.home)
+        bs = migrate._bootstrap(paths.CORE)
+        bs.write_launcher(self.bin_dir(), install.interpreter(), paths.CORE, self.ov.root, "v0.11.0")
+        real = install.run
+        calls = []
+
+        def flaky(*args):
+            calls.append(1)
+            if len(calls) == 1:
+                raise PermissionError(errno.EACCES, "file in use")
+            return real(*args)
+
+        with mock.patch.object(install, "run", flaky):
+            first = self.run_migrate()
+            self.assertIn("failed: the git gate is off until code-jig install succeeds", first)
+            self.run_migrate()
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(install._same_path(self.hooks_path(), self.new_gate()))
+        self.assertEqual(self.run_migrate(), ["nothing to do"])
+
+    def test_a_broken_hooks_json_stops_before_any_change(self):
+        self.old_codex_state()
+        git("config", "--global", "core.hooksPath", str(migrate.old_state(self.home) / "git-hooks"))
+        write(self.home / "hooks.json", '{"hooks": {"Stop": [ ], }}')
+        before = snapshot(self.root)
+        with mock.patch.object(install, "run") as installed:
+            lines = self.run_migrate()
+        installed.assert_not_called()
+        self.assertEqual(snapshot(self.root), before)
+        self.assertTrue(lines[0].startswith("failed:"), lines)
+        self.assertIn("hooks.json", lines[0])
+
+    def test_bootstrap_backups_of_old_files_go_and_edited_ones_stay(self):
+        self.old_codex_state()
+        install.run(paths.CORE, self.ov, self.home)
+        self.assertTrue(list(self.home.glob("AGENTS.md.bak-*")))
+        edited = write(self.home / "AGENTS.md.bak-20200101-000000", old_stamp("old rules\n") + "mine\n")
+        self.run_migrate()
+        left = [p for p in self.root.rglob("*") if ".bak-" in p.name and not p.name.startswith("hooks.json")]
+        self.assertEqual(left, [edited])
+        self.assertEqual(migrate.pending(self.home), [])
+
+    def old_copy(self, name: str, digest: str | None = None) -> Path:
+        d = self.skills / name
+        shutil.copytree(paths.CORE / "skills" / name, d, ignore=shutil.ignore_patterns(".skill-check", "evals.toml", "evals"))
+        write(d / ".codex-harness", (digest or install.tree_digest(d)) + "\n")
+        return d
+
+    def test_skills_backup_of_an_intact_old_copy_goes_and_others_stay(self):
+        self.old_copy("grilling")
+        self.old_copy("codegen", "0" * 64)
+        install.run(paths.CORE, self.ov, self.home)
+        backups = self.skills.parent / "skills-backup"
+        self.assertEqual(len(list(backups.iterdir())), 2)
+        self.run_migrate()
+        self.assertEqual([p.name.split(".bak-")[0] for p in backups.iterdir()], ["codegen"])
+        self.assertEqual(migrate.pending(self.home), [])
+
+    def test_git_gate_overlay_ends_with_the_new_hooks_path(self):
+        self.ov = dataclasses.replace(self.ov, git_gate=True)
+        self.old_codex_state()
+        git("config", "--global", "core.hooksPath", str(migrate.old_state(self.home) / "git-hooks"))
+        lines = self.run_migrate()
+        self.assertFalse(any(line.startswith(("refused:", "failed:")) for line in lines), lines)
+        self.assertTrue(install._same_path(self.hooks_path(), self.new_gate()))
+        self.assertTrue((self.new_gate() / "pre-commit").is_file())
+        self.assertEqual(migrate.pending(self.home), [])
+        self.assertEqual(self.run_migrate(), ["nothing to do"])
+
+    def test_an_aliased_old_link_survives_the_batch_copy(self):
+        claude = self.user / ".claude" / "skills"
+        old = self.root / "PROJECTS" / "codex-harness" / "skills"
+        self.link(claude / "a-mygrill", old / "grilling")
+        self.link(claude / "bug-hunt", old / "bug-hunt")
+        lines = migrate.replace_skill_links(paths.CORE, self.ov, claude)
+        self.assertTrue((claude / "a-mygrill" / "SKILL.md").is_file())
+        self.assertTrue((claude / "bug-hunt" / "SKILL.md").is_file())
+        self.assertEqual(sum(line.startswith("wrote ") for line in lines), 2)
+
+    def test_an_old_key_in_an_included_file_is_reported_as_edit_by_hand(self):
+        inc = write(self.root / "included gitconfig", "[codexharness]\n\temail = b@example.com\n")
+        git("config", "--global", "include.path", str(inc))
+        self.run_migrate()
+        self.assertEqual(migrate.pending(self.home), [f"codexharness.email in {inc}: edit by hand"])
+        self.assertIn("codexharness", inc.read_text(encoding="utf-8"))
 
 
 def snapshot(root: Path) -> dict:

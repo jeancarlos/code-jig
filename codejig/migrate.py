@@ -76,7 +76,7 @@ def move_db(home: Path, dry_run: bool = False) -> list[str]:
     if old.with_name(old.name + "-journal").exists():
         return [f"refused: {old} has an unfinished write; open and close Codex once and rerun"]
     if new.exists() and _has_rows(new):
-        return [f"refused: {new} already has data; move one of them away and rerun"]
+        return [f"refused: {new} already has data; collect rebuilds it from the rollouts, so move {new} away and rerun"]
     if not dry_run:
         refused = _move(old, new)
         if refused:
@@ -190,9 +190,35 @@ def _old_generated(path: Path) -> bool | None:
     return None
 
 
+OLD_FILE_GLOBS = ("AGENTS.md", "*.config.toml", "agents/*.toml", "rules/codex-harness-*.rules")
+
+
 def _old_files(home: Path) -> list[Path]:
-    return [home / "AGENTS.md", *sorted(home.glob("*.config.toml")), *sorted(home.glob("agents/*.toml")),
-            *sorted(home.glob("rules/codex-harness-*.rules"))]
+    return [f for g in OLD_FILE_GLOBS for f in sorted(home.glob(g))]
+
+
+def _old_backups(home: Path) -> list[Path]:
+    return [f for g in OLD_FILE_GLOBS for f in sorted(home.glob(g + ".bak-*")) if _old_generated(f)]
+
+
+def _old_copy(d: Path) -> bool:
+    side = d / OLD_SIDECAR
+    try:
+        want = side.read_text(encoding="utf-8").strip()
+        files = sorted((f for f in d.rglob("*") if f.is_file() and f != side and install.installed_file(d, f)),
+                       key=lambda f: f.relative_to(d).parts)
+        h = hashlib.sha256()
+        for f in files:
+            h.update(f.relative_to(d).as_posix().encode() + b"\0" + f.read_bytes() + b"\0")
+    except OSError:
+        return False
+    return h.hexdigest() == want
+
+
+def _old_skill_backups() -> list[Path]:
+    roots = {paths.agents_skills().parent / "skills-backup", claude_skills().parent / "skills-backup"}
+    return [d for r in sorted(roots) if r.is_dir() for d in sorted(r.glob("*.bak-*"))
+            if d.is_dir() and not d.is_symlink() and _old_copy(d)]
 
 
 def _hook_files(home: Path) -> list[Path]:
@@ -225,6 +251,14 @@ def remove_old_generated(home: Path, dry_run: bool = False) -> list[str]:
             if not dry_run:
                 f.unlink()
             lines.append(f"{p}delete {f}")
+    for f in _old_backups(home):
+        if not dry_run:
+            f.unlink()
+        lines.append(f"{p}delete {f}: a backup of a file the old version wrote")
+    for d in _old_skill_backups():
+        if not dry_run:
+            shutil.rmtree(d)
+        lines.append(f"{p}delete {d}: a backup of a skill the old version copied")
     for f in _hook_files(home):
         try:
             data, changed = _without_old_hooks(f)
@@ -286,6 +320,7 @@ def replace_skill_links(core: Path, ov: Overlay, claude_skills: Path, dry_run: b
     lines = []
     sources = install.skill_sources(core, ov.root)
     for d in (claude_skills, paths.agents_skills()):
+        replaced = {}
         for link in sorted(d.iterdir()) if d.is_dir() else []:
             name = _old_link(link)
             if name is None:
@@ -296,12 +331,14 @@ def replace_skill_links(core: Path, ov: Overlay, claude_skills: Path, dry_run: b
                 lines.append(f"{p}remove {link}: {name} is no longer in the core")
                 continue
             lines.append(f"{p}replace the link {link} with a copy")
-            if dry_run:
-                continue
-            owned = {n: src for n, src in sources.items()
-                     if not (d / n).is_symlink() and (d / n / install.SKILL_SIDECAR).is_file()}
+            replaced[link] = sources[name]
+        if not replaced or dry_run:
+            continue
+        owned = {n: src for n, src in sources.items()
+                 if not (d / n).is_symlink() and (d / n / install.SKILL_SIDECAR).is_file()}
+        for link in replaced:
             link.unlink()
-            lines += install.install_skills({link.name: sources[name], **owned}, d)
+        lines += install.install_skills({**owned, **{link.name: src for link, src in replaced.items()}}, d)
     return lines
 
 
@@ -334,22 +371,28 @@ def _old_launchers(bs) -> list[Path]:
     return [b / name for b in sorted(bins) for name in ("harness", "harness.cmd") if (b / name).is_file()]
 
 
+def _known_launcher(f: Path) -> bool | None:
+    try:
+        text = f.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    return OLD_LAUNCHER_MARK in text or _hand_written(text)
+
+
 def write_launchers(core: Path, overlay: Path, dry_run: bool = False) -> list[str]:
     p = "would " if dry_run else ""
     bs = _bootstrap(core)
     lines = []
     for f in _old_launchers(bs):
-        try:
-            text = f.read_text(encoding="utf-8", errors="replace")
-        except OSError:
+        known = _known_launcher(f)
+        if known is None:
             lines.append(f"delete {f} yourself: cannot read it")
-            continue
-        if OLD_LAUNCHER_MARK in text or _hand_written(text):
+        elif known:
             if not dry_run:
                 f.unlink()
             lines.append(f"{p}delete {f}")
         else:
-            lines.append(f"delete {f} yourself: not a known launcher")
+            lines.append(f"left {f}: not a code-jig launcher")
     bins = bs.bin_dir(None, bs.data_dir(None))
     try:
         if dry_run:
@@ -387,6 +430,17 @@ def leftovers(home: Path) -> list[str]:
     return lines
 
 
+def _old_keys(includes: bool) -> list[tuple[str, str]]:
+    r = _git("config", "--global", *(["--includes"] if includes else []), "--show-origin", "-z",
+             "--get-regexp", r"^codexharness\.")
+    parts = r.stdout.split("\0")[:-1] if r and r.returncode == 0 else []
+    return [(origin, entry.split("\n")[0]) for origin, entry in zip(parts[::2], parts[1::2])]
+
+
+def _new_gate_active() -> bool:
+    return install._same_path(install._git_config("--get", "core.hooksPath") or "", paths.state_dir() / "git-hooks")
+
+
 def pending(home: Path) -> list[str]:
     lines = []
     old = old_state(home)
@@ -395,9 +449,12 @@ def pending(home: Path) -> list[str]:
     current = _old_hooks_path(home)
     if current:
         lines.append(f"global core.hooksPath is {current}")
-    r = _git("config", "--global", "--get-regexp", r"^codexharness\.")
-    lines += [f"global git key {line.split()[0]} is set" for line in (r.stdout.splitlines() if r and r.returncode == 0 else [])]
-    lines += [f"{f} was written by the old version" for f in _old_files(home) if _old_generated(f)]
+    own = {origin for origin, _ in _old_keys(False)}
+    for origin, key in _old_keys(True):
+        lines.append(f"global git key {key} is set" if origin in own
+                     else f"{key} in {origin.removeprefix('file:')}: edit by hand")
+    lines += [f"{f} was written by the old version" for f in [*_old_files(home), *_old_backups(home)] if _old_generated(f)]
+    lines += [f"{d} is a backup of an old skill copy" for d in _old_skill_backups()]
     for f in _hook_files(home):
         try:
             if _without_old_hooks(f)[1]:
@@ -408,16 +465,30 @@ def pending(home: Path) -> list[str]:
     return lines
 
 
+def _stopped(lines: list[str]) -> bool:
+    return any(line.startswith(("refused:", "failed:")) for line in lines)
+
+
 def run(core: Path, ov: Overlay, home: Path, repos: list[Path], dry_run: bool) -> list[str]:
-    lines = [*move_db(home, dry_run), *move_git_config(repos, dry_run), *release_hooks_path(home, dry_run)]
-    if any(line.startswith(("refused:", "failed:")) for line in lines):
+    settings = claude_settings()
+    try:
+        install.plan(core, ov, home, settings if settings.is_file() else None)
+        install.skill_sources(core, ov.root)
+    except (ValueError, OSError) as e:
+        return [f"failed: code-jig install would fail: {e}", "nothing was changed; fix it and rerun"]
+    lines = [*move_db(home, dry_run), *move_git_config(repos, dry_run)]
+    if _stopped(lines):
         return [*lines, SKIPPED]
-    released = any(line.startswith("unset core.hooksPath") for line in lines)
+    lines += release_hooks_path(home, dry_run)
+    if _stopped(lines):
+        return [*lines, SKIPPED]
     lines += [*remove_old_generated(home, dry_run),
               *move_skill_sidecars([paths.agents_skills(), claude_skills()], dry_run),
               *replace_skill_links(core, ov, claude_skills(), dry_run)]
     bs = _bootstrap(core)
-    done = all(f.is_file() for f in bs.launcher_paths(bs.bin_dir(None, bs.data_dir(None)))) and not _old_launchers(bs)
+    done = (all(f.is_file() for f in bs.launcher_paths(bs.bin_dir(None, bs.data_dir(None))))
+            and not any(_known_launcher(f) for f in _old_launchers(bs))
+            and (not ov.git_gate or _new_gate_active()))
     if not lines and done:
         return ["nothing to do", *leftovers(Path.home())]
     if dry_run:
@@ -425,8 +496,8 @@ def run(core: Path, ov: Overlay, home: Path, repos: list[Path], dry_run: bool) -
     else:
         try:
             lines += install.run(core, ov, home)
-        except ValueError as e:
-            return [*lines, f"failed: code-jig install: {e}", *([GATE_OFF] if released else [])]
+        except (ValueError, OSError) as e:
+            return [*lines, f"failed: code-jig install: {e}", *([GATE_OFF] if ov.git_gate and not _new_gate_active() else [])]
     return [*lines, *write_launchers(core, ov.root, dry_run), *leftovers(Path.home())]
 
 

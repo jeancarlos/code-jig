@@ -28,8 +28,10 @@ a { color: var(--link) }
 <h2>Windows (PowerShell)</h2>
 <pre>irm https://code-jig.jeansouza.dev/setup | py -3 -I - --overlay &lt;path|git-url&gt;</pre>
 <h2>Download, read and run</h2>
-<pre>${RELEASES}/latest/download/bootstrap.py
+<pre>curl -fsSL -o bootstrap.py https://code-jig.jeansouza.dev/setup
 python3 -I bootstrap.py --overlay &lt;path|git-url&gt;</pre>
+<pre>irm https://code-jig.jeansouza.dev/setup -OutFile bootstrap.py
+py -3 -I bootstrap.py --overlay &lt;path|git-url&gt;</pre>
 <p class="mute">This site counts requests for the setup script and release zips: event, version, client type, country. No IP address, user-agent string or install ID is stored. The tool itself sends nothing.</p>
 <p><a href="https://github.com/jeancarlos/code-jig">Source on GitHub</a></p>
 </body>

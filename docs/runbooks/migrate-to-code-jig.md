@@ -32,25 +32,35 @@ Run this once on every machine that had the previous, Codex-only version. `code-
    code-jig --overlay <overlay> doctor
    ```
 
-   `doctor` fails with `run code-jig migrate` while old state remains.
+   `doctor` fails with `run code-jig migrate` while old state remains. Old git keys can also sit in a file your global config includes, and `migrate` does not touch those. Find them with:
+
+   ```sh
+   git config --show-origin --get-regexp codexharness
+   ```
+
+   `doctor` reports each one as `<key> in <file>: edit by hand`. Delete them from that file yourself.
 
 ## What it does
 
-It prints `code-jig migrate is deprecated and will be removed in the next release` first, then each action. It:
+It prints `code-jig migrate is deprecated and will be removed in the next release` first, then each action. Before it changes anything, it checks that `install` would succeed with this overlay and these hook files. If not, it prints a `failed:` line and stops with nothing changed. Then it:
 
 1. Moves the tracker database to `~/.local/share/code-jig/usage.sqlite3` (`%LOCALAPPDATA%\code-jig\usage.sqlite3`).
-2. Unsets the old global `core.hooksPath`. The `install` it runs sets the new one when `git_gate = true` in the overlay.
-3. Copies the old git config keys (`email`, `allowProse`) to the `codejig` section and unsets the old ones.
-4. Removes the files the old version generated, including its hook entries in `~/.codex/hooks.json` and `~/.claude/settings.json`, then runs `install` to write the new ones.
+2. Copies the old git config keys (`email`, `allowProse`) to the `codejig` section and unsets the old ones.
+3. Unsets the old global `core.hooksPath`. The `install` it runs sets the new one when `git_gate = true` in the overlay.
+4. Removes the files the old version generated, including its hook entries in `~/.codex/hooks.json` and `~/.claude/settings.json`. It also removes the backups a bootstrap install made of those files and of old skill copies, but only when they are still unedited. Then it runs `install` to write the new ones.
 5. Renames skill sidecars and replaces skill links that point into the old checkout with copies.
-6. Writes the `code-jig` and `cjig` launchers and deletes the old `harness` launcher only if it is the known one.
+6. Writes the `code-jig` and `cjig` launchers. It deletes an old `harness` launcher only if it is the known one, and prints `left <path>: not a code-jig launcher` for any other `harness` file, which may belong to another tool.
 7. Prints, without editing, shell files and config folders that still name the old env var or paths. Fix those by hand.
 
 ## When it refuses
 
-A step that is refused or fails stops the ones after it, so the database never ends up in two places and the old git gate is never removed while it still works. Fix the line it printed (usually a program that still has the database open) and run the same command again. It finishes the rest and then reports nothing to do.
+Moving the database and copying the git keys run first. If either is refused or fails, `migrate` prints `skipped the remaining steps` and changes nothing else. The old `core.hooksPath` stays set, so the old git gate keeps working and the database never ends up in two places. If unsetting the old `core.hooksPath` fails, the rest is skipped the same way. While the global `core.hooksPath` still points at the old folder, `migrate` never deletes the old hooks or the code they run.
 
-If `install` ran before `migrate` and created a new, populated database, `migrate` refuses to overwrite either one and says how to proceed.
+If `install` fails at the end, `migrate` prints `failed: code-jig install: ...`. When the overlay has `git_gate = true` and the new gate is not active yet, it also prints `failed: the git gate is off until code-jig install succeeds`. The next run does not report nothing to do until the new gate is active.
+
+Fix the line it printed (usually a program that still has the database open) and run the same command again. It finishes the rest and then reports nothing to do.
+
+If `install` ran before `migrate` and created a new, populated database, `migrate` refuses to overwrite it. Move the new database away and run again: `collect` rebuilds it from the rollouts.
 
 ## Not part of migrate
 

@@ -10,7 +10,7 @@ def codex_home(arg: str | None) -> Path:
 
 def state_dir() -> Path:
     if os.name == "nt":
-        return Path(os.environ["LOCALAPPDATA"]) / "code-jig"
+        return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "code-jig"
     return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "code-jig"
 
 
