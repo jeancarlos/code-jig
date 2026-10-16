@@ -8,7 +8,7 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-from codejig import managed, paths, probe, tiers
+from codejig import managed, migrate, paths, probe, tiers
 from codejig.install import HOOK_STATUS, _git_config, _same_path, ROLE_TIERS, release_digest, render_agents, render_profile, role_files, skill_sources, valid_hook_groups
 from codejig.overlay import Overlay, load
 
@@ -340,4 +340,5 @@ def cli(args) -> int:
             if args.live:
                 checks += probe.check_live(bin_path, home, Path.cwd(), ts)
         checks += check_chain(home, Path.cwd())
+        checks += [("FAIL", "old state", f"{line}; run code-jig migrate") for line in migrate.pending(home)]
     return report(checks)
