@@ -72,6 +72,18 @@ class Launcher(unittest.TestCase):
 
 
 class PathHint(unittest.TestCase):
+    def test_windows_text_runs_once_and_escapes(self):
+        text = bootstrap.hint_lines("C:\\a $b`c'd", "nt")
+        self.assertIn("once", text[0])
+        self.assertNotIn("shell profile", text[0])
+        self.assertIn(";C:\\a $b`c''d'", text[1])
+        self.assertNotIn('"', text[1])
+
+    def test_posix_text_unchanged(self):
+        text = bootstrap.hint_lines("/x y", "posix")
+        self.assertIn("add this line to your shell profile", text[0])
+        self.assertEqual(text[1], "export PATH='/x y':$PATH")
+
     def test_hint_only_when_missing(self):
         bins = tree(self)
         out = io.StringIO()

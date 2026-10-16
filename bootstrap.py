@@ -376,15 +376,26 @@ def write_launcher(bin_dir, python, core, overlay, tag):
     return path
 
 
+def hint_lines(bin_dir, flavour):
+    if flavour == "nt":
+        quoted = str(bin_dir).replace("'", "''")
+        return [
+            "to run harness by name, run this line once in PowerShell:",
+            f"[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ';{quoted}', 'User')",
+        ]
+    return [
+        "to run harness by name, add this line to your shell profile:",
+        f"export PATH={shlex.quote(str(bin_dir))}:$PATH",
+    ]
+
+
 def path_hint(bin_dir):
     want = os.path.normcase(os.path.abspath(bin_dir))
     dirs = [os.path.normcase(os.path.abspath(p)) for p in os.environ.get("PATH", "").split(os.pathsep) if p]
     if want not in dirs:
-        print(f"bootstrap: {bin_dir} is not on PATH; to run harness by name, add this line to your shell profile:")
-        if os.name == "nt":
-            print(f'[Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";{bin_dir}", "User")')
-        else:
-            print(f"export PATH={shlex.quote(str(bin_dir))}:$PATH")
+        first, line = hint_lines(bin_dir, os.name)
+        print(f"bootstrap: {bin_dir} is not on PATH; {first}")
+        print(line)
 
 
 def parse_args(argv):

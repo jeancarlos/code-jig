@@ -22,7 +22,7 @@ A tag push builds a release zip, and `bootstrap.py` installs the harness from it
 
 The pack was installable only from a git checkout of the core, which meant git, a clone and several commands on every machine, and a different path on a managed Windows laptop. The user wanted to give a machine one URL. The overlay already pins a core version, so the release zip is what that pin points at.
 
-Piping a script into Python is convenient and cannot protect itself: the script that would verify the download is the script being downloaded. The design keeps the pipe as a shortcut and documents download, check and run as the reliable form.
+Piping a script into Python is convenient and cannot protect itself: the script that would verify the download is the script being downloaded. The design keeps the pipe as a shortcut and documents download, read and run as the reliable form.
 
 ## Data
 
