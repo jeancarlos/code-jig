@@ -1,9 +1,10 @@
+import hashlib
 import subprocess
 import unittest
 from unittest import mock
 
 from harness.doctor import check_core, check_global
-from harness.install import render_agents, stamp
+from harness.install import release_digest, render_agents, stamp
 from harness.overlay import Overlay
 from tests.util import tree, write
 
@@ -108,3 +109,49 @@ class GlobalAgents(unittest.TestCase):
         write(self.home / "AGENTS.md", render_agents(self.core, self.ovdir))
         write(self.home / "AGENTS.override.md", "")
         self.assertEqual(self.level(), "ok")
+
+
+class Release(unittest.TestCase):
+    def setUp(self):
+        self.core = tree(self) / "core"
+        write(self.core / "harness" / "x.py", "a\n")
+        write(self.core / "VERSION", f"v0.1.0\n{release_digest(self.core)}\n")
+
+    def levels(self, ov):
+        return {name: level for level, name, _ in check_core(self.core, ov)}
+
+    def test_matching_release_is_ok(self):
+        self.assertEqual(self.levels(Overlay(self.core, "v0.1.0", False)), {"core pin": "ok", "core clean": "ok"})
+
+    def test_edited_release_fails_readonly_ok_writable(self):
+        write(self.core / "harness" / "x.py", "b\n")
+        self.assertEqual(self.levels(Overlay(self.core, "v0.1.0", False))["core clean"], "FAIL")
+        self.assertEqual(self.levels(Overlay(self.core, "v0.1.0", True))["core clean"], "ok")
+
+    def test_wrong_pin_readonly_fails_writable_warns(self):
+        self.assertEqual(self.levels(Overlay(self.core, "v9.9.9", False))["core pin"], "FAIL")
+        self.assertEqual(self.levels(Overlay(self.core, "v9.9.9", True))["core pin"], "warn")
+
+    def test_pycache_and_version_are_not_digested(self):
+        write(self.core / "harness" / "__pycache__" / "x.cpython-313.pyc", "bytecode")
+        self.assertEqual(self.levels(Overlay(self.core, "v0.1.0", False)), {"core pin": "ok", "core clean": "ok"})
+
+    def test_parent_git_repo_does_not_count(self):
+        git(self.core.parent, "init", "-q")
+        self.assertEqual(self.levels(Overlay(self.core, "v0.1.0", False)), {"core pin": "ok", "core clean": "ok"})
+
+    def test_garbled_version_file_fails_readonly(self):
+        write(self.core / "VERSION", "nonsense")
+        levels = self.levels(Overlay(self.core, "v0.1.0", False))
+        self.assertEqual((levels["core pin"], levels["core clean"]), ("FAIL", "FAIL"))
+
+
+class ReleaseDigest(unittest.TestCase):
+    def test_order_is_by_posix_string(self):
+        root = tree(self)
+        write(root / "a-b" / "x", "1")
+        write(root / "a" / "b", "2")
+        h = hashlib.sha256()
+        for rel in sorted(["a-b/x", "a/b"]):
+            h.update(rel.encode() + b"\0" + (root / rel).read_bytes() + b"\0")
+        self.assertEqual(release_digest(root), h.hexdigest())

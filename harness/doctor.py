@@ -9,7 +9,7 @@ import tomllib
 from pathlib import Path
 
 from harness import managed, paths, probe, tiers
-from harness.install import HOOK_STATUS, _git_config, _same_path, ROLE_TIERS, render_agents, render_profile, role_files, skill_sources, valid_hook_groups
+from harness.install import HOOK_STATUS, _git_config, _same_path, ROLE_TIERS, release_digest, render_agents, render_profile, role_files, skill_sources, valid_hook_groups
 from harness.overlay import Overlay, load
 
 Check = tuple[str, str, str]
@@ -270,7 +270,22 @@ def _git(core: Path, *args: str) -> subprocess.CompletedProcess | None:
         return None
 
 
+def check_release(core: Path, ov: Overlay) -> list[Check]:
+    strict = "FAIL" if not ov.core_writable else "warn"
+    words = (core / "VERSION").read_text(encoding="utf-8", errors="replace").split()
+    tag, digest = (words + ["", ""])[:2]
+    pin = ("ok", "core pin", tag) if tag == ov.core_version else (
+        strict, "core pin", f"core is release {tag or 'unknown'}, overlay pins {ov.core_version}")
+    if ov.core_writable:
+        return [pin, ("ok", "core clean", "release core; local edits allowed")]
+    if digest and digest == release_digest(core):
+        return [pin, ("ok", "core clean", "matches its release digest")]
+    return [pin, ("FAIL", "core clean", "core differs from its release digest but core_writable = false")]
+
+
 def check_core(core: Path, ov: Overlay) -> list[Check]:
+    if (core / "VERSION").is_file() and not (core / ".git").exists():
+        return check_release(core, ov)
     strict = "FAIL" if not ov.core_writable else "warn"
     described = _git(core, "describe", "--tags", "--exact-match", "HEAD")
     tag = described.stdout.strip() if described and described.returncode == 0 else ""

@@ -205,6 +205,18 @@ def tree_digest(src: Path) -> str:
     return h.hexdigest()
 
 
+def release_digest(root: Path) -> str:
+    h = hashlib.sha256()
+    files = []
+    for p in root.rglob("*"):
+        rel = p.relative_to(root)
+        if p.is_file() and "__pycache__" not in rel.parts and rel.as_posix() != "VERSION":
+            files.append((rel.as_posix(), p))
+    for rel, p in sorted(files):
+        h.update(rel.encode() + b"\0" + p.read_bytes() + b"\0")
+    return h.hexdigest()
+
+
 def _own_skill(d: Path) -> bool:
     side = d / SKILL_SIDECAR
     return side.is_file() and side.read_text(encoding="utf-8").strip() == tree_digest(d)
