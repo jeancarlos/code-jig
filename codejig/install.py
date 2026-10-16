@@ -239,7 +239,7 @@ def install_skills(sources: dict[str, Path], dest: Path) -> list[str]:
                                                                or (n in (*NOT_INSTALLED, "evals") and Path(d) == src)])
         (target / SKILL_SIDECAR).write_text(tree_digest(target) + "\n", encoding="utf-8", newline="\n")
         lines.append(f"wrote {target}")
-    for d in sorted(p for p in dest.iterdir() if p.is_dir() and p.name not in sources and (p / SKILL_SIDECAR).is_file()):
+    for d in sorted(p for p in dest.iterdir() if p.is_dir() and not p.is_symlink() and p.name not in sources and (p / SKILL_SIDECAR).is_file()):
         if _own_skill(d):
             shutil.rmtree(d)
             lines.append(f"removed {d}: no longer in the core or overlay")

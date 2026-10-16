@@ -128,18 +128,20 @@ class Migrate(unittest.TestCase):
         git("-C", str(repo), "config", "--local", "codexharness.allowProse", "true")
         git("config", "--global", "codexharness.email", "a@example.com")
         git("config", "--global", "core.hooksPath", str(migrate.old_state(self.home) / "git-hooks"))
-        before = self.gitconfig.read_bytes()
-        repo_before = (repo / ".git" / "config").read_bytes()
+        self.old_codex_state()
+        self.old_claude_state()
+        write(self.skills / "codegen" / ".codex-harness", "abc\n")
+        self.link(self.user / ".claude" / "skills" / "grilling", self.root / "PROJECTS" / "codex-harness" / "skills" / "grilling")
+        write(self.bin_dir() / "harness", "#!/bin/sh\n# codex-harness launcher v0.11.0\n")
+        before = snapshot(self.root)
         lines = self.run_migrate([repo], dry_run=True)
-        self.assertEqual((repo / ".git" / "config").read_bytes(), repo_before)
-        self.assertTrue(self.old_db.exists())
+        self.assertEqual(snapshot(self.root), before)
         self.assertFalse(collect.db_path().exists())
-        self.assertEqual(self.gitconfig.read_bytes(), before)
         self.assertEqual(values("codexharness.allowProse", repo), ["true"])
-        self.assertEqual(len(lines), 9)
         self.assertIn("would run code-jig install", lines)
+        self.assertIn(f"would delete {migrate.old_state(self.home)}", lines)
+        self.assertIn(f"would delete {self.bin_dir() / 'harness'}", lines)
         self.assertTrue(all(line.startswith("would ") for line in lines), lines)
-        self.assertFalse((self.home / "AGENTS.md").exists())
         self.assertFalse(any(p.exists() for p in self.launchers()))
 
     def test_deprecation_notice_is_the_first_line(self):
@@ -458,6 +460,85 @@ class Migrate(unittest.TestCase):
         self.gitconfig.write_text("[codexharness]\n\tallowProse\n", encoding="utf-8")
         self.run_migrate()
         self.assertEqual(git("config", "--global", "--bool", "codejig.allowProse").stdout.strip(), "true")
+
+    def test_a_refused_db_move_skips_the_rest(self):
+        self.old_codex_state()
+        db_with_rows(self.old_db, 1)
+        write(self.old_db.with_name("usage.sqlite3-journal"), "x")
+        before = snapshot(self.root)
+        with mock.patch.object(install, "run") as installed:
+            lines = self.run_migrate()
+        installed.assert_not_called()
+        self.assertEqual(snapshot(self.root), before)
+        self.assertEqual(lines[-1], migrate.SKIPPED)
+
+    def test_a_failed_hooks_path_release_keeps_the_old_git_hooks_and_skips_install(self):
+        self.old_codex_state()
+        git("config", "--global", "core.hooksPath", str(migrate.old_state(self.home) / "git-hooks"))
+        write(self.root / "gitconfig.lock", "")
+        with mock.patch.object(install, "run") as installed:
+            lines = self.run_migrate()
+        installed.assert_not_called()
+        self.assertTrue((migrate.old_state(self.home) / "git-hooks" / "pre-commit").is_file())
+        self.assertTrue(any(line.startswith("failed:") for line in lines), lines)
+        self.assertEqual(lines[-1], migrate.SKIPPED)
+
+    def test_old_hooks_are_kept_while_core_hooks_path_points_at_them(self):
+        self.old_codex_state()
+        hooks = migrate.old_state(self.home) / "git-hooks"
+        git("config", "--global", "core.hooksPath", str(hooks))
+        lines = migrate.remove_old_generated(self.home)
+        self.assertTrue((hooks / "pre-commit").is_file())
+        self.assertTrue((migrate.old_state(self.home) / "lib").is_dir())
+        self.assertIn(f"left {hooks}: global core.hooksPath still points at it", lines)
+
+    def test_a_failed_install_after_the_hooks_path_went_says_the_gate_is_off(self):
+        git("config", "--global", "core.hooksPath", str(migrate.old_state(self.home) / "git-hooks"))
+        with mock.patch.object(install, "run", side_effect=ValueError("bad overlay")):
+            lines = self.run_migrate()
+        self.assertIn("failed: code-jig install: bad overlay", lines)
+        self.assertIn("failed: the git gate is off until code-jig install succeeds", lines)
+
+    def test_a_sibling_link_to_an_owned_copy_survives_and_the_old_link_is_copied(self):
+        claude = self.user / ".claude" / "skills"
+        install.install_skills({"codegen": paths.CORE / "skills" / "codegen"}, self.skills)
+        self.link(claude / "codegen", self.skills / "codegen")
+        self.link(claude / "grilling", self.root / "PROJECTS" / "codex-harness" / "skills" / "grilling")
+        lines = migrate.replace_skill_links(paths.CORE, self.ov, claude)
+        self.assertTrue((claude / "codegen").is_symlink())
+        self.assertTrue((self.skills / "codegen" / "SKILL.md").is_file())
+        self.assertTrue((claude / "grilling" / "SKILL.md").is_file())
+        self.assertFalse((claude / "grilling").is_symlink())
+        self.assertIn(f"wrote {claude / 'grilling'}", lines)
+
+    def test_a_link_into_a_lookalike_checkout_stays(self):
+        claude = self.user / ".claude" / "skills"
+        self.link(claude / "grilling", self.root / "my-codex-harness" / "skills" / "grilling")
+        migrate.replace_skill_links(paths.CORE, self.ov, claude)
+        self.assertTrue((claude / "grilling").is_symlink())
+
+    def test_an_unreadable_launcher_is_reported(self):
+        launcher = write(self.bin_dir() / "harness", "x\n")
+        real = Path.read_text
+
+        def read_text(path, *args, **kwargs):
+            if path == launcher:
+                raise PermissionError(errno.EACCES, "denied")
+            return real(path, *args, **kwargs)
+
+        with mock.patch.object(Path, "read_text", read_text):
+            lines = migrate.write_launchers(paths.CORE, self.ov.root)
+        self.assertIn(f"delete {launcher} yourself: cannot read it", lines)
+        self.assertTrue(launcher.exists())
+
+
+def snapshot(root: Path) -> dict:
+    out = {}
+    for d, dirs, files in os.walk(root):
+        for name in dirs + files:
+            p = Path(d) / name
+            out[p] = ("link", os.readlink(p)) if p.is_symlink() else ("dir",) if p.is_dir() else p.read_bytes()
+    return out
 
 
 def old_stamp(body: str, style: str = "md") -> str:
