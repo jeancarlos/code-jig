@@ -1,6 +1,8 @@
 import json
 import re
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -26,18 +28,21 @@ def _kept(rel: str) -> bool:
 
 
 def _normalize(text: str, home: Path) -> str:
+    py = install.interpreter()
+    for raw in (py, Path(py).as_posix()):
+        text = text.replace(raw, "<PY>")
     for raw in (str(home), home.as_posix()):
         text = text.replace(raw, "<HOME>")
     for raw in (str(CORE), CORE.as_posix()):
         text = text.replace(raw, "<CORE>")
-    text = text.replace(install.interpreter(), "<PY>").replace(Path(install.interpreter()).as_posix(), "<PY>")
+    text = re.sub(r"(<(?:CORE|HOME|PY)>)([^\s`\"']*)", lambda m: m[1] + m[2].replace("\\", "/"), text)
     return re.sub(r"\b[0-9a-f]{64}\b", "<sha>", text)
 
 
 def _normalize_hooks(text: str, home: Path) -> str:
     def walk(v):
         if isinstance(v, str):
-            return _normalize(v, home).replace("\\", "/").replace("'", "")
+            return re.sub(r"'(<(?:CORE|HOME|PY)>[^'\s]*)'", r"\1", _normalize(v, home))
         if isinstance(v, list):
             return [walk(x) for x in v]
         if isinstance(v, dict):
@@ -69,8 +74,6 @@ def _fixture(example: str) -> dict[str, str]:
 
 
 def capture() -> None:
-    import shutil
-    import tempfile
     for example in EXAMPLES:
         root = FIXTURES / example
         shutil.rmtree(root, True)
