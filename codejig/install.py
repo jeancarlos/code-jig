@@ -6,8 +6,6 @@ import subprocess
 import shutil
 import sys
 import time
-from os import environ, pathsep
-from os.path import abspath, normcase
 from pathlib import Path
 
 from codejig.atomicwrite import atomic_write
@@ -28,8 +26,8 @@ def stamp(body: str, style: str = "md") -> str:
 
 
 def _off_path(directory: Path) -> bool:
-    want = normcase(abspath(directory))
-    return want not in [normcase(abspath(p)) for p in environ.get("PATH", "").split(pathsep) if p]
+    want = os.path.normcase(os.path.abspath(directory))
+    return want not in [os.path.normcase(os.path.abspath(p)) for p in os.environ.get("PATH", "").split(os.pathsep) if p]
 
 
 def render_agents(core: Path, overlay_root: Path) -> str:
@@ -37,8 +35,10 @@ def render_agents(core: Path, overlay_root: Path) -> str:
     extra = overlay_root / "AGENTS.overlay.md"
     if extra.is_file():
         parts.append(extra.read_text(encoding="utf-8-sig"))
-    launcher = environ.get("CODE_JIG_LAUNCHER")
-    if launcher and _off_path(Path(launcher).parent):
+    launcher = os.environ.get("CODE_JIG_LAUNCHER")
+    if launcher:
+        launcher = Path(launcher).with_name("code-jig" + Path(launcher).suffix)
+    if launcher and _off_path(launcher.parent):
         parts.append(f"On this machine `code-jig` is not on PATH; run it as `{launcher}`.\n")
     index = overlay_root / "knowledge" / "INDEX.md"
     if index.is_file():

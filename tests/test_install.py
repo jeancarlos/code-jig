@@ -48,6 +48,13 @@ class LauncherLine(unittest.TestCase):
         text = self.render([self.root])
         self.assertIn(f"On this machine `code-jig` is not on PATH; run it as `{self.launcher}`.", text)
 
+    def test_cjig_and_code_jig_write_the_same_agents_md(self):
+        code_jig = self.render([self.root])
+        self.launcher = self.launcher.with_name("cjig")
+        self.assertEqual(self.render([self.root]), code_jig)
+        self.launcher = self.launcher.with_name("cjig.cmd")
+        self.assertIn(f"run it as `{self.launcher.with_name('code-jig.cmd')}`.", self.render([self.root]))
+
     def test_agents_md_unchanged_when_launcher_on_path(self):
         self.assertEqual(self.render([self.root, self.launcher.parent]), stamp("core rules\n"))
 

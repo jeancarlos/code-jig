@@ -115,7 +115,7 @@ class Migrate(unittest.TestCase):
     def test_old_hooks_path_is_released_even_with_backslashes_and_case(self):
         home = Path("C:\\Users\\Jean\\.codex")
         git("config", "--global", "core.hooksPath", "c:\\USERS\\jean\\.CODEX\\Codex-Harness\\git-hooks")
-        with mock.patch.object(install, "os", types.SimpleNamespace(path=ntpath)):
+        with mock.patch.object(install, "os", types.SimpleNamespace(**{**vars(os), "path": ntpath})):
             lines = migrate.release_hooks_path(home)
         self.assertEqual(git("config", "--global", "--get", "core.hooksPath").stdout, "")
         self.assertTrue(any("core.hooksPath" in line for line in lines))
@@ -425,7 +425,7 @@ class Migrate(unittest.TestCase):
         bs = migrate._bootstrap(paths.CORE)
         stack = contextlib.ExitStack()
         stack.enter_context(mock.patch.object(bs, "os", types.SimpleNamespace(**{**vars(os), "name": "nt"})))
-        stack.enter_context(mock.patch.object(install, "os", types.SimpleNamespace(path=ntpath)))
+        stack.enter_context(mock.patch.object(install, "os", types.SimpleNamespace(**{**vars(os), "path": ntpath})))
         stack.enter_context(mock.patch.object(doctor, "resolve_codex_bin", return_value=None))
         return stack
 
