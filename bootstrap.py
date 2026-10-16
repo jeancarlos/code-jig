@@ -123,3 +123,90 @@ def write_atomic(path, text, mode=0o644, newline="\n"):
         except OSError:
             pass
         raise
+
+
+def allowed(url):
+    parts = urllib.parse.urlsplit(url)
+    return parts.scheme == "https" or (parts.scheme == "http" and parts.hostname in ("127.0.0.1", "localhost"))
+
+
+class Redirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not allowed(newurl):
+            raise Refused(f"refusing a redirect to {newurl}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def fetch(url, limit):
+    if not allowed(url):
+        raise Refused(f"refusing {url}: only https")
+    with urllib.request.build_opener(Redirects).open(url, timeout=TIMEOUT) as r:
+        data = r.read(limit + 1)
+    if len(data) > limit:
+        raise Refused(f"{url} is larger than {limit} bytes")
+    return data
+
+
+def fetch_asset(tag, name, base, repo, limit):
+    primary = f"{base.rstrip('/')}/v/{tag}/{name}"
+    try:
+        return fetch(primary, limit)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            raise Refused(f"{tag} has no {name}; {NO_ZIP}")
+        if e.code < 500:
+            raise Refused(f"{primary}: HTTP {e.code}")
+        reason = f"HTTP {e.code}"
+    except OSError as e:
+        reason = str(e)
+    fallback = f"https://github.com/{repo}/releases/download/{tag}/{name}"
+    print(f"bootstrap: {primary} failed ({reason}); trying {fallback}", file=sys.stderr)
+    try:
+        return fetch(fallback, limit)
+    except urllib.error.HTTPError as e:
+        raise Refused(f"{fallback}: HTTP {e.code}" + (f"; {NO_ZIP}" if e.code == 404 else ""))
+    except OSError as e:
+        raise Refused(f"{fallback}: {e}")
+
+
+def resolve_latest(repo):
+    url = f"https://github.com/{repo}/releases/latest"
+    try:
+        urllib.request.build_opener(NoRedirect).open(urllib.request.Request(url, method="HEAD"), timeout=TIMEOUT)
+    except urllib.error.HTTPError as e:
+        found = re.search(r"/tag/([^/]+)$", e.headers.get("Location", "") or "")
+        if e.code in (301, 302, 303, 307, 308) and found:
+            return valid_tag(found.group(1))
+        raise Refused(f"{url}: HTTP {e.code}")
+    except OSError as e:
+        raise Refused(f"{url}: {e}")
+    raise Refused(f"{url} did not redirect to a release tag")
+
+
+def parse_sums(data):
+    for line in data.decode("ascii", "replace").splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1].lstrip("*") == ZIP and re.fullmatch(r"[0-9a-f]{64}", parts[0]):
+            return parts[0]
+    raise Refused(f"{SUMS} has no line for {ZIP}")
+
+
+def get_core(tag, data, base, repo):
+    target = data / tag
+    if target.exists():
+        verify_tree(target, tag)
+        print(f"bootstrap: reusing {target}")
+        return target
+    data.mkdir(parents=True, exist_ok=True)
+    expected = parse_sums(fetch_asset(tag, SUMS, base, repo, MAX_SUMS))
+    blob = fetch_asset(tag, ZIP, base, repo, MAX_ZIP)
+    if hashlib.sha256(blob).hexdigest() != expected:
+        raise Refused(f"{ZIP} for {tag} does not match {SUMS}")
+    unpack(blob, target, tag)
+    print(f"bootstrap: unpacked {tag} into {target}")
+    return target
