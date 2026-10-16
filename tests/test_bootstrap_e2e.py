@@ -48,7 +48,7 @@ class EndToEnd(unittest.TestCase):
         self.home.mkdir()
         self.env = {k: v for k, v in os.environ.items() if k not in ("CODEX_HARNESS_OVERLAY", "PYTHONPATH", "CODEX_HOME")}
         self.env.update(HOME=str(self.home), USERPROFILE=str(self.home), GIT_CONFIG_GLOBAL=str(self.root / "gitconfig"),
-                        CODEX_HARNESS_SKILLS_DIR=str(self.root / "skills"), CODEX_BIN=str(self.root / "no-codex"))
+                        CODEX_HARNESS_SKILLS_DIR=str(self.root / "skills"), CODEX_BIN=str(self.root / "no-codex"), PYTHONIOENCODING="utf-8")
         self.dirs = dict(data=self.root / "data", bins=self.root / "bin", overlay=self.root / "codex-overlay",
                          codex=self.root / "codex home")
         self.httpd.paths.clear()
