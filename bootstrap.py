@@ -356,8 +356,9 @@ def cmd_launcher(python, core, overlay, tag):
             "exit /b %CODE_JIG_RC%\n")
 
 
-def launcher_path(bin_dir):
-    return bin_dir / ("harness.cmd" if os.name == "nt" else "harness")
+def launcher_paths(bin_dir):
+    ext = ".cmd" if os.name == "nt" else ""
+    return [bin_dir / ("code-jig" + ext), bin_dir / ("cjig" + ext)]
 
 
 def check_launcher(path):
@@ -366,25 +367,27 @@ def check_launcher(path):
 
 
 def write_launcher(bin_dir, python, core, overlay, tag):
-    path = launcher_path(bin_dir)
-    check_launcher(path)
+    paths = launcher_paths(bin_dir)
+    for path in paths:
+        check_launcher(path)
     bin_dir.mkdir(parents=True, exist_ok=True)
-    if os.name == "nt":
-        write_atomic(path, cmd_launcher(python, core, overlay, tag), mode=0o755, newline="\r\n")
-    else:
-        write_atomic(path, sh_launcher(python, core, overlay, tag), mode=0o755)
-    return path
+    for path in paths:
+        if os.name == "nt":
+            write_atomic(path, cmd_launcher(python, core, overlay, tag), mode=0o755, newline="\r\n")
+        else:
+            write_atomic(path, sh_launcher(python, core, overlay, tag), mode=0o755)
+    return paths
 
 
 def hint_lines(bin_dir, flavour):
     if flavour == "nt":
         quoted = str(bin_dir).replace("'", "''")
         return [
-            "to run harness by name, run this line once in PowerShell:",
+            "to run code-jig by name, run this line once in PowerShell:",
             f"[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ';{quoted}', 'User')",
         ]
     return [
-        "to run harness by name, add this line to your shell profile:",
+        "to run code-jig by name, add this line to your shell profile:",
         f"export PATH={shlex.quote(str(bin_dir))}:$PATH",
     ]
 
@@ -451,7 +454,8 @@ def run(args):
         raise Refused(f"--base-url {args.base_url} must be https")
     data = data_dir(args.data_dir)
     bins = bin_dir(args.bin_dir, data)
-    check_launcher(launcher_path(bins))
+    for path in launcher_paths(bins):
+        check_launcher(path)
     dest = Path(args.overlay_dir).expanduser().absolute() if args.overlay_dir else Path.home() / "code-jig-overlay"
     overlay = resolve_overlay(args.overlay or os.environ.get("CODE_JIG_OVERLAY"), dest)
     tag = choose_tag(args.version, overlay, args.repo)
@@ -465,8 +469,8 @@ def run(args):
         return rc
     if owned(overlay) and read_pin(overlay) != tag:
         write_pin(overlay, tag)
-    launcher = write_launcher(bins, python, core, overlay, tag)
-    print(f"bootstrap: wrote {launcher}")
+    for launcher in write_launcher(bins, python, core, overlay, tag):
+        print(f"bootstrap: wrote {launcher}")
     path_hint(bins)
     run_doctor(python, core, overlay, args.codex_home, args.codex_bin)
     return 0
