@@ -13,6 +13,7 @@ class Overlay:
     auto_compact_token_limit: int | None = None
     git_gate: bool = False
     prose_gate: bool = False
+    push_cleanup: bool | None = None
 
 
 def load(root: Path) -> Overlay:
@@ -30,7 +31,8 @@ def load(root: Path) -> Overlay:
     if compact is not None and (isinstance(compact, bool) or not isinstance(compact, int) or compact <= 0):
         raise ValueError(f"{path}: auto_compact_token_limit must be a positive integer")
     flags = {k: data.get(k, False) for k in ("git_gate", "prose_gate")}
-    bad = [k for k, v in flags.items() if not isinstance(v, bool)]
+    flags["push_cleanup"] = data.get("push_cleanup")
+    bad = [k for k, v in flags.items() if not isinstance(v, bool) and not (k == "push_cleanup" and v is None)]
     if bad:
         raise ValueError(f"{path}: {', '.join(bad)} must be true or false")
     return Overlay(root, str(data["core_version"]), data["core_writable"], compact, **flags)

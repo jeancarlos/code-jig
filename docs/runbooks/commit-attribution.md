@@ -33,7 +33,8 @@ Where the account setting cannot be changed, the code-jig git gate removes the l
 
 ```toml
 git_gate = true
-prose_gate = true   # optional, see below
+prose_gate = true     # optional, see below
+push_cleanup = false  # optional, on by default with git_gate, see below
 ```
 
 `code-jig install` writes the gate to `~/.local/share/code-jig/git-hooks/` and sets `git config --global core.hooksPath` to it, but only when that setting is unset or already points there; otherwise it prints the command to switch and changes nothing. Every repo's own `.git/hooks` still run: each gate hook calls the repo hook of the same name after its own work, so git-lfs and similar hooks keep working. A repo that sets its own `core.hooksPath` (husky, for example) bypasses the gate; `code-jig doctor` run inside it says so.
@@ -42,9 +43,15 @@ prose_gate = true   # optional, see below
 |---|---|
 | `commit-msg` | Removes invisible Unicode (zero-width characters and bidi controls; no-break spaces become spaces) and the attribution lines listed under "What counts as attribution"; turns em and en dashes into `-`. Never blocks. |
 | `pre-commit` | Removes invisible Unicode (zero-width, bidi controls; no-break spaces become spaces) from staged text files, in the index and the working tree, and turns dashes into `-` in prose files. With `prose_gate`, refuses the commit when it comes from an agent session and stages human-facing prose. |
-| `pre-push` | Refuses to push commits by you whose message still carries attribution or invisible characters, and points at `code-jig scrub`. Then, when `git config codejig.testCommand "<command>"` is set (local, global or included), runs it from the repo top level and refuses the push if it exits non-zero. `CODE_JIG_SKIP_TESTS=1` skips the run for an emergency. The command also runs for delete-only pushes and has no timeout. |
+| `pre-push` | When commits by you that are about to be pushed still carry attribution or invisible characters in the message, cleans them (see "Cleanup on push") and refuses this push; run the same push again. Where it cannot clean them, it refuses and points at `code-jig scrub`. Then, when `git config codejig.testCommand "<command>"` is set (local, global or included), runs it from the repo top level and refuses the push if it exits non-zero. `CODE_JIG_SKIP_TESTS=1` skips the run for an emergency. The command also runs for delete-only pushes and has no timeout. |
 
 "You" is `git config user.email` plus every `git config --global --add codejig.email <address>`, for older addresses of yours.
+
+### Cleanup on push
+
+With `push_cleanup` on (the default once `git_gate = true`), the pre-push hook rewrites the messages of the outgoing commits on the branch you push, with the same checks as `code-jig scrub`: trees, authors, committers and dates stay the same, a backup bundle goes in the git directory, and the branch is put back if a check fails. It touches only that branch and only commits that no remote-tracking branch (`refs/remotes/*`) already contains. Git has already chosen what to send by the time the hook runs, so the hook refuses that push and prints `run the same push again`; the second push sends the cleaned commits.
+
+It falls back to the plain refusal when you push a tag or a commit by SHA instead of a local branch, or when a commit to clean is already on a remote-tracking branch. Commits by other people are never changed. To turn it off everywhere, set `push_cleanup = false` in `overlay.toml` and run `code-jig install`. For one repo, `git config codejig.pushCleanup false` (or `true`) wins over the overlay.
 
 ### What counts as attribution
 

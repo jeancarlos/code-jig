@@ -316,7 +316,7 @@ def git_gate(ov: Overlay) -> list[str]:
             _git_config("--unset", "core.hooksPath")
             return [f"removed the git gate: core.hooksPath no longer points at {target}"]
         return []
-    for name, text in gitgate.shims(paths.state_dir() / "lib", interpreter(), ov.prose_gate).items():
+    for name, text in gitgate.shims(paths.state_dir() / "lib", interpreter(), ov.prose_gate, ov.push_cleanup is not False).items():
         target.mkdir(parents=True, exist_ok=True)
         atomic_write(target / name, text.encode("utf-8"), mode=0o755)
     if current and not _same_path(current, target):

@@ -201,6 +201,82 @@ class PrePushTests(unittest.TestCase):
         self.assertIn("cannot find the repo top level", err)
 
 
+class PushCleanup(unittest.TestCase):
+    def setUp(self):
+        self.repo = new_repo(self)
+        self.base = commit(self.repo, "init\n", ME, {"a": "1\n"}, 1_700_000_000)
+        origin = tree(self) / "origin.git"
+        git(origin.parent, "init", "-q", "--bare", str(origin))
+        git(self.repo, "remote", "add", "origin", str(origin))
+        git(self.repo, "push", "-q", "origin", "main")
+
+    def push(self, tip, ref="refs/heads/main", cleanup=True, remote=None):
+        return in_repo(self.repo, gitgate.pre_push, [f"{ref} {tip} refs/heads/main {remote or self.base}"], cleanup)
+
+    def messages(self):
+        return git(self.repo, "log", "--format=%B%x1e", "main").split("\x1e")
+
+    def test_pre_push_cleans_outgoing_commits_and_asks_to_push_again(self):
+        commit(self.repo, f"mine\n\n{CODEX}\n", ME, {"b": "1\n"}, 1_700_000_100)
+        tip = commit(self.repo, "next\n", ME, {"c": "1\n"}, 1_700_000_200)
+        trees = git(self.repo, "log", "--format=%T %ad %cd", "main")
+        code, err = self.push(tip)
+        self.assertEqual(code, 1)
+        self.assertIn("code-jig: cleaned AI attribution from 1 commits on main; backup ", err)
+        self.assertIn("; run the same push again", err)
+        bundle = Path(err.split("backup ", 1)[1].split("; run", 1)[0])
+        self.assertTrue(bundle.is_file())
+        self.assertNotIn(CODEX, "".join(self.messages()))
+        self.assertEqual(git(self.repo, "log", "--format=%T %ad %cd", "main"), trees)
+        self.assertEqual(git(self.repo, "rev-parse", "main~2"), self.base)
+
+    def test_second_push_after_cleanup_passes(self):
+        tip = commit(self.repo, f"mine\n\n{CODEX}\n", ME, {"b": "1\n"}, 1_700_000_100)
+        self.assertEqual(self.push(tip)[0], 1)
+        new = git(self.repo, "rev-parse", "main")
+        self.assertNotEqual(new, tip)
+        self.assertEqual(self.push(new), (0, ""))
+        git(self.repo, "push", "-q", "origin", "main")
+        self.assertEqual(git(self.repo, "log", "-1", "--format=%B", "origin/main"), "mine")
+
+    def test_cleanup_never_rewrites_commits_already_on_a_remote(self):
+        dirty = commit(self.repo, f"mine\n\n{CODEX}\n", ME, {"b": "1\n"}, 1_700_000_100)
+        git(self.repo, "push", "-q", "origin", "main:feature")
+        tip = commit(self.repo, "next\n", ME, {"c": "1\n"}, 1_700_000_200)
+        code, err = self.push(tip)
+        self.assertEqual(code, 1)
+        self.assertIn("push refused", err)
+        self.assertIn("code-jig scrub", err)
+        self.assertEqual(git(self.repo, "rev-parse", "main"), tip)
+        self.assertEqual(git(self.repo, "rev-parse", "main~1"), dirty)
+
+    def test_cleanup_leaves_tags_and_other_authors_to_the_refusal(self):
+        commit(self.repo, f"theirs\n\n{CODEX}\n", OTHER, {"b": "1\n"}, 1_700_000_100)
+        tip = commit(self.repo, f"mine\n\n{CODEX}\n", ME, {"c": "1\n"}, 1_700_000_200)
+        git(self.repo, "tag", "v1")
+        for ref in ("refs/tags/v1", tip):
+            code, err = self.push(tip, ref=ref)
+            self.assertEqual(code, 1)
+            self.assertIn("push refused", err)
+            self.assertIn("code-jig scrub", err)
+            self.assertEqual(git(self.repo, "rev-parse", "main"), tip)
+        code, err = self.push(tip)
+        self.assertIn("cleaned AI attribution from 1 commits on main", err)
+        self.assertIn(CODEX, git(self.repo, "log", "-1", "--format=%B", "main~1"))
+        self.assertEqual(git(self.repo, "log", "-1", "--format=%B", "main"), "mine")
+
+    def test_cleanup_off_or_git_config_false_keeps_the_refusal(self):
+        tip = commit(self.repo, f"mine\n\n{CODEX}\n", ME, {"b": "1\n"}, 1_700_000_100)
+        code, err = self.push(tip, cleanup=False)
+        self.assertEqual(code, 1)
+        self.assertIn("code-jig scrub", err)
+        git(self.repo, "config", "codejig.pushCleanup", "false")
+        self.assertIn("push refused", self.push(tip)[1])
+        self.assertEqual(git(self.repo, "rev-parse", "main"), tip)
+        git(self.repo, "config", "codejig.pushCleanup", "true")
+        self.assertIn("cleaned AI attribution", self.push(tip, cleanup=False)[1])
+
+
 @unittest.skipIf(os.name == "nt", "POSIX shell shims")
 class Shims(unittest.TestCase):
     def test_real_commit_through_the_shims_chains_to_repo_hooks(self):
@@ -228,10 +304,36 @@ class Shims(unittest.TestCase):
         self.assertIn("README.md", r.stderr)
         self.assertTrue(all(stat.S_IMODE(p.stat().st_mode) & 0o100 for p in hooks.iterdir()))
 
+    def test_real_push_through_the_shims_cleans_then_passes(self):
+        hooks = tree(self) / "git-hooks"
+        for name, text in gitgate.shims(Path(__file__).resolve().parent.parent, sys.executable, False, cleanup=True).items():
+            write(hooks / name, text)
+            os.chmod(hooks / name, 0o755)
+        repo = new_repo(self)
+        origin = repo.parent / "origin.git"
+        git(repo.parent, "init", "-q", "--bare", str(origin))
+        git(repo, "remote", "add", "origin", str(origin))
+        commit(repo, "init\n", ME, {"a": "1\n"}, 1_700_000_000)
+        git(repo, "push", "-q", "origin", "main")
+        commit(repo, f"mine\n\n{CODEX}\n", ME, {"b": "1\n"}, 1_700_000_100)
+        git(repo, "config", "core.hooksPath", str(hooks))
+        push = ["git", "-C", str(repo), "push", "-q", "origin", "main"]
+        env = {**NO_AGENT, **ENV}
+        first = subprocess.run(push, env=env, capture_output=True, text=True)
+        self.assertNotEqual(first.returncode, 0)
+        self.assertIn("cleaned AI attribution from 1 commits on main", first.stderr)
+        second = subprocess.run(push, env=env, capture_output=True, text=True)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(git(repo, "log", "-1", "--format=%B", "origin/main"), "mine")
+
 
 class Cli(unittest.TestCase):
     def test_unknown_hook_is_a_no_op(self):
-        self.assertEqual(gitgate.cli(types.SimpleNamespace(name="post-checkout", rest=[], prose=False)), 0)
+        self.assertEqual(gitgate.cli(types.SimpleNamespace(name="post-checkout", rest=[], prose=False, cleanup=False)), 0)
+
+    def test_pre_push_shim_passes_the_cleanup_flag(self):
+        self.assertIn("pre-push --cleanup", gitgate.shims(Path("lib"), "python", False, cleanup=True)["pre-push"])
+        self.assertNotIn("--cleanup", gitgate.shims(Path("lib"), "python", False)["pre-push"])
 
 
 if __name__ == "__main__":

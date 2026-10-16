@@ -170,6 +170,52 @@ class Scrub(unittest.TestCase):
         self.assertIn("clean", out)
 
 
+class RewriteRange(unittest.TestCase):
+    def setUp(self):
+        self.repo = new_repo(self)
+        self.one = commit(self.repo, "one\n", ME, {"a.txt": "1\n"}, 1_700_000_000)
+        self.dirty = commit(self.repo, f"two\n\n{CODEX}\n", ME, {"a.txt": "2\n"}, 1_700_000_100)
+        commit(self.repo, f"three\n\n{CLAUDE}\n", OTHER, {"b.txt": "3\n"}, 1_700_000_200)
+        commit(self.repo, "four\n", ME, {"c.txt": "4\n"}, 1_700_000_300)
+        git(self.repo, "tag", "light", self.dirty)
+
+    def test_rewrite_range_keeps_trees_and_dates_and_writes_a_backup(self):
+        before = history(self.repo)
+        old_tip = git(self.repo, "rev-parse", "main")
+        changed, bundle = scrub.rewrite_range(self.repo, "refs/heads/main", self.one, {ME})
+        self.assertEqual(changed, 1)
+        after = history(self.repo)
+        self.assertEqual([r[:3] for r in after], [r[:3] for r in before])
+        self.assertEqual(after[2][3], "two")
+        self.assertIn(CLAUDE, after[1][3])
+        self.assertEqual(git(self.repo, "rev-parse", "main~3"), self.one)
+        self.assertEqual(git(self.repo, "rev-parse", "light"), self.dirty)
+        self.assertTrue(bundle.is_file())
+        self.assertIn(old_tip, git(self.repo, "bundle", "list-heads", str(bundle)))
+
+    def test_without_a_base_only_commits_off_every_remote_are_rewritten(self):
+        origin = self.repo.parent / "origin.git"
+        git(self.repo.parent, "init", "-q", "--bare", str(origin))
+        git(self.repo, "remote", "add", "origin", str(origin))
+        git(self.repo, "push", "-q", "origin", f"{self.dirty}:refs/heads/old")
+        tip = git(self.repo, "rev-parse", "main")
+        self.assertEqual(scrub.rewrite_range(self.repo, "refs/heads/main", None, {ME})[0], 0)
+        self.assertEqual(git(self.repo, "rev-parse", "main"), tip)
+        mine = commit(self.repo, f"five\n\n{CODEX}\n", ME, {"d.txt": "5\n"}, 1_700_000_400)
+        self.assertEqual(scrub.rewrite_range(self.repo, "refs/heads/main", None, {ME})[0], 1)
+        self.assertEqual(git(self.repo, "rev-parse", "main~3"), self.dirty)
+        self.assertNotEqual(git(self.repo, "rev-parse", "main"), mine)
+
+    def test_a_bad_range_rewrite_restores_the_branch(self):
+        from unittest import mock
+        tip = git(self.repo, "rev-parse", "main")
+        real = scrub.rewrite_stream
+        with mock.patch.object(scrub, "rewrite_stream", lambda stream, emails: real(stream, emails | {OTHER})):
+            with self.assertRaises(scrub.Abort):
+                scrub.rewrite_range(self.repo, "refs/heads/main", self.one, {ME})
+        self.assertEqual(git(self.repo, "rev-parse", "main"), tip)
+
+
 class CleanMessage(unittest.TestCase):
     def test_trailers_per_tool(self):
         lines = [

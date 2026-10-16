@@ -3,9 +3,11 @@ import subprocess
 import unittest
 from unittest import mock
 
-from codejig import install, paths
+from codejig import gitgate, install, paths
 from codejig.doctor import check_git_gate
-from codejig.overlay import Overlay
+from codejig.overlay import Overlay, load
+from tests.test_gitgate import in_repo
+from tests.test_scrub import CODEX, ME, commit, git, new_repo
 from tests.util import tree, write
 
 
@@ -56,6 +58,38 @@ class Gate(unittest.TestCase):
     def test_off_and_unset_is_silent(self):
         self.assertEqual(install.git_gate(self.off), [])
         self.assertEqual(check_git_gate(self.off, self.home), [("ok", "git gate", "off")])
+
+    def overlay(self, extra: str) -> Overlay:
+        root = tree(self)
+        write(root / "overlay.toml", f'core_version = "v1"\ncore_writable = true\n{extra}')
+        return load(root)
+
+    def pre_push_shim(self, ov: Overlay) -> str:
+        install.git_gate(ov)
+        return (self.target / "pre-push").read_text(encoding="utf-8")
+
+    def test_push_cleanup_defaults_on_with_the_gate(self):
+        self.assertIsNone(self.overlay("").push_cleanup)
+        self.assertEqual(install.git_gate(self.overlay("")), [])
+        on = self.overlay("git_gate = true\n")
+        self.assertIsNone(on.push_cleanup)
+        self.assertIn("pre-push --cleanup", self.pre_push_shim(on))
+        self.assertTrue(self.overlay("git_gate = true\npush_cleanup = true\n").push_cleanup)
+        with self.assertRaisesRegex(ValueError, "push_cleanup must be true or false"):
+            self.overlay('push_cleanup = "yes"\n')
+
+    def test_push_cleanup_false_in_overlay_or_git_config_turns_it_off(self):
+        off = self.overlay("git_gate = true\npush_cleanup = false\n")
+        self.assertIs(off.push_cleanup, False)
+        self.assertNotIn("--cleanup", self.pre_push_shim(off))
+        repo = new_repo(self)
+        base = commit(repo, "init\n", ME, {"a": "1\n"}, 1_700_000_000)
+        tip = commit(repo, f"mine\n\n{CODEX}\n", ME, {"b": "1\n"}, 1_700_000_100)
+        git(repo, "config", "codejig.pushCleanup", "false")
+        code, err = in_repo(repo, gitgate.pre_push, [f"refs/heads/main {tip} refs/heads/main {base}"], True)
+        self.assertEqual(code, 1)
+        self.assertIn("code-jig scrub", err)
+        self.assertEqual(git(repo, "rev-parse", "main"), tip)
 
     def test_repo_override_warns(self):
         install.git_gate(self.on)

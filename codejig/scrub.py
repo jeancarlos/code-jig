@@ -9,8 +9,9 @@ from pathlib import Path
 
 from codejig.watermark import clean_message, has_watermark
 
-EXPORT = ["fast-export", "--branches", "--tags", "--no-data", "--show-original-ids", "--reencode=no",
-          "--signed-tags=strip", "--tag-of-filtered-object=rewrite"]
+EXPORT = ["fast-export", "--no-data", "--show-original-ids", "--reencode=no", "--signed-tags=strip",
+          "--tag-of-filtered-object=rewrite", "--reference-excluded-parents"]
+ALL = ("--branches", "--tags")
 SIGNATURE = (b"gpgsig ", b"gpgsig-sha256 ")
 EMAIL = re.compile(rb"<([^>]*)>")
 
@@ -35,8 +36,8 @@ def my_emails(repo: Path, extra: list[str] = ()) -> set[str]:
     return {e.lower() for e in [*found, *extra] if e}
 
 
-def attributed(repo: Path, emails: set[str]) -> list[str]:
-    out = _git(repo, "log", "--branches", "--tags", "--format=%H%x00%ae%x00%B%x1e")
+def attributed(repo: Path, emails: set[str], revs: tuple[str, ...] = ALL) -> list[str]:
+    out = _git(repo, "log", "--format=%H%x00%ae%x00%B%x1e", *revs)
     hits = []
     for rec in out.split(b"\x1e"):
         parts = rec.strip(b"\n").split(b"\0", 2)
@@ -127,25 +128,51 @@ def _restore(repo: Path, bundle: Path) -> None:
     _git(repo, "fetch", "-q", "--update-head-ok", str(bundle), "+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*")
 
 
-def rewrite(repo: Path, gitdir: Path, emails: set[str], expected: int) -> tuple[int, dict[str, str], Path]:
-    before = _refs(repo)
-    bundle = gitdir / f"code-jig-scrub-{time.strftime('%Y%m%d-%H%M%S')}.bundle"
-    _git(repo, "bundle", "create", "-q", str(bundle), "--branches", "--tags")
-    stream, origin = rewrite_stream(_git(repo, *EXPORT), emails)
+def _rewrite_revs(repo: Path, gitdir: Path, emails: set[str], revs: tuple[str, ...], expected: int) -> int:
+    stream, origin = rewrite_stream(_git(repo, *EXPORT, *revs), emails)
     fd, marks_file = tempfile.mkstemp(prefix="scrub-marks-", dir=gitdir)
     os.close(fd)
     try:
         _git(repo, "fast-import", "--force", "--quiet", f"--export-marks={marks_file}", stdin=stream)
         new = dict(line.split(" ", 1) for line in Path(marks_file).read_text(encoding="ascii").splitlines() if line)
         changed = verify(repo, {origin[m]: new[m].strip() for m in origin if m in new}, emails)
-        if changed != expected or attributed(repo, emails):
-            raise Abort(f"{expected} commits carried attribution but {changed} changed")
+    finally:
+        os.unlink(marks_file)
+    if changed != expected or attributed(repo, emails, revs):
+        raise Abort(f"{expected} commits carried attribution but {changed} changed")
+    return changed
+
+
+def _bundle(repo: Path, gitdir: Path, revs: tuple[str, ...]) -> Path:
+    bundle = gitdir / f"code-jig-scrub-{time.strftime('%Y%m%d-%H%M%S')}.bundle"
+    _git(repo, "bundle", "create", "-q", str(bundle), *revs)
+    return bundle
+
+
+def rewrite(repo: Path, gitdir: Path, emails: set[str], expected: int) -> tuple[int, dict[str, str], Path]:
+    before = _refs(repo)
+    bundle = _bundle(repo, gitdir, ALL)
+    try:
+        changed = _rewrite_revs(repo, gitdir, emails, ALL, expected)
     except Abort:
         _restore(repo, bundle)
         raise
-    finally:
-        os.unlink(marks_file)
     return changed, before, bundle
+
+
+def rewrite_range(repo: Path, branch_ref: str, base: str | None, emails: set[str]) -> tuple[int, Path | None]:
+    revs = (branch_ref, *([f"^{base}"] if base else []), "--not", "--remotes")
+    expected = len(attributed(repo, emails, revs))
+    if not expected:
+        return 0, None
+    gitdir = Path(_git(repo, "rev-parse", "--absolute-git-dir").decode().strip())
+    old = _git(repo, "rev-parse", "--verify", f"{branch_ref}^{{commit}}").decode().strip()
+    bundle = _bundle(repo, gitdir, revs)
+    try:
+        return _rewrite_revs(repo, gitdir, emails, revs, expected), bundle
+    except Abort:
+        _git(repo, "update-ref", branch_ref, old)
+        raise
 
 
 def _report(repo: Path, before: dict[str, str]) -> list[str]:

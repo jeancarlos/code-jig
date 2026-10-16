@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from codejig.scrub import my_emails
+from codejig.scrub import Abort, my_emails, rewrite_range
 from codejig.watermark import clean_message, has_watermark, is_binary, strip_bytes
 
 ZERO = "0" * 40
@@ -114,23 +114,56 @@ def pre_commit(prose: bool) -> int:
     return 0
 
 
+def _known(remote: str) -> bool:
+    return remote != ZERO and subprocess.run(["git", "cat-file", "-e", f"{remote}^{{commit}}"], capture_output=True).returncode == 0
+
+
 def _outgoing(local: str, remote: str) -> list[str]:
-    known = remote != ZERO and subprocess.run(["git", "cat-file", "-e", f"{remote}^{{commit}}"], capture_output=True).returncode == 0
-    spec = [f"{remote}..{local}"] if known else [local, "--not", "--remotes"]
+    spec = [f"{remote}..{local}"] if _known(remote) else [local, "--not", "--remotes"]
     return _git("rev-list", "--no-merges", *spec).decode().split()
 
 
-def pre_push(lines: list[str]) -> int:
+def _cleanup_on(default: bool) -> bool:
+    value = _git("config", "--bool", "--get", "codejig.pushCleanup", check=False).strip()
+    return {b"true": True, b"false": False}.get(value, default)
+
+
+def _cleanable(ref: str, local: str, bad: list[str]) -> bool:
+    if not ref.startswith("refs/heads/") or _git("rev-parse", "-q", "--verify", ref, check=False).decode().strip() != local:
+        return False
+    return set(bad) <= set(_git("rev-list", *bad, "--not", "--remotes").decode().split())
+
+
+def _clean(branches: dict[str, tuple[str, str, list[str]]], emails: set[str]) -> bool:
+    try:
+        for ref, (_, remote, _) in branches.items():
+            n, bundle = rewrite_range(Path.cwd(), ref, remote if _known(remote) else None, emails)
+            print(f"code-jig: cleaned AI attribution from {n} commits on {ref.removeprefix('refs/heads/')}; "
+                  f"backup {bundle}; run the same push again", file=sys.stderr)
+    except Abort as e:
+        print(f"code-jig: cleanup aborted, {e}", file=sys.stderr)
+        return False
+    return True
+
+
+def pre_push(lines: list[str], cleanup: bool = False) -> int:
     emails = my_emails(Path.cwd())
-    problems = []
+    problems, branches = [], {}
     for line in lines:
         parts = line.split()
         if len(parts) != 4 or parts[1] == ZERO:
             continue
+        bad = []
         for sha in _outgoing(parts[1], parts[3]):
             email, _, body = _git("log", "-1", "--format=%ae%x00%B", sha).partition(b"\0")
             if email.decode("utf-8", "replace").lower() in emails and has_watermark(body):
-                problems.append(sha)
+                bad.append(sha)
+        if bad:
+            problems += bad
+            branches[parts[0]] = (parts[1], parts[3], bad)
+    if problems and _cleanup_on(cleanup) and all(_cleanable(ref, local, bad) for ref, (local, _, bad) in branches.items()):
+        if _clean(branches, emails):
+            return 1
     if problems:
         print("code-jig: push refused, commit messages carry AI attribution:", file=sys.stderr)
         for sha in dict.fromkeys(problems):
@@ -162,14 +195,14 @@ def _run_tests() -> int:
     return 0
 
 
-def shims(lib: Path, python: str, prose: bool) -> dict[str, str]:
+def shims(lib: Path, python: str, prose: bool, cleanup: bool = False) -> dict[str, str]:
     """One POSIX shell hook per git hook name: the gate for the gated ones, then the repo's own hook."""
     run = f"PYTHONPATH={shlex.quote(Path(lib).as_posix())} {shlex.quote(Path(python).as_posix())} -P -s -m codejig git-hook"
     local = 'dir="$(git rev-parse --git-common-dir 2>/dev/null)/hooks"'
     out = {}
     for name in HOOKS:
         if name == "pre-push":
-            body = (f'input=$(cat)\nprintf \'%s\\n\' "$input" | {run} pre-push "$@" || exit 1\n{local}\n'
+            body = (f'input=$(cat)\nprintf \'%s\\n\' "$input" | {run} pre-push{" --cleanup" if cleanup else ""} "$@" || exit 1\n{local}\n'
                     f'[ -x "$dir/{name}" ] && {{ printf \'%s\\n\' "$input" | "$dir/{name}" "$@"; exit $?; }}\nexit 0\n')
         else:
             flag = " --prose" if name == "pre-commit" and prose else ""
@@ -186,7 +219,7 @@ def cli(args) -> int:
         if args.name == "pre-commit":
             return pre_commit(args.prose)
         if args.name == "pre-push":
-            return pre_push(sys.stdin.read().splitlines())
+            return pre_push(sys.stdin.read().splitlines(), args.cleanup)
     except (OSError, RuntimeError) as e:
         print(f"code-jig: git hook {args.name} skipped: {e}", file=sys.stderr)
     return 0

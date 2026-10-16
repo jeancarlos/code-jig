@@ -58,6 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
     gh.add_argument("name")
     gh.add_argument("rest", nargs="*")
     gh.add_argument("--prose", action="store_true")
+    gh.add_argument("--cleanup", action="store_true")
     sk = sub.add_parser("skill-check")
     sk.add_argument("skills", nargs="+")
     sk.add_argument("--review", action="store_true")
