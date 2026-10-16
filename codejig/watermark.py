@@ -29,16 +29,18 @@ _CHAR_CODES = [
 ]
 INVISIBLE_CHARS = {chr(code): name for code, name in _CHAR_CODES}
 
-_TOOLS = (
-    rb"claude|anthropic|codex|openai|chatgpt|gemini|google[- ]labs|jules\[bot\]|jules-bot|antigravity|"
-    rb"copilot|cursor|aider"
-)
+_TOOLS = rb"claude|codex|chatgpt|gpt-?\d+|github[ \t]+copilot|copilot|gemini|antigravity|cursor|aider|devin|jules|openai|anthropic"
+_PRODUCT_WORDS = rb"code|agent|ai|assistant|cli|opus|sonnet|haiku|fable|pro|flash|ultra|\d+(?:\.\d+)*"
+_TOOL_NAME = rb"(?:claude|codex|chatgpt|gpt-?\d+|github[ \t]+copilot|copilot|gemini|antigravity|cursor[ \t]+agent|aider|devin[ \t]+ai|jules)(?:[ \t]+(?:" + _PRODUCT_WORDS + rb"))*"
+_TOOL_DOMAINS = rb"anthropic\.com|openai\.com|cursor\.com|cognition\.ai|cognition-labs\.com|aider\.chat"
 ATTRIBUTION_LINES = re.compile(
     rb"(?mi)^[ \t]*("
-    rb"co-authored-by:[^\n]*(?:\b(?:" + _TOOLS + rb"|an ai)\b|devin\b[^\n]*(?:ai|bot|cognition)|"
-    rb"noreply@anthropic\.com|noreply@openai\.com|cursoragent@cursor\.com)[^\n]*|"
+    rb"co-authored-by:(?:[ \t]*" + _TOOL_NAME + rb"[ \t]*(?:<[^>\n]*>)?[ \t]*\r?(?=\n|$)|"
+    rb"[^\n]*\[bot\][^\n]*|"
+    rb"[^\n]*<[^>\n]*@(?:" + _TOOL_DOMAINS + rb")>[^\n]*|"
+    rb"[^\n]*\ban ai\b[^\n]*)|"
     rb"claude-session:[^\n]*|"
-    rb"generated (?:with|by)\b[^\n]*\b(?:" + _TOOLS + rb"|devin)\b[^\n]*|"
+    rb"generated (?:with|by)[ \t]+\[?(?:" + _TOOLS + rb")\b[^\n]*|"
     rb"made with cursor[^\n]*|"
     rb"[^\n]*\xf0\x9f\xa4\x96 generated[^\n]*|"
     rb"(?:ai-assisted|ai-generated)[^\n]*"
