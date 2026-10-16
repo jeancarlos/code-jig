@@ -2,7 +2,7 @@
  "digest": "173666aeaf34d0936ea2c829845eb7437cbe9628060bc21f1ec2f3215f185d0f",
  "evals": "4fb4d25c1e8efdf1df6d8ee62a0be5f6ba527008f9904ab25cdea0e8548d7ceb",
  "review": "ship",
- "reviewer": "claude",
- "live": "not run",
- "date": "2026-10-15"
+ "live": "1/1",
+ "codex": "codex-cli 0.162.0-alpha.17.2",
+ "date": "2026-10-16"
 }

@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -128,6 +129,21 @@ class Events(unittest.TestCase):
         self.assertEqual(skillcheck.judge("demo", case, run), [])
         miss = skillcheck.Case(prompt="p", commands=["harness doctor"], output=["nope"], spawns=2)
         self.assertEqual(len(skillcheck.judge("other", miss, run)), 4)
+
+    def test_spawns_missing_from_the_json_stream_are_counted_from_the_session_log(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            calls = [{"type": "response_item", "payload": {"type": "function_call", "name": n, "arguments": "{}"}}
+                     for n in ("spawn_agent", "wait_agent", "spawn_agent")]
+            write(home / "sessions" / "2026" / "10" / "16" / "rollout-2026-10-16T01-27-00-abc-123.jsonl",
+                  "\n".join(json.dumps(c) for c in calls) + "\nnot json\n")
+            write(home / "sessions" / "2026" / "10" / "16" / "rollout-2026-10-16T01-28-00-other.jsonl",
+                  json.dumps(calls[0]) + "\n")
+            run = skillcheck.parse_events(json.dumps({"type": "thread.started", "thread_id": "abc-123"}))
+            self.assertEqual(run.thread, "abc-123")
+            self.assertEqual(skillcheck.session_spawns(home, "abc-123"), 2)
+            self.assertEqual(skillcheck.session_spawns(home, "missing"), 0)
+            self.assertEqual(skillcheck.session_spawns(home, ""), 0)
 
     def test_a_windows_path_to_the_skill_counts_as_reading_it(self):
         run = skillcheck.Run(commands=[r"powershell -Command Get-Content C:\Users\me\.agents\skills\demo\SKILL.md"])

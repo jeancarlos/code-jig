@@ -36,7 +36,7 @@ Require one line per rule, `N | PASS or FAIL | shortest quote that decides it | 
 
 ## Pass 3: Codex runs it
 
-A skill that reads well can still name tools Codex does not have, or never trigger. After pass 2 passes and the skill is installed (`harness install`):
+A skill that reads well can still name tools Codex does not have, or never trigger. After pass 2 says `VERDICT: ship` and the skill is installed (`harness install`); when pass 2 says fix, skip pass 3 and report it as skipped because pass 2 failed:
 
 ```sh
 harness skill-check path/to/skill-dir --review --live
@@ -46,7 +46,7 @@ It needs an `evals.toml` next to SKILL.md with at least one `[[case]]` (`prompt`
 
 ## Report
 
-Merge all three passes into one table: every FAIL and WARN, every rubric row, the Codex review verdict and each live case. Validation edits nothing. When the user asks for the fixes, apply them and run all three passes again.
+Merge all three passes into one table: every FAIL and WARN, every rubric row, the Codex review verdict and each live case. Validation edits nothing in the skill; the only file it writes is the `.skill-check` stamp from pass 3. When the user asks for the fixes, apply them and run all three passes again.
 
 ## Common mistakes
 

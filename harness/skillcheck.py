@@ -69,6 +69,7 @@ class Run:
     message: str = ""
     input_tokens: int = 0
     error: str = ""
+    thread: str = ""
 
 
 def claude_only(text: str) -> list[tuple[str, str]]:
@@ -151,7 +152,9 @@ def parse_events(stdout: str) -> Run:
         except ValueError:
             continue
         item = event.get("item") or {}
-        if event.get("type") == "item.completed" and item.get("type") == "command_execution":
+        if event.get("type") == "thread.started":
+            run.thread = str(event.get("thread_id") or "")
+        elif event.get("type") == "item.completed" and item.get("type") == "command_execution":
             run.commands.append(str(item.get("command", "")))
         elif event.get("type") == "item.completed" and item.get("type") == "collab_tool_call" and item.get("tool") == "spawn_agent":
             run.spawns += 1
@@ -162,6 +165,22 @@ def parse_events(stdout: str) -> Run:
         elif event.get("type") in ("error", "turn.failed"):
             run.error = str(event.get("message") or (event.get("error") or {}).get("message") or "failed")
     return run
+
+
+def session_spawns(home: Path, thread: str) -> int:
+    if not thread:
+        return 0
+    count = 0
+    for f in (home / "sessions").rglob("*.jsonl"):
+        if not f.name.endswith(f"-{thread}.jsonl"):
+            continue
+        for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                payload = json.loads(line).get("payload") or {}
+            except (ValueError, AttributeError):
+                continue
+            count += payload.get("type") == "function_call" and payload.get("name") == "spawn_agent"
+    return count
 
 
 def judge(name: str, case: Case, run: Run) -> list[str]:
@@ -237,7 +256,7 @@ def live(skill: Path, case: Case, bin_path: Path, home: Path, profile: str) -> t
             make_commits(work, case.commits)
         except (OSError, subprocess.CalledProcessError) as e:
             return [f"could not create the case's commits: {e}"], Run()
-        cmd = [*probe.command(bin_path), "exec", "--json", "--profile", profile, "--ephemeral", "--sandbox", case.sandbox,
+        cmd = [*probe.command(bin_path), "exec", "--json", "--profile", profile, "--sandbox", case.sandbox,
                "-c", 'approvals_reviewer="user"', "--skip-git-repo-check", "-C", str(work), "-"]
         try:
             r = subprocess.run(cmd, input=case.prompt, capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -247,6 +266,7 @@ def live(skill: Path, case: Case, bin_path: Path, home: Path, profile: str) -> t
     run = parse_events(r.stdout)
     if run.error:
         return [f"codex exec failed, the skill was not tested: {run.error}"], run
+    run.spawns = max(run.spawns, session_spawns(home, run.thread))
     problems = judge(skill.name, case, run)
     if r.returncode != 0:
         problems.insert(0, f"codex exec exited {r.returncode}: {(r.stderr.strip().splitlines() or [''])[-1]}")
