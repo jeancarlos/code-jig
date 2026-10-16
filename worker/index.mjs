@@ -30,6 +30,7 @@ export function client(ua) {
 }
 
 function count(env, request, event, tag) {
+  if (request.method !== "GET") return
   env.INSTALLS?.writeDataPoint({
     blobs: [event, tag, client(request.headers.get("user-agent")), request.cf?.country || ""],
     indexes: [event],

@@ -91,3 +91,19 @@ test("missing binding never breaks a download", async () => {
   const r = await worker.fetch(req("/v/v0.11.0/codex-harness.zip"), {})
   assert.equal(r.status, 302)
 })
+
+test("HEAD on the zip redirects without counting", async () => {
+  const e = env()
+  const r = await worker.fetch(req("/v/v0.11.0/codex-harness.zip", "curl/8.9.1", "HEAD"), e)
+  assert.equal(r.status, 302)
+  assert.equal(r.headers.get("location"), `${RELEASES}/download/v0.11.0/codex-harness.zip`)
+  assert.deepEqual(e.points, [])
+})
+
+test("HEAD on bootstrap.py answers 200 without counting", async () => {
+  globalThis.fetch = async () => new Response("print(1)\n", { status: 200 })
+  const e = env()
+  const r = await worker.fetch(req("/bootstrap.py", "curl/8.9.1", "HEAD"), e)
+  assert.equal(r.status, 200)
+  assert.deepEqual(e.points, [])
+})
