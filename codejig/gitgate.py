@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from codejig.scrub import Abort, my_emails, rewrite_range
+from codejig.scrub import Abort, blocker, common_dir, my_emails, range_revs, rewrite_range
 from codejig.watermark import clean_message, has_watermark, is_binary, strip_bytes
 
 ZERO = "0" * 40
@@ -128,21 +128,42 @@ def _cleanup_on(default: bool) -> bool:
     return {b"true": True, b"false": False}.get(value, default)
 
 
-def _cleanable(ref: str, local: str, bad: list[str]) -> bool:
+def _base(remote: str) -> str | None:
+    return remote if _known(remote) else None
+
+
+def _rebasing(ref: str) -> bool:
+    common = common_dir(Path.cwd())
+    for gitdir in [common, *common.glob("worktrees/*")]:
+        for kind in ("rebase-merge", "rebase-apply"):
+            head = gitdir / kind / "head-name"
+            if head.is_file() and head.read_text(encoding="utf-8", errors="replace").strip() == ref:
+                return True
+    return False
+
+
+def _cleanable(ref: str, local: str, remote: str, bad: list[str], emails: set[str]) -> bool:
     if not ref.startswith("refs/heads/") or _git("rev-parse", "-q", "--verify", ref, check=False).decode().strip() != local:
         return False
-    return set(bad) <= set(_git("rev-list", *bad, "--not", "--remotes").decode().split())
+    if _rebasing(ref) or not set(bad) <= set(_git("rev-list", *bad, "--not", "--remotes").decode().split()):
+        return False
+    return blocker(Path.cwd(), range_revs(ref, _base(remote)), emails) is None
 
 
 def _clean(branches: dict[str, tuple[str, str, list[str]]], emails: set[str]) -> bool:
+    done, notes = {}, []
     try:
-        for ref, (_, remote, _) in branches.items():
-            n, bundle = rewrite_range(Path.cwd(), ref, remote if _known(remote) else None, emails)
-            print(f"code-jig: cleaned AI attribution from {n} commits on {ref.removeprefix('refs/heads/')}; "
-                  f"backup {bundle}; run the same push again", file=sys.stderr)
+        for ref, (local, remote, _) in branches.items():
+            done[ref] = local
+            n, bundle = rewrite_range(Path.cwd(), ref, _base(remote), emails)
+            notes.append(f"code-jig: cleaned AI attribution from {n} commits on {ref.removeprefix('refs/heads/')}; "
+                         f"backup {bundle}; run the same push again")
     except Abort as e:
-        print(f"code-jig: cleanup aborted, {e}", file=sys.stderr)
+        for ref, old in done.items():
+            _git("update-ref", ref, old)
+        print(f"code-jig: cleanup aborted, nothing changed: {e}", file=sys.stderr)
         return False
+    print("\n".join(notes), file=sys.stderr)
     return True
 
 
@@ -160,8 +181,12 @@ def pre_push(lines: list[str], cleanup: bool = False) -> int:
                 bad.append(sha)
         if bad:
             problems += bad
-            branches[parts[0]] = (parts[1], parts[3], bad)
-    if problems and _cleanup_on(cleanup) and all(_cleanable(ref, local, bad) for ref, (local, _, bad) in branches.items()):
+            ref = parts[0]
+            if ref == "HEAD":
+                ref = _git("symbolic-ref", "-q", "HEAD", check=False).decode().strip() or ref
+            branches[ref] = (parts[1], parts[3], bad)
+    if problems and _cleanup_on(cleanup) and all(_cleanable(ref, local, remote, bad, emails)
+                                                 for ref, (local, remote, bad) in branches.items()):
         if _clean(branches, emails):
             return 1
     if problems:
@@ -202,11 +227,11 @@ def shims(lib: Path, python: str, prose: bool, cleanup: bool = False) -> dict[st
     out = {}
     for name in HOOKS:
         if name == "pre-push":
-            body = (f'input=$(cat)\nprintf \'%s\\n\' "$input" | {run} pre-push{" --cleanup" if cleanup else ""} "$@" || exit 1\n{local}\n'
+            body = (f'input=$(cat)\nprintf \'%s\\n\' "$input" | {run}{" --cleanup" if cleanup else ""} pre-push "$@" || exit 1\n{local}\n'
                     f'[ -x "$dir/{name}" ] && {{ printf \'%s\\n\' "$input" | "$dir/{name}" "$@"; exit $?; }}\nexit 0\n')
         else:
             flag = " --prose" if name == "pre-commit" and prose else ""
-            gate = f'{run} {name}{flag} "$@" || exit 1\n' if name in GATED else ""
+            gate = f'{run}{flag} {name} "$@" || exit 1\n' if name in GATED else ""
             body = f'{gate}{local}\n[ -x "$dir/{name}" ] && exec "$dir/{name}" "$@"\nexit 0\n'
         out[name] = "#!/bin/sh\n" + body
     return out

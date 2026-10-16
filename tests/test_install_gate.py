@@ -73,7 +73,7 @@ class Gate(unittest.TestCase):
         self.assertEqual(install.git_gate(self.overlay("")), [])
         on = self.overlay("git_gate = true\n")
         self.assertIsNone(on.push_cleanup)
-        self.assertIn("pre-push --cleanup", self.pre_push_shim(on))
+        self.assertIn("git-hook --cleanup pre-push", self.pre_push_shim(on))
         self.assertTrue(self.overlay("git_gate = true\npush_cleanup = true\n").push_cleanup)
         with self.assertRaisesRegex(ValueError, "push_cleanup must be true or false"):
             self.overlay('push_cleanup = "yes"\n')

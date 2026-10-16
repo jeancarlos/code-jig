@@ -143,10 +143,33 @@ def _rewrite_revs(repo: Path, gitdir: Path, emails: set[str], revs: tuple[str, .
     return changed
 
 
-def _bundle(repo: Path, gitdir: Path, revs: tuple[str, ...]) -> Path:
-    bundle = gitdir / f"code-jig-scrub-{time.strftime('%Y%m%d-%H%M%S')}.bundle"
+def _bundle(repo: Path, gitdir: Path, revs: tuple[str, ...], label: str = "") -> Path:
+    stem = f"code-jig-scrub-{time.strftime('%Y%m%d-%H%M%S')}" + (f"-{re.sub(r'[^A-Za-z0-9._-]+', '-', label)}" if label else "")
+    bundle, n = gitdir / f"{stem}.bundle", 0
+    while bundle.exists():
+        n += 1
+        bundle = gitdir / f"{stem}-{n}.bundle"
     _git(repo, "bundle", "create", "-q", str(bundle), *revs)
     return bundle
+
+
+def common_dir(repo: Path) -> Path:
+    return Path(_git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir").decode().strip())
+
+
+def range_revs(branch_ref: str, base: str | None) -> tuple[str, ...]:
+    return (branch_ref, *([f"^{base}"] if base else []), "--not", "--remotes")
+
+
+def blocker(repo: Path, revs: tuple[str, ...], emails: set[str]) -> str | None:
+    for sha in _git(repo, "rev-list", *revs).decode().split():
+        head = _git(repo, "cat-file", "commit", sha).partition(b"\n\n")[0].split(b"\n")
+        if any(h.startswith(SIGNATURE) for h in head):
+            return f"{sha[:10]} is signed"
+        author = next((EMAIL.search(h) for h in head if h.startswith(b"author ")), None)
+        if not author or author.group(1).decode("utf-8", "replace").lower() not in emails:
+            return f"{sha[:10]} is by someone else"
+    return None
 
 
 def rewrite(repo: Path, gitdir: Path, emails: set[str], expected: int) -> tuple[int, dict[str, str], Path]:
@@ -161,13 +184,16 @@ def rewrite(repo: Path, gitdir: Path, emails: set[str], expected: int) -> tuple[
 
 
 def rewrite_range(repo: Path, branch_ref: str, base: str | None, emails: set[str]) -> tuple[int, Path | None]:
-    revs = (branch_ref, *([f"^{base}"] if base else []), "--not", "--remotes")
+    revs = range_revs(branch_ref, base)
     expected = len(attributed(repo, emails, revs))
     if not expected:
         return 0, None
-    gitdir = Path(_git(repo, "rev-parse", "--absolute-git-dir").decode().strip())
+    reason = blocker(repo, revs, emails)
+    if reason:
+        raise Abort(reason)
+    gitdir = common_dir(repo)
     old = _git(repo, "rev-parse", "--verify", f"{branch_ref}^{{commit}}").decode().strip()
-    bundle = _bundle(repo, gitdir, revs)
+    bundle = _bundle(repo, gitdir, revs, branch_ref.removeprefix("refs/heads/"))
     try:
         return _rewrite_revs(repo, gitdir, emails, revs, expected), bundle
     except Abort:
@@ -193,7 +219,7 @@ def _report(repo: Path, before: dict[str, str]) -> list[str]:
 
 def cli(args) -> int:
     repo = Path(args.path).resolve()
-    r = subprocess.run(["git", "-C", str(repo), "rev-parse", "--absolute-git-dir"], capture_output=True, text=True,
+    r = subprocess.run(["git", "-C", str(repo), "rev-parse", "--path-format=absolute", "--git-common-dir"], capture_output=True, text=True,
                        encoding="utf-8")
     if r.returncode:
         print(f"code-jig: {repo} is not a git repository", file=sys.stderr)

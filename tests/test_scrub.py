@@ -175,7 +175,7 @@ class RewriteRange(unittest.TestCase):
         self.repo = new_repo(self)
         self.one = commit(self.repo, "one\n", ME, {"a.txt": "1\n"}, 1_700_000_000)
         self.dirty = commit(self.repo, f"two\n\n{CODEX}\n", ME, {"a.txt": "2\n"}, 1_700_000_100)
-        commit(self.repo, f"three\n\n{CLAUDE}\n", OTHER, {"b.txt": "3\n"}, 1_700_000_200)
+        commit(self.repo, f"three\n\n{CLAUDE}\n", ME, {"b.txt": "3\n"}, 1_700_000_200)
         commit(self.repo, "four\n", ME, {"c.txt": "4\n"}, 1_700_000_300)
         git(self.repo, "tag", "light", self.dirty)
 
@@ -183,34 +183,48 @@ class RewriteRange(unittest.TestCase):
         before = history(self.repo)
         old_tip = git(self.repo, "rev-parse", "main")
         changed, bundle = scrub.rewrite_range(self.repo, "refs/heads/main", self.one, {ME})
-        self.assertEqual(changed, 1)
+        self.assertEqual(changed, 2)
         after = history(self.repo)
         self.assertEqual([r[:3] for r in after], [r[:3] for r in before])
-        self.assertEqual(after[2][3], "two")
-        self.assertIn(CLAUDE, after[1][3])
+        self.assertEqual((after[2][3], after[1][3], after[0][3]), ("two", "three", "four"))
         self.assertEqual(git(self.repo, "rev-parse", "main~3"), self.one)
         self.assertEqual(git(self.repo, "rev-parse", "light"), self.dirty)
         self.assertTrue(bundle.is_file())
         self.assertIn(old_tip, git(self.repo, "bundle", "list-heads", str(bundle)))
+
+    def test_a_range_with_another_author_or_a_signature_is_refused(self):
+        tip = commit(self.repo, "five\n", OTHER, {"d.txt": "5\n"}, 1_700_000_400)
+        with self.assertRaisesRegex(scrub.Abort, "someone else"):
+            scrub.rewrite_range(self.repo, "refs/heads/main", self.one, {ME})
+        self.assertEqual(git(self.repo, "rev-parse", "main"), tip)
+        self.assertEqual(scrub.rewrite_range(self.repo, "refs/heads/main", self.one, {ME, OTHER})[0], 2)
+
+    def test_backups_go_to_the_common_git_dir_from_a_linked_worktree(self):
+        git(self.repo, "branch", "side")
+        wt = self.repo.parent / "wt"
+        git(self.repo, "worktree", "add", "-q", str(wt), "side")
+        _, bundle = scrub.rewrite_range(wt, "refs/heads/side", self.one, {ME})
+        self.assertEqual(bundle.parent, Path(git(self.repo, "rev-parse", "--absolute-git-dir")))
+        git(self.repo, "worktree", "remove", str(wt))
+        self.assertTrue(bundle.is_file())
 
     def test_without_a_base_only_commits_off_every_remote_are_rewritten(self):
         origin = self.repo.parent / "origin.git"
         git(self.repo.parent, "init", "-q", "--bare", str(origin))
         git(self.repo, "remote", "add", "origin", str(origin))
         git(self.repo, "push", "-q", "origin", f"{self.dirty}:refs/heads/old")
-        tip = git(self.repo, "rev-parse", "main")
-        self.assertEqual(scrub.rewrite_range(self.repo, "refs/heads/main", None, {ME})[0], 0)
-        self.assertEqual(git(self.repo, "rev-parse", "main"), tip)
-        mine = commit(self.repo, f"five\n\n{CODEX}\n", ME, {"d.txt": "5\n"}, 1_700_000_400)
         self.assertEqual(scrub.rewrite_range(self.repo, "refs/heads/main", None, {ME})[0], 1)
-        self.assertEqual(git(self.repo, "rev-parse", "main~3"), self.dirty)
-        self.assertNotEqual(git(self.repo, "rev-parse", "main"), mine)
+        self.assertEqual(git(self.repo, "rev-parse", "main~2"), self.dirty)
+        self.assertEqual(git(self.repo, "log", "-1", "--format=%B", "main~1"), "three")
 
     def test_a_bad_range_rewrite_restores_the_branch(self):
         from unittest import mock
         tip = git(self.repo, "rev-parse", "main")
         real = scrub.rewrite_stream
-        with mock.patch.object(scrub, "rewrite_stream", lambda stream, emails: real(stream, emails | {OTHER})):
+        def tamper(stream, emails):
+            out, marks = real(stream, emails)
+            return out.replace(b"four", b"fowr"), marks
+        with mock.patch.object(scrub, "rewrite_stream", tamper):
             with self.assertRaises(scrub.Abort):
                 scrub.rewrite_range(self.repo, "refs/heads/main", self.one, {ME})
         self.assertEqual(git(self.repo, "rev-parse", "main"), tip)

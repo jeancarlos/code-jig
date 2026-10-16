@@ -1,6 +1,7 @@
 import contextlib
 import io
 import os
+import shlex
 import stat
 import subprocess
 import sys
@@ -250,20 +251,89 @@ class PushCleanup(unittest.TestCase):
         self.assertEqual(git(self.repo, "rev-parse", "main"), tip)
         self.assertEqual(git(self.repo, "rev-parse", "main~1"), dirty)
 
+    def assert_refused(self, tip, **kw):
+        code, err = self.push(tip, **kw)
+        self.assertEqual(code, 1)
+        self.assertIn("push refused", err)
+        self.assertIn("code-jig scrub", err)
+        self.assertNotIn("cleaned", err)
+        self.assertEqual(git(self.repo, "rev-parse", "main"), tip)
+
     def test_cleanup_leaves_tags_and_other_authors_to_the_refusal(self):
-        commit(self.repo, f"theirs\n\n{CODEX}\n", OTHER, {"b": "1\n"}, 1_700_000_100)
         tip = commit(self.repo, f"mine\n\n{CODEX}\n", ME, {"c": "1\n"}, 1_700_000_200)
         git(self.repo, "tag", "v1")
         for ref in ("refs/tags/v1", tip):
-            code, err = self.push(tip, ref=ref)
-            self.assertEqual(code, 1)
-            self.assertIn("push refused", err)
-            self.assertIn("code-jig scrub", err)
-            self.assertEqual(git(self.repo, "rev-parse", "main"), tip)
-        code, err = self.push(tip)
+            self.assert_refused(tip, ref=ref)
+        commit(self.repo, "theirs\n", OTHER, {"d": "1\n"}, 1_700_000_300)
+        self.assert_refused(git(self.repo, "rev-parse", "main"))
+
+    def test_a_signed_commit_in_the_range_keeps_the_refusal(self):
+        commit(self.repo, f"mine\n\n{CODEX}\n", ME, {"c": "1\n"}, 1_700_000_200)
+        raw = git(self.repo, "cat-file", "commit", "HEAD").split("\n\n", 1)
+        sig = "gpgsig -----BEGIN PGP SIGNATURE-----\n \n iQEz\n -----END PGP SIGNATURE-----"
+        signed = git(self.repo, "hash-object", "-t", "commit", "-w", "--stdin",
+                     stdin=f"{raw[0]}\n{sig}\n\n{raw[1]}\n")
+        git(self.repo, "update-ref", "refs/heads/main", signed)
+        self.assert_refused(signed)
+
+    def test_push_of_head_resolves_to_the_branch(self):
+        tip = commit(self.repo, f"mine\n\n{CODEX}\n", ME, {"b": "1\n"}, 1_700_000_100)
+        code, err = self.push(tip, ref="HEAD")
+        self.assertEqual(code, 1)
         self.assertIn("cleaned AI attribution from 1 commits on main", err)
-        self.assertIn(CODEX, git(self.repo, "log", "-1", "--format=%B", "main~1"))
         self.assertEqual(git(self.repo, "log", "-1", "--format=%B", "main"), "mine")
+
+    def test_a_branch_being_rebased_keeps_the_refusal(self):
+        tip = commit(self.repo, f"mine\n\n{CODEX}\n", ME, {"b": "1\n"}, 1_700_000_100)
+        gitdir = Path(git(self.repo, "rev-parse", "--absolute-git-dir"))
+        write(gitdir / "rebase-merge" / "head-name", "refs/heads/main\n")
+        self.assert_refused(tip)
+        (gitdir / "rebase-merge" / "head-name").unlink()
+        (gitdir / "rebase-merge").rmdir()
+        git(self.repo, "branch", "side", self.base)
+        other = self.repo.parent / "wt"
+        git(self.repo, "worktree", "add", "-q", str(other), "side")
+        wt_gitdir = Path(git(other, "rev-parse", "--absolute-git-dir"))
+        write(wt_gitdir / "rebase-apply" / "head-name", "refs/heads/main\n")
+        self.assert_refused(tip)
+
+    def two_branches(self):
+        main = commit(self.repo, f"mine\n\n{CODEX}\n", ME, {"b": "1\n"}, 1_700_000_100)
+        git(self.repo, "checkout", "-q", "-b", "feature/x", self.base)
+        feature = commit(self.repo, f"feat\n\n{CODEX}\n", ME, {"f": "1\n"}, 1_700_000_200)
+        git(self.repo, "checkout", "-q", "main")
+        lines = [f"refs/heads/main {main} refs/heads/main {self.base}",
+                 f"refs/heads/feature/x {feature} refs/heads/feature/x {'0' * 40}"]
+        return main, feature, lines
+
+    def test_two_branches_cleaned_in_one_push_keep_both_backups(self):
+        main, feature, lines = self.two_branches()
+        code, err = in_repo(self.repo, gitgate.pre_push, lines, True)
+        self.assertEqual(code, 1)
+        bundles = [Path(ln.split("backup ", 1)[1].split("; run", 1)[0]) for ln in err.splitlines() if "backup " in ln]
+        self.assertEqual(len(set(bundles)), 2)
+        heads = [git(self.repo, "bundle", "list-heads", str(b)) for b in bundles]
+        self.assertIn(main, heads[0])
+        self.assertIn("refs/heads/main", heads[0])
+        self.assertIn(feature, heads[1])
+        self.assertIn("refs/heads/feature/x", heads[1])
+
+    def test_a_later_branch_failing_rolls_back_the_whole_push(self):
+        from codejig import scrub
+        main, feature, lines = self.two_branches()
+        real, calls = scrub.rewrite_stream, []
+
+        def flaky(stream, emails):
+            calls.append(1)
+            if len(calls) == 2:
+                raise scrub.Abort("boom")
+            return real(stream, emails)
+        with mock.patch.object(scrub, "rewrite_stream", flaky):
+            code, err = in_repo(self.repo, gitgate.pre_push, lines, True)
+        self.assertEqual(code, 1)
+        self.assertNotIn("cleaned", err)
+        self.assertIn("push refused", err)
+        self.assertEqual((git(self.repo, "rev-parse", "main"), git(self.repo, "rev-parse", "feature/x")), (main, feature))
 
     def test_cleanup_off_or_git_config_false_keeps_the_refusal(self):
         tip = commit(self.repo, f"mine\n\n{CODEX}\n", ME, {"b": "1\n"}, 1_700_000_100)
@@ -332,8 +402,21 @@ class Cli(unittest.TestCase):
         self.assertEqual(gitgate.cli(types.SimpleNamespace(name="post-checkout", rest=[], prose=False, cleanup=False)), 0)
 
     def test_pre_push_shim_passes_the_cleanup_flag(self):
-        self.assertIn("pre-push --cleanup", gitgate.shims(Path("lib"), "python", False, cleanup=True)["pre-push"])
+        self.assertIn("git-hook --cleanup pre-push", gitgate.shims(Path("lib"), "python", False, cleanup=True)["pre-push"])
         self.assertNotIn("--cleanup", gitgate.shims(Path("lib"), "python", False)["pre-push"])
+
+    def test_shim_argv_parses_with_git_hook_arguments(self):
+        from codejig.__main__ import build_parser
+        hooks = gitgate.shims(Path("lib"), "python", True, cleanup=True)
+        for name, git_args, flag in (("pre-push", ["origin", "https://example.com/r.git"], "cleanup"),
+                                     ("pre-commit", [], "prose"), ("commit-msg", [".git/COMMIT_EDITMSG"], None)):
+            line = next(ln for ln in hooks[name].splitlines() if "-m codejig git-hook" in ln)
+            words = shlex.split(line.split("-m codejig ", 1)[1].split("||", 1)[0])
+            argv = [w for w in words if w != "$@"] + git_args
+            args = build_parser().parse_args(argv)
+            self.assertEqual((args.name, args.rest), (name, git_args))
+            if flag:
+                self.assertTrue(getattr(args, flag))
 
 
 if __name__ == "__main__":
