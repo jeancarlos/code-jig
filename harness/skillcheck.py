@@ -275,7 +275,7 @@ def live(skill: Path, case: Case, bin_path: Path, home: Path, profile: str) -> t
 
 def evals_digest(skill: Path) -> str:
     h = hashlib.sha256()
-    for f in sorted([skill / "evals.toml", *(skill / "evals").rglob("*")]):
+    for f in sorted([skill / "evals.toml", *(skill / "evals").rglob("*")], key=lambda p: p.relative_to(skill).parts):
         if f.is_file():
             h.update(f.relative_to(skill).as_posix().encode() + b"\0" + f.read_bytes() + b"\0")
     return h.hexdigest()

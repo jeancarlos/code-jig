@@ -200,7 +200,7 @@ def installed_file(src: Path, f: Path) -> bool:
 
 def tree_digest(src: Path) -> str:
     h = hashlib.sha256()
-    for f in sorted(p for p in src.rglob("*") if p.is_file() and installed_file(src, p)):
+    for f in sorted((p for p in src.rglob("*") if p.is_file() and installed_file(src, p)), key=lambda p: p.relative_to(src).parts):
         h.update(f.relative_to(src).as_posix().encode() + b"\0" + f.read_bytes() + b"\0")
     return h.hexdigest()
 
