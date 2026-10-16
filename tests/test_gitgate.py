@@ -258,6 +258,7 @@ class PushCleanup(unittest.TestCase):
         self.assertIn("code-jig scrub", err)
         self.assertNotIn("cleaned", err)
         self.assertEqual(git(self.repo, "rev-parse", "main"), tip)
+        return err
 
     def test_cleanup_leaves_tags_and_other_authors_to_the_refusal(self):
         tip = commit(self.repo, f"mine\n\n{CODEX}\n", ME, {"c": "1\n"}, 1_700_000_200)
@@ -269,12 +270,17 @@ class PushCleanup(unittest.TestCase):
 
     def test_a_signed_commit_in_the_range_keeps_the_refusal(self):
         commit(self.repo, f"mine\n\n{CODEX}\n", ME, {"c": "1\n"}, 1_700_000_200)
-        raw = git(self.repo, "cat-file", "commit", "HEAD").split("\n\n", 1)
-        sig = "gpgsig -----BEGIN PGP SIGNATURE-----\n \n iQEz\n -----END PGP SIGNATURE-----"
-        signed = git(self.repo, "hash-object", "-t", "commit", "-w", "--stdin",
-                     stdin=f"{raw[0]}\n{sig}\n\n{raw[1]}\n")
+        env = {**os.environ, **ENV}
+        head, _, msg = subprocess.run(["git", "-C", str(self.repo), "cat-file", "commit", "HEAD"], capture_output=True,
+                                      env=env, check=True).stdout.partition(b"\n\n")
+        sig = b"gpgsig -----BEGIN PGP SIGNATURE-----\n \n iQEz\n -----END PGP SIGNATURE-----"
+        signed = subprocess.run(["git", "-C", str(self.repo), "hash-object", "-t", "commit", "-w", "--stdin"],
+                                input=head + b"\n" + sig + b"\n\n" + msg, capture_output=True, env=env,
+                                check=True).stdout.decode().strip()
+        self.assertIn(b"gpgsig", subprocess.run(["git", "-C", str(self.repo), "cat-file", "commit", signed],
+                                                capture_output=True, env=env, check=True).stdout)
         git(self.repo, "update-ref", "refs/heads/main", signed)
-        self.assert_refused(signed)
+        self.assertNotIn("aborted", self.assert_refused(signed))
 
     def test_push_of_head_resolves_to_the_branch(self):
         tip = commit(self.repo, f"mine\n\n{CODEX}\n", ME, {"b": "1\n"}, 1_700_000_100)

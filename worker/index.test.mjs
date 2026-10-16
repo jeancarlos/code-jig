@@ -54,7 +54,8 @@ test("page lists requirements", async () => {
 test("page mentions the manual zip form", async () => {
   const body = await (await worker.fetch(req("/"), env())).text()
   assert.ok(body.includes("--zip code-jig.zip"))
-  assert.ok(body.includes("https://github.com/jeancarlos/code-jig/releases/latest"))
+  const links = [...body.matchAll(/href="([^"]+)"/g)].map((m) => new URL(m[1], "https://code-jig.jeansouza.dev/"))
+  assert.ok(links.some((u) => u.origin === "https://github.com" && u.pathname === "/jeancarlos/code-jig/releases/latest"))
 })
 
 test("root serves html and counts nothing", async () => {
