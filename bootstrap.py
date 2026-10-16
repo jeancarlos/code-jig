@@ -377,3 +377,94 @@ def path_hint(bin_dir):
     dirs = [os.path.normcase(os.path.abspath(p)) for p in os.environ.get("PATH", "").split(os.pathsep) if p]
     if want not in dirs:
         print(f"bootstrap: {bin_dir} is not on PATH; add it to run harness by name")
+
+
+def parse_args(argv):
+    p = argparse.ArgumentParser(prog="bootstrap.py", description="Install codex-harness from a release.")
+    p.add_argument("--overlay", help="overlay folder or git URL")
+    p.add_argument("--overlay-dir", help="where a cloned or new overlay goes (default ~/codex-overlay)")
+    p.add_argument("--version", help="vX.Y.Z or latest")
+    p.add_argument("--base-url", default=BASE_URL)
+    p.add_argument("--repo", default=REPO)
+    p.add_argument("--codex-bin")
+    p.add_argument("--codex-home")
+    p.add_argument("--data-dir")
+    p.add_argument("--bin-dir")
+    return p.parse_args(argv)
+
+
+def data_dir(arg):
+    if arg:
+        return Path(arg).expanduser().absolute()
+    if os.name == "nt":
+        return Path(os.environ["LOCALAPPDATA"]) / "codex-harness"
+    return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "codex-harness"
+
+
+def bin_dir(arg, data):
+    if arg:
+        return Path(arg).expanduser().absolute()
+    return data / "bin" if os.name == "nt" else Path.home() / ".local" / "bin"
+
+
+def interpreter():
+    return getattr(sys, "_base_executable", None) or sys.executable
+
+
+def run_install(python, core, overlay, codex_home):
+    env = dict(os.environ, PYTHONPATH=str(core), CODEX_HARNESS_OVERLAY=str(overlay))
+    home = ["--codex-home", codex_home] if codex_home else []
+    return subprocess.run([python, "-P", "-s", "-m", "harness", *home, "install"], env=env).returncode
+
+
+def run_doctor(python, core, overlay, codex_home, codex_bin):
+    env = dict(os.environ, PYTHONPATH=str(core), CODEX_HARNESS_OVERLAY=str(overlay))
+    home = ["--codex-home", codex_home] if codex_home else []
+    binary = ["--codex-bin", codex_bin] if codex_bin else []
+    if subprocess.run([python, "-P", "-s", "-m", "harness", *home, "doctor", *binary], env=env).returncode:
+        print("bootstrap: installed; doctor reported problems above")
+
+
+def run(args):
+    if not re.fullmatch(r"[\w.-]+/[\w.-]+", args.repo):
+        raise Refused(f"--repo {args.repo!r} must look like owner/name")
+    if not allowed(args.base_url):
+        raise Refused(f"--base-url {args.base_url} must be https")
+    data = data_dir(args.data_dir)
+    bins = bin_dir(args.bin_dir, data)
+    check_launcher(launcher_path(bins))
+    dest = Path(args.overlay_dir).expanduser().absolute() if args.overlay_dir else Path.home() / "codex-overlay"
+    overlay = resolve_overlay(args.overlay or os.environ.get("CODEX_HARNESS_OVERLAY"), dest)
+    tag = choose_tag(args.version, overlay, args.repo)
+    core = get_core(tag, data, args.base_url, args.repo)
+    if overlay is None:
+        overlay = create_overlay(core, dest, tag)
+    python = interpreter()
+    rc = run_install(python, core, overlay, args.codex_home)
+    if rc:
+        print(f"bootstrap: harness install failed with exit code {rc}; the launcher was not changed", file=sys.stderr)
+        return rc
+    if owned(overlay) and read_pin(overlay) != tag:
+        write_pin(overlay, tag)
+    launcher = write_launcher(bins, python, core, overlay, tag)
+    print(f"bootstrap: wrote {launcher}")
+    path_hint(bins)
+    run_doctor(python, core, overlay, args.codex_home, args.codex_bin)
+    return 0
+
+
+def main(argv=None):
+    print("codex-harness bootstrap", flush=True)
+    if sys.version_info < (3, 11):
+        print("bootstrap: Python 3.11 or newer is required", file=sys.stderr)
+        return 2
+    args = parse_args(argv)
+    try:
+        return run(args)
+    except Refused as e:
+        print(f"bootstrap: {e}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
