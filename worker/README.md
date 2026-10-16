@@ -6,12 +6,12 @@ A Cloudflare Worker that serves https://code-jig.jeansouza.dev. It is infrastruc
 
 | Route | What it does | Counted |
 |---|---|---|
-| `/` | Plain-text page with the install commands | no |
-| `/bootstrap.py` | The latest release's `bootstrap.py`, fetched from GitHub, never cached | `bootstrap` |
+| `/` | HTML page with the install commands, readable on a phone, light and dark | no |
+| `/setup` | The latest release's `bootstrap.py`, fetched from GitHub, never cached | `bootstrap` |
 | `/v/<tag>/code-jig.zip` | 302 to the GitHub release asset | `download` |
 | `/v/<tag>/SHA256SUMS`, `/v/<tag>/bootstrap.py` | 302 to the GitHub release asset | no |
 
-`<tag>` must look like `v1.2.3`. Anything else is a 404, and any method other than `GET` and `HEAD` is a 405. Only `GET` requests are counted. If GitHub does not answer for `/bootstrap.py`, the Worker returns 502 and counts nothing.
+`<tag>` must look like `v1.2.3`. Anything else is a 404, and any method other than `GET` and `HEAD` is a 405. Only `GET` requests are counted. `/bootstrap.py` is a 404; the script lives at `/setup`. If GitHub does not answer for `/setup`, the Worker returns 502 and counts nothing.
 
 Each count is one Analytics Engine row in the dataset `code_jig_installs` (binding `INSTALLS`): the event, the tag (empty for `bootstrap`), the client type (`curl`, `powershell`, `python` or `other`) and the Cloudflare country. No IP address, user-agent string or install ID is stored, and Workers Logs are off (`[observability]` in `wrangler.toml`).
 

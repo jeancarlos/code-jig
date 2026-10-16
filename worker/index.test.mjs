@@ -44,20 +44,25 @@ test("bad tags, files and paths are 404 and not counted", async () => {
   }
 })
 
-test("root page lists both one-liners", async () => {
-  const r = await worker.fetch(req("/"), env())
+test("root serves html and counts nothing", async () => {
+  const e = env()
+  const r = await worker.fetch(req("/"), e)
   assert.equal(r.status, 200)
-  assert.match(r.headers.get("content-type"), /^text\/plain/)
+  assert.equal(r.headers.get("content-type"), "text/html; charset=utf-8")
   const body = await r.text()
-  assert.match(body, /curl -fsSL https:\/\/code-jig\.jeansouza\.dev\/bootstrap\.py \| python3 -I -/)
-  assert.match(body, /irm https:\/\/code-jig\.jeansouza\.dev\/bootstrap\.py \| py -3 -I -/)
+  assert.match(body, /<meta name="viewport"/)
+  assert.match(body, /prefers-color-scheme: dark/)
+  assert.match(body, /curl -fsSL https:\/\/code-jig\.jeansouza\.dev\/setup \| python3 -I -/)
+  assert.match(body, /irm https:\/\/code-jig\.jeansouza\.dev\/setup \| py -3 -I -/)
+  assert.ok(!body.includes("\u2014"))
+  assert.deepEqual(e.points, [])
 })
 
-test("bootstrap.py is proxied as text and counted", async () => {
+test("setup serves the bootstrap and counts it", async () => {
   const seen = []
   globalThis.fetch = async (url) => { seen.push(String(url)); return new Response("print(1)\n", { status: 200 }) }
   const e = env()
-  const r = await worker.fetch(req("/bootstrap.py", "Mozilla/5.0 (Windows NT 10.0) WindowsPowerShell/5.1"), e)
+  const r = await worker.fetch(req("/setup", "Mozilla/5.0 (Windows NT 10.0) WindowsPowerShell/5.1"), e)
   assert.equal(r.status, 200)
   assert.equal(r.headers.get("content-type"), "text/plain; charset=utf-8")
   assert.equal(await r.text(), "print(1)\n")
@@ -66,10 +71,17 @@ test("bootstrap.py is proxied as text and counted", async () => {
   assert.ok(!JSON.stringify(e.points).includes("Mozilla"))
 })
 
+test("bootstrap.py path is 404", async () => {
+  const e = env()
+  const r = await worker.fetch(req("/bootstrap.py"), e)
+  assert.equal(r.status, 404)
+  assert.deepEqual(e.points, [])
+})
+
 test("upstream failure is 502 and not counted", async () => {
   globalThis.fetch = async () => new Response("nope", { status: 404 })
   const e = env()
-  const r = await worker.fetch(req("/bootstrap.py"), e)
+  const r = await worker.fetch(req("/setup"), e)
   assert.equal(r.status, 502)
   assert.deepEqual(e.points, [])
 })
@@ -100,10 +112,10 @@ test("HEAD on the zip redirects without counting", async () => {
   assert.deepEqual(e.points, [])
 })
 
-test("HEAD on bootstrap.py answers 200 without counting", async () => {
+test("HEAD on setup answers 200 without counting", async () => {
   globalThis.fetch = async () => new Response("print(1)\n", { status: 200 })
   const e = env()
-  const r = await worker.fetch(req("/bootstrap.py", "curl/8.9.1", "HEAD"), e)
+  const r = await worker.fetch(req("/setup", "curl/8.9.1", "HEAD"), e)
   assert.equal(r.status, 200)
   assert.deepEqual(e.points, [])
 })
