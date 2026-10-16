@@ -1,4 +1,5 @@
 import contextlib
+import errno
 import io
 import ntpath
 import os
@@ -120,7 +121,9 @@ class Migrate(unittest.TestCase):
         git("config", "--global", "codexharness.email", "a@example.com")
         git("config", "--global", "core.hooksPath", str(migrate.old_state(self.home) / "git-hooks"))
         before = self.gitconfig.read_bytes()
+        repo_before = (repo / ".git" / "config").read_bytes()
         lines = self.run_migrate([repo], dry_run=True)
+        self.assertEqual((repo / ".git" / "config").read_bytes(), repo_before)
         self.assertTrue(self.old_db.exists())
         self.assertFalse(collect.db_path().exists())
         self.assertEqual(self.gitconfig.read_bytes(), before)
@@ -137,6 +140,88 @@ class Migrate(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(out.getvalue().splitlines()[0],
                          "code-jig migrate is deprecated and will be removed in the next release")
+
+    def main(self, *args: str) -> tuple[int, list[str]]:
+        write(self.root / "ov" / "overlay.toml", 'core_version = "v1"\ncore_writable = true\n')
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = __main__.main(["--overlay", str(self.root / "ov"), "--codex-home", str(self.home), "migrate", *args])
+        return code, out.getvalue().splitlines()
+
+    def test_a_locked_git_config_keeps_the_old_key_and_exits_1(self):
+        git("config", "--global", "codexharness.email", "a@example.com")
+        write(self.root / "gitconfig.lock", "")
+        code, lines = self.main(str(self.repo()))
+        self.assertEqual(code, 1)
+        self.assertEqual(values("codexharness.email"), ["a@example.com"])
+        self.assertEqual(values("codejig.email"), [])
+        self.assertTrue(any(line.startswith("failed:") for line in lines), lines)
+        self.assertFalse(any(line.startswith("unset") for line in lines), lines)
+
+    def test_a_cross_device_move_copies_then_removes_the_old_db(self):
+        db_with_rows(self.old_db, 2)
+        real = os.replace
+        calls = []
+
+        def replace(src, dst):
+            calls.append(src)
+            if len(calls) == 1:
+                raise OSError(errno.EXDEV, "cross-device link")
+            return real(src, dst)
+
+        with mock.patch("os.replace", replace):
+            lines = self.run_migrate()
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(Path(calls[1]).parent, collect.db_path().parent)
+        self.assertFalse(self.old_db.exists())
+        self.assertEqual(thread_ids(collect.db_path()), ["t0", "t1"])
+        self.assertEqual(sorted(p.name for p in collect.db_path().parent.iterdir()), ["usage.sqlite3"])
+        self.assertFalse(any(line.startswith("refused") for line in lines), lines)
+
+    def test_a_cross_device_move_whose_old_db_cannot_go_keeps_only_the_old_db(self):
+        db_with_rows(self.old_db, 2)
+        real_replace, real_unlink = os.replace, Path.unlink
+        calls = []
+
+        def replace(src, dst):
+            calls.append(src)
+            if len(calls) == 1:
+                raise OSError(errno.EXDEV, "cross-device link")
+            return real_replace(src, dst)
+
+        def unlink(path, missing_ok=False):
+            if path == self.old_db:
+                raise PermissionError(errno.EACCES, "in use")
+            return real_unlink(path, missing_ok)
+
+        with mock.patch("os.replace", replace), mock.patch.object(Path, "unlink", unlink):
+            lines = self.run_migrate()
+        self.assertEqual(thread_ids(self.old_db), ["t0", "t1"])
+        self.assertFalse(collect.db_path().exists())
+        self.assertIn(f"refused: {self.old_db} is in use; close Codex and Claude Code and rerun", lines)
+
+    def test_an_old_db_in_use_is_refused_without_copying(self):
+        db_with_rows(self.old_db, 2)
+        with mock.patch("os.replace", side_effect=PermissionError(errno.EACCES, "in use")):
+            lines = self.run_migrate()
+        self.assertEqual(thread_ids(self.old_db), ["t0", "t1"])
+        self.assertFalse(collect.db_path().exists())
+        self.assertIn(f"refused: {self.old_db} is in use; close Codex and Claude Code and rerun", lines)
+
+    def test_an_old_db_with_a_hot_journal_is_refused(self):
+        db_with_rows(self.old_db, 1)
+        write(self.old_db.with_name("usage.sqlite3-journal"), "x")
+        lines = self.run_migrate()
+        self.assertTrue(self.old_db.exists())
+        self.assertFalse(collect.db_path().exists())
+        self.assertIn(f"refused: {self.old_db} has an unfinished write; open and close Codex once and rerun", lines)
+
+    def test_a_corrupt_new_db_counts_as_data(self):
+        db_with_rows(self.old_db, 1)
+        write(collect.db_path(), "not a database " * 100)
+        lines = self.run_migrate()
+        self.assertTrue(self.old_db.exists())
+        self.assertIn(f"refused: {collect.db_path()} already has data; move one of them away and rerun", lines)
 
     def test_a_refusal_exits_1(self):
         write(self.root / "ov" / "overlay.toml", 'core_version = "v1"\ncore_writable = true\n')

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import errno
 import os
 import shutil
 import sqlite3
@@ -19,46 +20,83 @@ def old_state(home: Path) -> Path:
     return home / "codex-harness"
 
 
-def _rows(path: Path) -> int:
-    with contextlib.closing(sqlite3.connect(path)) as con:
-        tables = [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
-        return sum(con.execute(f'SELECT count(*) FROM "{t}"').fetchone()[0] for t in tables)
+def _has_rows(path: Path) -> bool:
+    try:
+        with contextlib.closing(sqlite3.connect(path)) as con:
+            tables = [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
+            return any(con.execute(f'SELECT count(*) FROM "{t}"').fetchone()[0] for t in tables)
+    except sqlite3.DatabaseError:
+        return True
 
 
-def _move(src: Path, dst: Path) -> None:
+def _move(src: Path, dst: Path) -> str | None:
+    in_use = f"refused: {src} is in use; close Codex and Claude Code and rerun"
     dst.parent.mkdir(parents=True, exist_ok=True)
     try:
         os.replace(src, dst)
-    except OSError:
-        shutil.copy2(src, dst)
+        return None
+    except PermissionError:
+        return in_use
+    except OSError as e:
+        if e.errno != errno.EXDEV:
+            raise
+    tmp = dst.with_name(dst.name + ".migrate-tmp")
+    try:
+        shutil.copy2(src, tmp)
+        os.replace(tmp, dst)
+    finally:
+        tmp.unlink(missing_ok=True)
+    try:
         src.unlink()
+    except OSError:
+        dst.unlink()
+        return in_use
+    return None
 
 
 def move_db(home: Path, dry_run: bool = False) -> list[str]:
     old, new = old_state(home) / "usage.sqlite3", collect.db_path()
     if not old.is_file():
         return []
-    if new.exists() and _rows(new):
+    if old.with_name(old.name + "-journal").exists():
+        return [f"refused: {old} has an unfinished write; open and close Codex once and rerun"]
+    if new.exists() and _has_rows(new):
         return [f"refused: {new} already has data; move one of them away and rerun"]
     if not dry_run:
-        _move(old, new)
+        refused = _move(old, new)
+        if refused:
+            return [refused]
     return [f"{'would ' if dry_run else ''}move {old} to {new}"]
 
 
-def _git(*args: str) -> str:
+def _git(*args: str) -> subprocess.CompletedProcess | None:
     try:
-        return subprocess.run(["git", *args], capture_output=True, text=True, encoding="utf-8").stdout
+        return subprocess.run(["git", *args], capture_output=True, text=True, encoding="utf-8")
     except OSError:
-        return ""
+        return None
 
 
-def _config(repo: Path | None, *args: str) -> list[str]:
+def _config(repo: Path | None, *args: str) -> subprocess.CompletedProcess | None:
     scope = ["-C", str(repo), "config", "--local"] if repo else ["config", "--global"]
-    return _git(*scope, *args).splitlines()
+    return _git(*scope, *args)
+
+
+def _values(repo: Path | None, key: str) -> list[str]:
+    r = _config(repo, "--get-all", "-z", key)
+    return r.stdout.split("\0")[:-1] if r and r.returncode == 0 else []
+
+
+def _write(repo: Path | None, *args: str) -> str | None:
+    r = _config(repo, *args)
+    if r and r.returncode == 0:
+        return None
+    why = r.stderr.strip() if r else "git not found"
+    return f"failed: git config {' '.join(args)} ({'global' if repo is None else repo}): {why}"
 
 
 def _is_work_tree(path: Path) -> bool:
-    return _git("-C", str(path), "rev-parse", "--is-inside-work-tree").strip() == "true"
+    r = _git("-C", str(path), "rev-parse", "--is-inside-work-tree")
+    return bool(r) and r.stdout.strip() == "true"
 
 
 def default_repos() -> list[Path]:
@@ -75,19 +113,27 @@ def move_git_config(repos: list[Path], dry_run: bool = False) -> list[str]:
         where = "global" if repo is None else str(repo)
         for key in KEYS:
             old, new = f"codexharness.{key}", f"codejig.{key}"
-            olds = _config(repo, "--get-all", old)
+            olds = _values(repo, old)
             if not olds:
                 continue
-            have = _config(repo, "--get-all", new)
+            have = _values(repo, new)
             for value in olds:
                 if value in have:
                     continue
-                have.append(value)
-                if not dry_run:
-                    _config(repo, "--add", new, value)
-                lines.append(f"{p}copy {old} = {value} to {new} ({where})")
+                if dry_run:
+                    have.append(value)
+                    lines.append(f"{p}copy {old} = {value} to {new} ({where})")
+                    continue
+                failed = _write(repo, "--add", new, value)
+                lines.append(failed or f"copy {old} = {value} to {new} ({where})")
             if not dry_run:
-                _config(repo, "--unset-all", old)
+                if not set(olds) <= set(_values(repo, new)):
+                    lines.append(f"failed: kept {old} ({where}) because {new} does not hold every value")
+                    continue
+                failed = _write(repo, "--unset-all", old)
+                if failed:
+                    lines.append(failed)
+                    continue
             lines.append(f"{p}unset {old} ({where})")
     return lines
 
@@ -97,8 +143,9 @@ def release_hooks_path(home: Path, dry_run: bool = False) -> list[str]:
     current = install._git_config("--get", "core.hooksPath")
     if not current or not install._same_path(current, old):
         return []
-    if not dry_run:
-        install._git_config("--unset", "core.hooksPath")
+    failed = None if dry_run else _write(None, "--unset", "core.hooksPath")
+    if failed:
+        return [failed]
     return [f"{'would ' if dry_run else ''}unset core.hooksPath {current}"]
 
 
@@ -117,4 +164,4 @@ def cli(args) -> int:
     lines = run(paths.CORE, ov, paths.codex_home(args.codex_home), repos, args.dry_run)
     for line in lines:
         print(line)
-    return 1 if any(line.startswith("refused:") for line in lines) else 0
+    return 1 if any(line.startswith(("refused:", "failed:")) for line in lines) else 0
