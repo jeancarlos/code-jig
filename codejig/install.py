@@ -333,7 +333,21 @@ def run(core: Path, ov: Overlay, home: Path) -> list[str]:
     return lines
 
 
+def missing_requirements() -> list[str]:
+    lines = []
+    if sys.version_info < (3, 11):
+        lines.append("Python 3.11 or newer")
+    if not shutil.which("git"):
+        lines.append("git (Fedora: sudo dnf install git; Debian/Ubuntu: sudo apt install git; macOS: xcode-select --install; Windows: winget install --id Git.Git -e)")
+    return lines
+
+
 def cli(args) -> int:
+    missing = missing_requirements()
+    for line in missing:
+        print(f"missing requirement: {line}", file=sys.stderr)
+    if missing:
+        return 2
     try:
         lines = run(paths.CORE, load(paths.overlay_dir(args.overlay)), paths.codex_home(args.codex_home))
     except ValueError as e:

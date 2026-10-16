@@ -44,6 +44,13 @@ test("bad tags, files and paths are 404 and not counted", async () => {
   }
 })
 
+test("page lists requirements", async () => {
+  const r = await worker.fetch(req("/"), env())
+  const body = await r.text()
+  assert.ok(body.includes("Requires Python 3.11+ and git."))
+  assert.ok(body.indexOf("Requires Python 3.11+ and git.") < body.indexOf("curl -fsSL"))
+})
+
 test("root serves html and counts nothing", async () => {
   const e = env()
   const r = await worker.fetch(req("/"), e)

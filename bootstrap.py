@@ -476,15 +476,26 @@ def run(args):
     return 0
 
 
+def missing_requirements() -> list[str]:
+    lines = []
+    if sys.version_info < (3, 11):
+        lines.append("Python 3.11 or newer")
+    if not shutil.which("git"):
+        lines.append("git (Fedora: sudo dnf install git; Debian/Ubuntu: sudo apt install git; macOS: xcode-select --install; Windows: winget install --id Git.Git -e)")
+    return lines
+
+
 def main(argv=None):
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(errors="backslashreplace")
     print("code-jig bootstrap", flush=True)
-    if sys.version_info < (3, 11):
-        print("bootstrap: Python 3.11 or newer is required", file=sys.stderr)
-        return 2
     args = parse_args(argv)
+    missing = missing_requirements()
+    for line in missing:
+        print(f"missing requirement: {line}", file=sys.stderr)
+    if missing:
+        return 2
     try:
         return run(args)
     except Refused as e:

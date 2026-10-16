@@ -105,6 +105,17 @@ class Cli(unittest.TestCase):
         self.assertIn("overlay.toml", message)
         self.assertFalse((home / "AGENTS.md").exists())
 
+    def test_install_cli_refuses_without_git(self):
+        root = tree(self)
+        home = root / "codex home"
+        err = io.StringIO()
+        args = types.SimpleNamespace(overlay=str(root / "overlay"), codex_home=str(home))
+        with mock.patch("shutil.which", return_value=None), contextlib.redirect_stderr(err):
+            code = cli(args)
+        self.assertEqual(code, 2)
+        self.assertIn("missing requirement: git (", err.getvalue())
+        self.assertFalse(home.exists())
+
     def test_bad_profiles_exits_2(self):
         root = tree(self)
         core, ov = tiered(root)

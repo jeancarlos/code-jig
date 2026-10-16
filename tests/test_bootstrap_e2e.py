@@ -1,5 +1,7 @@
+import contextlib
 import functools
 import http.server
+import io
 import os
 import shutil
 import subprocess
@@ -7,6 +9,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import bootstrap
@@ -146,3 +149,23 @@ class PipeShape(unittest.TestCase):
         done = subprocess.run([sys.executable, "-I", "-", "--help"], input=SOURCE, text=True, capture_output=True)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("code-jig bootstrap", done.stdout)
+
+
+class RefusesWithoutGit(unittest.TestCase):
+    def test_bootstrap_refuses_without_git_before_writing(self):
+        root = tree(self)
+        data, bins = root / "data", root / "bin"
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch("shutil.which", return_value=None), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = bootstrap.main(["--data-dir", str(data), "--bin-dir", str(bins)])
+        self.assertEqual(code, 2)
+        self.assertIn("missing requirement: git (", err.getvalue())
+        self.assertFalse(data.exists())
+        self.assertFalse(bins.exists())
+
+    def test_help_works_without_git(self):
+        with mock.patch("shutil.which", return_value=None), contextlib.redirect_stdout(io.StringIO()), \
+                self.assertRaises(SystemExit) as cm:
+            bootstrap.main(["--help"])
+        self.assertEqual(cm.exception.code, 0)

@@ -311,7 +311,8 @@ def check_core(core: Path, ov: Overlay) -> list[Check]:
 def cli(args) -> int:
     bin_path = resolve_codex_bin(args.codex_bin)
     home = paths.codex_home(args.codex_home)
-    checks = check_binary(bin_path)
+    checks = [("FAIL", "requirements", "git not found")] if not shutil.which("git") else []
+    checks += check_binary(bin_path)
     if not args.check_binary:
         try:
             ov = load(paths.overlay_dir(args.overlay))

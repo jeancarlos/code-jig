@@ -37,7 +37,7 @@ I use coding agents every day, and I kept running into the same four problems.
 
 ## Quick start
 
-Requires Python 3.11+ and Codex. Your overlay is a folder or git repository with an `overlay.toml`; see [personalizing](docs/personalizing.md). With no overlay, the installer makes `~/code-jig-overlay` for you.
+Requires Python 3.11+ and git. Your overlay is a folder or git repository with an `overlay.toml`; see [personalizing](docs/personalizing.md). With no overlay, the installer makes `~/code-jig-overlay` for you.
 
 ### From a release (no git checkout)
 

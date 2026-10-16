@@ -23,6 +23,7 @@ a { color: var(--link) }
 <h1>code-jig</h1>
 <p>A config pack that clamps the same tiers, review policy, skills, hooks, git gate and token tracker onto Codex, Claude Code, Antigravity and VS Code Copilot.</p>
 <p class="mute">Supported today: Codex. Claude Code, Antigravity and Copilot from the next releases.</p>
+<p>Requires Python 3.11+ and git.</p>
 <h2>Linux and macOS</h2>
 <pre>curl -fsSL https://code-jig.jeansouza.dev/setup | python3 -I - --overlay &lt;path|git-url&gt;</pre>
 <h2>Windows (PowerShell)</h2>

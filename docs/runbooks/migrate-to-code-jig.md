@@ -6,7 +6,7 @@ Run this once on every machine that had the previous, Codex-only version. `code-
 
 `code-jig` and `cjig` exist only after a bootstrap install or after `migrate` has run. On a checkout, run the module instead. `migrate` needs the overlay: pass `--overlay PATH` before the subcommand, or set `CODE_JIG_OVERLAY`. The old `CODEX_HARNESS_OVERLAY` is no longer read, so set the new one in your shell first.
 
-1. Get the new version, from a checkout of this repo or with the bootstrap (see the README). Close Codex and Claude Code, so nothing holds the tracker database. `install` may already have run; that is fine as long as it has not tracked any new sessions.
+1. Check you have Python 3.11 or newer and git; the install refuses without them. Get the new version, from a checkout of this repo or with the bootstrap (see the README). Close Codex and Claude Code, so nothing holds the tracker database. `install` may already have run; that is fine as long as it has not tracked any new sessions.
 2. See what would change. On a checkout (Linux, macOS):
 
    ```sh

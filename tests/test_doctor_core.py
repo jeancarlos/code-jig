@@ -1,9 +1,12 @@
+import contextlib
 import hashlib
+import io
+import types
 import subprocess
 import unittest
 from unittest import mock
 
-from codejig.doctor import check_core, check_global
+from codejig.doctor import check_core, check_global, cli
 from codejig.install import release_digest, render_agents, stamp
 from codejig.overlay import Overlay
 from tests.util import tree, write
@@ -161,3 +164,13 @@ class ReleaseDigest(unittest.TestCase):
         for rel in sorted(["a-b/x", "a/b"]):
             h.update(rel.encode() + b"\0" + (root / rel).read_bytes() + b"\0")
         self.assertEqual(release_digest(root), h.hexdigest())
+
+
+class Requirements(unittest.TestCase):
+    def test_doctor_fails_without_git(self):
+        out = io.StringIO()
+        args = types.SimpleNamespace(codex_bin=None, codex_home=str(tree(self) / "h"), check_binary=True, overlay=None, live=False)
+        with mock.patch("shutil.which", return_value=None), contextlib.redirect_stdout(out):
+            code = cli(args)
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL requirements: git not found", out.getvalue())
