@@ -1,8 +1,9 @@
 import os
 import unittest
+from pathlib import Path
 from unittest import mock
 
-from harness import paths
+from harness import paths, tiers
 from harness.overlay import load
 from tests.util import tree, write
 
@@ -96,3 +97,14 @@ class Resolve(unittest.TestCase):
         os.chdir(root)
         self.addCleanup(os.chdir, old)
         self.assertTrue(paths.overlay_dir("ov").is_absolute())
+
+
+class ReleaseExample(unittest.TestCase):
+    def test_release_example_is_readonly_and_loads(self):
+        root = Path(__file__).resolve().parent.parent
+        ov = load(root / "overlay-examples" / "release")
+        self.assertFalse(ov.core_writable)
+        self.assertRegex(ov.core_version, r"^v\d+\.\d+\.\d+$")
+        self.assertTrue(tiers.load(root, ov.root))
+        text = (root / "overlay-examples" / "release" / "AGENTS.overlay.md").read_text(encoding="utf-8")
+        self.assertNotIn("bench", text.lower())
