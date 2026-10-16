@@ -29,11 +29,17 @@ _CHAR_CODES = [
 ]
 INVISIBLE_CHARS = {chr(code): name for code, name in _CHAR_CODES}
 
+_TOOLS = (
+    rb"claude|anthropic|codex|openai|chatgpt|gemini|google[- ]labs|jules\[bot\]|jules-bot|antigravity|"
+    rb"copilot|cursor|aider"
+)
 ATTRIBUTION_LINES = re.compile(
     rb"(?mi)^[ \t]*("
-    rb"co-authored-by:[^\n]*(?:claude|codex|chatgpt|an ai)[^\n]*|"
+    rb"co-authored-by:[^\n]*(?:\b(?:" + _TOOLS + rb"|an ai)\b|devin\b[^\n]*(?:ai|bot|cognition)|"
+    rb"noreply@anthropic\.com|noreply@openai\.com|cursoragent@cursor\.com)[^\n]*|"
     rb"claude-session:[^\n]*|"
-    rb"generated with[^\n]*(?:claude[^\n]*|codex[^\n]*|chatgpt[^\n]*)|"
+    rb"generated (?:with|by)\b[^\n]*\b(?:" + _TOOLS + rb"|devin)\b[^\n]*|"
+    rb"made with cursor[^\n]*|"
     rb"[^\n]*\xf0\x9f\xa4\x96 generated[^\n]*|"
     rb"(?:ai-assisted|ai-generated)[^\n]*"
     rb")[ \t]*\n?"
@@ -54,13 +60,8 @@ def is_binary(data: bytes) -> bool:
         return True
 
 
-def strip_bytes(original: bytes, attribution: bool = True) -> tuple[bytes, dict]:
-    """Watermark-free bytes and how many of each kind were removed."""
-    counts = {"zero_width": 0, "directional": 0, "attribution_lines": 0}
-    text = original.decode("utf-8")
-    had_bom = text.startswith("\ufeff")
-    if had_bom:
-        text = text[1:]
+def _strip_chars(text: str) -> tuple[str, dict]:
+    counts = {"zero_width": 0, "directional": 0}
     out = []
     for ch in text:
         if ch in (_NO_BREAK_SPACE, _NARROW_NO_BREAK_SPACE):
@@ -70,11 +71,35 @@ def strip_bytes(original: bytes, attribution: bool = True) -> tuple[bytes, dict]
             counts["directional" if ch in _BIDI else "zero_width"] += 1
         else:
             out.append(ch)
-    data = "".join(out).encode("utf-8")
+    return "".join(out), counts
+
+
+def strip_bytes(original: bytes, attribution: bool = True) -> tuple[bytes, dict]:
+    """Watermark-free bytes and how many of each kind were removed."""
+    text = original.decode("utf-8")
+    had_bom = text.startswith("\ufeff")
+    if had_bom:
+        text = text[1:]
+    text, counts = _strip_chars(text)
+    data = text.encode("utf-8")
+    counts["attribution_lines"] = 0
     if attribution:
         counts["attribution_lines"] = len(ATTRIBUTION_LINES.findall(data))
         data = ATTRIBUTION_LINES.sub(b"", data)
     return (BOM + data if had_bom else data), counts
+
+
+def clean_message(msg: bytes) -> bytes:
+    try:
+        data = _strip_chars(msg.decode("utf-8"))[0].encode("utf-8")
+    except UnicodeDecodeError:
+        data = msg
+    new = ATTRIBUTION_LINES.sub(b"", data)
+    return msg if new == msg else new.rstrip(b"\n") + b"\n"
+
+
+def has_watermark(msg: bytes) -> bool:
+    return clean_message(msg) != msg
 
 
 def strip_watermark(path: str, root: str | None = None) -> dict:

@@ -7,7 +7,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from codejig.watermark import ATTRIBUTION_LINES
+from codejig.watermark import clean_message, has_watermark
 
 EXPORT = ["fast-export", "--branches", "--tags", "--no-data", "--show-original-ids", "--reencode=no",
           "--signed-tags=strip", "--tag-of-filtered-object=rewrite"]
@@ -35,17 +35,12 @@ def my_emails(repo: Path, extra: list[str] = ()) -> set[str]:
     return {e.lower() for e in [*found, *extra] if e}
 
 
-def scrub_message(msg: bytes) -> bytes:
-    new = ATTRIBUTION_LINES.sub(b"", msg)
-    return msg if new == msg else new.rstrip(b"\n") + b"\n"
-
-
 def attributed(repo: Path, emails: set[str]) -> list[str]:
     out = _git(repo, "log", "--branches", "--tags", "--format=%H%x00%ae%x00%B%x1e")
     hits = []
     for rec in out.split(b"\x1e"):
         parts = rec.strip(b"\n").split(b"\0", 2)
-        if len(parts) == 3 and parts[1].decode("utf-8", "replace").lower() in emails and ATTRIBUTION_LINES.search(parts[2]):
+        if len(parts) == 3 and parts[1].decode("utf-8", "replace").lower() in emails and has_watermark(parts[2]):
             hits.append(parts[0].decode())
     return hits
 
@@ -79,7 +74,7 @@ def rewrite_stream(stream: bytes, emails: set[str]) -> tuple[bytes, dict[str, st
             payload = stream[i:i + n]
             i += n
             if in_commit and mine:
-                payload = scrub_message(payload)
+                payload = clean_message(payload)
             out.append(b"data %d\n" % len(payload) + payload)
             continue
         word = line.split(b" ", 1)[0].strip()
@@ -117,7 +112,7 @@ def verify(repo: Path, pairs: dict[str, str], emails: set[str]) -> int:
             raise Abort(f"{old[:10]} -> {new[:10]} changed more than the message")
         author = next((EMAIL.search(h) for h in old_head if h.startswith(b"author ")), None)
         is_mine = bool(author) and author.group(1).decode("utf-8", "replace").lower() in emails
-        if new_msg != (scrub_message(old_msg) if is_mine else old_msg):
+        if new_msg != (clean_message(old_msg) if is_mine else old_msg):
             raise Abort(f"{old[:10]} -> {new[:10]} message changed beyond the attribution lines")
         changed += new_msg != old_msg
     return changed

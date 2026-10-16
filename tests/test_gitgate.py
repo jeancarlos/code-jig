@@ -34,6 +34,11 @@ class CommitMsg(unittest.TestCase):
         code, _ = in_repo(path.parent, gitgate.commit_msg, str(path))
         self.assertEqual((code, path.read_text(encoding="utf-8")), (0, "fix: a - b\n"))
 
+    def test_strips_invisible_characters(self):
+        path = write(tree(self) / "MSG", f"fix: a{ZWSP} b\n")
+        in_repo(path.parent, gitgate.commit_msg, str(path))
+        self.assertEqual(path.read_text(encoding="utf-8"), "fix: a b\n")
+
     def test_clean_message_is_untouched(self):
         path = write(tree(self) / "MSG", "fix: plain\n")
         before = path.stat().st_mtime_ns
@@ -114,6 +119,12 @@ class PrePush(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn(tip[:10], err)
         self.assertIn("code-jig scrub", err)
+
+    def test_refuses_a_zero_width_space_only(self):
+        repo = new_repo(self)
+        base = commit(repo, "init\n", ME, {"a": "1\n"}, 1_700_000_000)
+        tip = commit(repo, f"mine{ZWSP}\n", ME, {"c": "1\n"}, 1_700_000_200)
+        self.assertEqual(in_repo(repo, gitgate.pre_push, [f"refs/heads/main {tip} refs/heads/main {base}"])[0], 1)
 
     def test_unknown_remote_tip_falls_back_to_unpushed_commits(self):
         repo = new_repo(self)

@@ -5,8 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from codejig.scrub import my_emails, scrub_message
-from codejig.watermark import ATTRIBUTION_LINES, is_binary, strip_bytes
+from codejig.scrub import my_emails
+from codejig.watermark import clean_message, has_watermark, is_binary, strip_bytes
 
 ZERO = "0" * 40
 AGENT_ENV = ("CODEX_THREAD_ID", "CLAUDECODE")
@@ -41,7 +41,7 @@ def commit_msg(path: str) -> int:
     p = Path(path)
     data = p.read_bytes()
     try:
-        new = undash(scrub_message(data))
+        new = undash(clean_message(data))
     except UnicodeDecodeError:
         return 0
     if new != data:
@@ -129,7 +129,7 @@ def pre_push(lines: list[str]) -> int:
             continue
         for sha in _outgoing(parts[1], parts[3]):
             email, _, body = _git("log", "-1", "--format=%ae%x00%B", sha).partition(b"\0")
-            if email.decode("utf-8", "replace").lower() in emails and ATTRIBUTION_LINES.search(body):
+            if email.decode("utf-8", "replace").lower() in emails and has_watermark(body):
                 problems.append(sha)
     if problems:
         print("code-jig: push refused, commit messages carry AI attribution:", file=sys.stderr)
