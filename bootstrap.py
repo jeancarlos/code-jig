@@ -323,3 +323,57 @@ def choose_tag(version, overlay, repo):
     if not owned(overlay):
         raise Refused(f"--version {version} differs from core_version {pin} in {overlay}; bump core_version in your overlay")
     return resolve(version, repo)
+
+
+MARK = "codex-harness launcher "
+
+
+def sh_launcher(python, core, overlay, tag):
+    q = shlex.quote
+    return (f"#!/bin/sh\n# {MARK}{tag}\nPYTHONPATH={q(str(core))}\nCODEX_HARNESS_OVERLAY={q(str(overlay))}\n"
+            f"export PYTHONPATH CODEX_HARNESS_OVERLAY\nexec {q(python)} -P -s -m harness \"$@\"\n")
+
+
+def cmd_escape(value):
+    return str(value).replace("%", "%%")
+
+
+def cmd_launcher(python, core, overlay, tag):
+    return ("@echo off\n"
+            f"rem {MARK}{tag}\n"
+            "setlocal\n"
+            "for /f \"tokens=2 delims=:.\" %%c in ('chcp') do set \"HARNESS_CP=%%c\"\n"
+            "chcp 65001 >nul\n"
+            f"set \"PYTHONPATH={cmd_escape(core)}\"\n"
+            f"set \"CODEX_HARNESS_OVERLAY={cmd_escape(overlay)}\"\n"
+            f"\"{cmd_escape(python)}\" -P -s -m harness %*\n"
+            "set \"HARNESS_RC=%ERRORLEVEL%\"\n"
+            "chcp %HARNESS_CP% >nul\n"
+            "exit /b %HARNESS_RC%\n")
+
+
+def launcher_path(bin_dir):
+    return bin_dir / ("harness.cmd" if os.name == "nt" else "harness")
+
+
+def check_launcher(path):
+    if path.exists() and MARK not in path.read_text(encoding="utf-8", errors="replace"):
+        raise Refused(f"{path} was not written by this bootstrap; move it away and rerun")
+
+
+def write_launcher(bin_dir, python, core, overlay, tag):
+    path = launcher_path(bin_dir)
+    check_launcher(path)
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        write_atomic(path, cmd_launcher(python, core, overlay, tag), mode=0o755, newline="\r\n")
+    else:
+        write_atomic(path, sh_launcher(python, core, overlay, tag), mode=0o755)
+    return path
+
+
+def path_hint(bin_dir):
+    want = os.path.normcase(os.path.abspath(bin_dir))
+    dirs = [os.path.normcase(os.path.abspath(p)) for p in os.environ.get("PATH", "").split(os.pathsep) if p]
+    if want not in dirs:
+        print(f"bootstrap: {bin_dir} is not on PATH; add it to run harness by name")
