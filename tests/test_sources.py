@@ -119,8 +119,9 @@ class Sources(unittest.TestCase):
     def test_quote_found_across_tag_spacing_and_copied_backticks(self):
         rows = [{"claim": "c", "url": f"{self.base}/pep", "quote": "Python-Version: 3.11"},
                 {"claim": "c", "url": f"{self.base}/pep", "quote": "The `tomllib` module parses TOML."},
-                {"claim": "c", "url": f"{self.base}/pep", "quote": "Python-Version: 3.12"}]
-        self.assertEqual(self.verdicts(rows), ["ok", "ok", "quote-missing"])
+                {"claim": "c", "url": f"{self.base}/pep", "quote": "Python-Version: 3.12"},
+                {"claim": "c", "url": f"{self.base}/pep", "quote": "... \u2014 `` _"}]
+        self.assertEqual(self.verdicts(rows), ["ok", "ok", "quote-missing", "no-quote"])
 
     def test_evidence_can_come_from_stdin(self):
         row = json.dumps({"claim": "c", "url": f"{self.base}/doc", "quote": "default limit"})

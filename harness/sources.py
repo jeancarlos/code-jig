@@ -201,8 +201,8 @@ def load(files: list[str]) -> list[Claim]:
                     c.verdict, c.detail = "malformed", "no url"
                 elif not c.url.lower().startswith(("http://", "https://")):
                     c.verdict, c.detail = "bad-url", "only http and https are checked"
-                elif not c.quote:
-                    c.verdict, c.detail = "no-quote", "a claim needs an exact quote"
+                elif not normalize(c.quote):
+                    c.verdict, c.detail = "no-quote", "a claim needs an exact quote with words in it"
                 claims.append(c)
     return claims
 
