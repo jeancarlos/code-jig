@@ -58,6 +58,7 @@ class Case:
     output: list[str] = field(default_factory=list)
     spawns: int = 0
     sandbox: str = "read-only"
+    network: bool = False
     fixture: str = ""
     commits: list[dict] = field(default_factory=list)
 
@@ -113,6 +114,8 @@ def load_cases(skill: Path) -> list[Case]:
             raise ValueError(f"case {i}: {e}") from None
         if case.sandbox not in SANDBOXES:
             raise ValueError(f"case {i}: sandbox must be one of {', '.join(SANDBOXES)}")
+        if type(case.network) is not bool or case.network and case.sandbox != "workspace-write":
+            raise ValueError(f"case {i}: network is true or false, and true needs sandbox = \"workspace-write\"")
         if case.fixture:
             try:
                 check_fixture(skill, case.fixture)
@@ -257,6 +260,7 @@ def live(skill: Path, case: Case, bin_path: Path, home: Path, profile: str) -> t
         except (OSError, subprocess.CalledProcessError) as e:
             return [f"could not create the case's commits: {e}"], Run()
         cmd = [*probe.command(bin_path), "exec", "--json", "--profile", profile, "--sandbox", case.sandbox,
+               *(["-c", "sandbox_workspace_write.network_access=true"] if case.network else []),
                "-c", 'approvals_reviewer="user"', "--skip-git-repo-check", "-C", str(work), "-"]
         try:
             r = subprocess.run(cmd, input=case.prompt, capture_output=True, text=True, encoding="utf-8", errors="replace",

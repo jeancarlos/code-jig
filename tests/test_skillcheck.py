@@ -67,7 +67,8 @@ class Static(unittest.TestCase):
                      "[[case]]\nprompt = 'x'\nfixture = '../../etc'\n", "[[case]]\nprompt = 'x'\nsetup = ['touch pwned']\n",
                      "[[case]]\nprompt = 'x'\ncommits = ['not a table']\n", "[[case]]\nprompt = 'x'\nspawns = '2'\n",
                      "[[case]]\nprompt = 'x'\ncommands = [1]\n", "[[case]]\nprompt = 'x'\noutput = [1]\n",
-                     "[[case]]\nprompt = 'x'\nread_skill = 'no'\n"):
+                     "[[case]]\nprompt = 'x'\nread_skill = 'no'\n", "[[case]]\nprompt = 'x'\nnetwork = true\n",
+                     "[[case]]\nprompt = 'x'\nsandbox = 'workspace-write'\nnetwork = 'yes'\n"):
             write(d / "evals.toml", text)
             with self.subTest(text=text):
                 self.assertIn("FAIL", [lv for lv, _ in skillcheck.static(d)])
@@ -165,6 +166,21 @@ class Inputs(unittest.TestCase):
         self.assertEqual(seen["cmd"][-1], "-")
         self.assertNotIn(case.prompt, seen["cmd"])
         self.assertEqual(seen["input"], case.prompt)
+
+    def test_network_is_granted_only_when_the_case_asks(self):
+        root = tree(self)
+        skill = write(root / "demo" / "SKILL.md", SKILL).parent
+        cmds = []
+
+        def fake_run(cmd, **kw):
+            cmds.append(cmd)
+            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+        with mock.patch.object(skillcheck.subprocess, "run", side_effect=fake_run):
+            skillcheck.live(skill, skillcheck.Case(prompt="p"), Path("codex"), root, "default")
+            skillcheck.live(skill, skillcheck.Case(prompt="p", sandbox="workspace-write", network=True), Path("codex"), root, "default")
+        grant = "sandbox_workspace_write.network_access=true"
+        self.assertNotIn(grant, cmds[-2])
+        self.assertIn(grant, cmds[-1])
 
     def test_commits_are_built_without_a_shell_and_keep_their_trailers(self):
         work = tree(self)

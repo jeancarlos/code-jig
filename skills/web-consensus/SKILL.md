@@ -28,18 +28,18 @@ This skill asks for subagents: every role in the table runs through `spawn_agent
 
    Vary the wording of the searches between angles. The same index returns very different results for differently worded questions.
 
-2. **Check.** `harness check-sources "evidence-*.jsonl"` (the command expands the pattern itself, so the same line works in PowerShell). It fetches each URL once and reports per claim: `ok` (the page contains the quote), `quote-missing`, `dead`, `blocked` (401/403/429: usually bot-blocking, not absence), `unreadable` (PDF or binary: quote unverified). It needs the network, so in a sandbox it must run with escalation; one run covers every file.
+2. **Check.** `harness check-sources "evidence-*.jsonl"` (the command expands the pattern itself, so the same line works in PowerShell). It fetches each URL once and reports per claim: `ok` (the page contains the quote), `quote-missing`, `dead`, `blocked` (401/403/429: usually bot-blocking, not absence), `unreadable` (PDF or binary: quote unverified). It needs the network: in a sandbox, ask for escalation on the first run, not after a refusal. When the workspace is read-only, pipe the lines in and pass `-` as the file (`printf '%s\n' "$line1" "$line2" | harness check-sources -`, in PowerShell `$lines | harness check-sources -`), and hand the evidence to the later roles inline in their briefs. One run covers every file. When it runs, the final reply quotes its summary line (`N claims: ...`) exactly as printed. If it still cannot run, nothing is checked: say so, the verdict's first line is `UNVERIFIED:` and no claim is agreed.
 
 3. **Challenge.** A `reviewer` reads the evidence files and the check report, and is told not to search. It rules on every claim with one line each, `OK`, `DOUBT` or `MISMATCH`, then lists the questions that would settle each dispute.
 
 4. **Cold verification.** For each of those questions, a fresh `explorer` gets only the question: no evidence and no challenge. Write its triples to `evidence-cold.jsonl` and run the check on it. When the challenge lists no disputes, skip this step and say so in the report; there is then only the first check report.
 
-5. **Verdict.** A `judge` gets the question, every evidence file, every check report (one, or two after cold verification) and the challenge. It answers in a short paragraph, then lists agreed, disputed and unsourced claims with URL and quote, its confidence, and what new evidence would change the answer. Relay the verdict; do not rewrite it.
+5. **Verdict.** A `judge` gets the question, every evidence file, every check report (one, or two after cold verification) and the challenge. It answers in a short paragraph, then lists agreed, disputed and unsourced claims with URL and quote, its confidence, and what new evidence would change the answer. Relay the verdict; do not rewrite it, and never add that sources are independent.
 
 ## Rules
 
 - A claim can only be agreed when `check-sources` says `ok`, or `unreadable` with the quote confirmed by a second source.
-- The searcher never dictates the answer alone. Say how many independent evidence sets agree.
+- The searcher never dictates the answer alone. Evidence files from the same search are not independent sources; say how many distinct sites agree.
 - Prefer primary sources over secondary ones, and recent over old when the subject moves.
 - When results look stale, ask the user to start the session with live search (`codex -c web_search="live"`).
 - If web search is not available in this session, say so and stop. Do not answer from memory.

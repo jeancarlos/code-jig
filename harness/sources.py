@@ -1,3 +1,4 @@
+import contextlib
 import http.client
 import ipaddress
 import errno
@@ -19,8 +20,6 @@ USER_AGENT = "Mozilla/5.0 (compatible; codex-harness check-sources)"
 BLOCKED = {401, 403, 429, 451}
 SKIP_TAGS = {"script", "style", "noscript", "template"}
 TEXT_TYPES = ("text/", "application/xhtml", "application/xml", "application/json")
-FOLD = str.maketrans({"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"', "\u2013": "-", "\u2014": "-",
-                      "\u00a0": " ", "\u202f": " "})
 FAILING = {"dead", "quote-missing", "bad-url", "no-quote", "malformed"}
 
 
@@ -53,7 +52,7 @@ class _Text(HTMLParser):
 
 
 def normalize(text: str) -> str:
-    return " ".join(text.translate(FOLD).casefold().split())
+    return " ".join(re.sub(r"[\W_]+", " ", text.casefold()).split())
 
 
 def page_text(body: bytes, ctype: str) -> str:
@@ -186,7 +185,7 @@ def expand(patterns: list[str]) -> list[str]:
 def load(files: list[str]) -> list[Claim]:
     claims = []
     for name in expand(files):
-        with open(name, encoding="utf-8-sig") as f:
+        with contextlib.nullcontext(sys.stdin) if name == "-" else open(name, encoding="utf-8-sig") as f:
             for n, line in enumerate(f, 1):
                 if not line.strip():
                     continue

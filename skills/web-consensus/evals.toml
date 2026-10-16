@@ -2,4 +2,6 @@
 prompt = "Research with sources, not from memory: in which Python version was the tomllib module added to the standard library?"
 commands = ["check-sources"]
 spawns = 2
-output = ["3\\.11"]
+sandbox = "workspace-write"
+network = true
+output = ["3\\.11", "\\d+ claims: \\d+ ok"]

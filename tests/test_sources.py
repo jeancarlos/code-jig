@@ -17,6 +17,7 @@ PAGES = {
              ("<html><head><script>var hidden = 'not text';</script><style>p{}</style></head>"
               "<body><p>The default limit is <b>32&nbsp;KiB</b> and Codex \u201cstops adding\u201d files.</p></body></html>")),
     "/plain": (200, "text/plain", "line one\nline   two"),
+    "/pep": (200, "text/html", "<dl><dt>Python-Version</dt><dd>: 3.11</dd></dl><p>The <code>tomllib</code> module parses TOML.</p>"),
     "/blocked": (403, "text/html", "no"),
     "/gone": (404, "text/html", "missing"),
     "/pdf": (200, "application/pdf", "%PDF-1.7"),
@@ -114,6 +115,19 @@ class Sources(unittest.TestCase):
     def test_quote_found_through_markup_entities_and_curly_quotes(self):
         rows = [{"claim": "c", "url": f"{self.base}/doc", "quote": 'default limit is 32 KiB and Codex "stops adding" files'}]
         self.assertEqual(self.verdicts(rows), ["ok"])
+
+    def test_quote_found_across_tag_spacing_and_copied_backticks(self):
+        rows = [{"claim": "c", "url": f"{self.base}/pep", "quote": "Python-Version: 3.11"},
+                {"claim": "c", "url": f"{self.base}/pep", "quote": "The `tomllib` module parses TOML."},
+                {"claim": "c", "url": f"{self.base}/pep", "quote": "Python-Version: 3.12"}]
+        self.assertEqual(self.verdicts(rows), ["ok", "ok", "quote-missing"])
+
+    def test_evidence_can_come_from_stdin(self):
+        row = json.dumps({"claim": "c", "url": f"{self.base}/doc", "quote": "default limit"})
+        with mock.patch.object(sources.sys, "stdin", io.StringIO(row + "\n")):
+            code, out = self.run_cli("-")
+        self.assertEqual(code, 0)
+        self.assertIn("-:1", out)
 
     def test_script_text_is_not_page_text(self):
         self.assertEqual(self.verdicts([{"claim": "c", "url": f"{self.base}/doc", "quote": "not text"}]), ["quote-missing"])
