@@ -154,7 +154,7 @@ def _bundle(repo: Path, gitdir: Path, revs: tuple[str, ...], label: str = "") ->
 
 
 def common_dir(repo: Path) -> Path:
-    return Path(_git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir").decode().strip())
+    return (Path(repo) / _git(repo, "rev-parse", "--git-common-dir").decode().strip()).resolve()
 
 
 def range_revs(branch_ref: str, base: str | None) -> tuple[str, ...]:
@@ -162,8 +162,14 @@ def range_revs(branch_ref: str, base: str | None) -> tuple[str, ...]:
 
 
 def blocker(repo: Path, revs: tuple[str, ...], emails: set[str]) -> str | None:
-    for sha in _git(repo, "rev-list", *revs).decode().split():
-        head = _git(repo, "cat-file", "commit", sha).partition(b"\n\n")[0].split(b"\n")
+    shas = _git(repo, "rev-list", *revs).decode().split()
+    batch = _git(repo, "cat-file", "--batch", stdin="".join(f"{sha}\n" for sha in shas).encode()) if shas else b""
+    pos = 0
+    for sha in shas:
+        nl = batch.index(b"\n", pos)
+        size = int(batch[pos:nl].split()[2])
+        head = batch[nl + 1:nl + 1 + size].partition(b"\n\n")[0].split(b"\n")
+        pos = nl + 2 + size
         if any(h.startswith(SIGNATURE) for h in head):
             return f"{sha[:10]} is signed"
         author = next((EMAIL.search(h) for h in head if h.startswith(b"author ")), None)
@@ -219,12 +225,12 @@ def _report(repo: Path, before: dict[str, str]) -> list[str]:
 
 def cli(args) -> int:
     repo = Path(args.path).resolve()
-    r = subprocess.run(["git", "-C", str(repo), "rev-parse", "--path-format=absolute", "--git-common-dir"], capture_output=True, text=True,
+    r = subprocess.run(["git", "-C", str(repo), "rev-parse", "--git-common-dir"], capture_output=True, text=True,
                        encoding="utf-8")
     if r.returncode:
         print(f"code-jig: {repo} is not a git repository", file=sys.stderr)
         return 2
-    gitdir = Path(r.stdout.strip())
+    gitdir = (repo / r.stdout.strip()).resolve()
     emails = my_emails(repo, args.author)
     if not emails:
         print("code-jig: set git config user.email or codejig.email, or pass --author EMAIL", file=sys.stderr)

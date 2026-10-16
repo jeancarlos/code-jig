@@ -199,12 +199,29 @@ class RewriteRange(unittest.TestCase):
         self.assertEqual(git(self.repo, "rev-parse", "main"), tip)
         self.assertEqual(scrub.rewrite_range(self.repo, "refs/heads/main", self.one, {ME, OTHER})[0], 2)
 
+    def test_blocker_reads_the_range_in_one_batch(self):
+        from unittest import mock
+        with mock.patch.object(scrub, "_git", wraps=scrub._git) as calls:
+            self.assertIsNone(scrub.blocker(self.repo, scrub.range_revs("refs/heads/main", None), {ME}))
+        self.assertLessEqual(calls.call_count, 2)
+        commit(self.repo, "five\n", OTHER, {"d.txt": "5\n"}, 1_700_000_400)
+        self.assertIn("someone else", scrub.blocker(self.repo, scrub.range_revs("refs/heads/main", self.one), {ME}))
+
+    def test_common_dir_from_a_subdirectory_without_path_format(self):
+        sub = self.repo / "deep" / "er"
+        sub.mkdir(parents=True)
+        from unittest import mock
+        with mock.patch.object(scrub, "_git", wraps=scrub._git) as calls:
+            found = scrub.common_dir(sub)
+        self.assertEqual(found, Path(git(self.repo, "rev-parse", "--absolute-git-dir")).resolve())
+        self.assertFalse(any("--path-format=absolute" in c.args for c in calls.call_args_list))
+
     def test_backups_go_to_the_common_git_dir_from_a_linked_worktree(self):
         git(self.repo, "branch", "side")
         wt = self.repo.parent / "wt"
         git(self.repo, "worktree", "add", "-q", str(wt), "side")
         _, bundle = scrub.rewrite_range(wt, "refs/heads/side", self.one, {ME})
-        self.assertEqual(bundle.parent, Path(git(self.repo, "rev-parse", "--absolute-git-dir")))
+        self.assertEqual(bundle.parent, Path(git(self.repo, "rev-parse", "--absolute-git-dir")).resolve())
         git(self.repo, "worktree", "remove", str(wt))
         self.assertTrue(bundle.is_file())
 

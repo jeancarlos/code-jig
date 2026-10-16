@@ -132,13 +132,19 @@ def _base(remote: str) -> str | None:
     return remote if _known(remote) else None
 
 
+def _read(path: Path) -> str:
+    return path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+
+
 def _rebasing(ref: str) -> bool:
     common = common_dir(Path.cwd())
     for gitdir in [common, *common.glob("worktrees/*")]:
-        for kind in ("rebase-merge", "rebase-apply"):
-            head = gitdir / kind / "head-name"
-            if head.is_file() and head.read_text(encoding="utf-8", errors="replace").strip() == ref:
-                return True
+        merge, apply = gitdir / "rebase-merge", gitdir / "rebase-apply"
+        busy = [_read(merge / "head-name"), _read(apply / "head-name"), *_read(merge / "update-refs").splitlines()]
+        if (apply / "applying").exists():
+            busy.append(_read(gitdir / "HEAD").strip().removeprefix("ref: "))
+        if ref in (b.strip() for b in busy):
+            return True
     return False
 
 

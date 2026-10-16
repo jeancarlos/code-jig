@@ -297,6 +297,30 @@ class PushCleanup(unittest.TestCase):
         write(wt_gitdir / "rebase-apply" / "head-name", "refs/heads/main\n")
         self.assert_refused(tip)
 
+    def test_a_branch_moved_by_a_stopped_update_refs_rebase_keeps_the_refusal(self):
+        topic = commit(self.repo, f"topic\n\n{CODEX}\n", ME, {"b": "1\n"}, 1_700_000_100)
+        git(self.repo, "branch", "topic")
+        commit(self.repo, "feature\n", ME, {"f": "1\n"}, 1_700_000_200)
+        git(self.repo, "branch", "feature")
+        git(self.repo, "reset", "-q", "--hard", self.base)
+        wt = self.repo.parent / "wt"
+        git(self.repo, "worktree", "add", "-q", str(wt), "feature")
+        editor = write(self.repo.parent / "edit.py", "import sys, pathlib\n"
+                       "p = pathlib.Path(sys.argv[1])\n"
+                       "p.write_text(p.read_text().replace('pick', 'edit', 1))\n")
+        git(wt, "rebase", "-q", "-i", "--update-refs", self.base,
+            env={"GIT_SEQUENCE_EDITOR": f'"{Path(sys.executable).as_posix()}" "{editor.as_posix()}"'})
+        self.assertTrue(list(Path(git(wt, "rev-parse", "--absolute-git-dir")).glob("rebase-merge/update-refs")))
+        code, err = in_repo(self.repo, gitgate.pre_push, [f"refs/heads/topic {topic} refs/heads/topic {self.base}"], True)
+        self.assertEqual(code, 1)
+        self.assertNotIn("cleaned", err)
+        self.assertEqual(git(self.repo, "rev-parse", "topic"), topic)
+
+    def test_a_git_am_in_progress_keeps_the_refusal_for_the_checked_out_branch(self):
+        tip = commit(self.repo, f"mine\n\n{CODEX}\n", ME, {"b": "1\n"}, 1_700_000_100)
+        write(Path(git(self.repo, "rev-parse", "--absolute-git-dir")) / "rebase-apply" / "applying", "")
+        self.assert_refused(tip)
+
     def two_branches(self):
         main = commit(self.repo, f"mine\n\n{CODEX}\n", ME, {"b": "1\n"}, 1_700_000_100)
         git(self.repo, "checkout", "-q", "-b", "feature/x", self.base)
