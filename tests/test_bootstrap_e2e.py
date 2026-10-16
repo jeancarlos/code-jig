@@ -101,6 +101,7 @@ class EndToEnd(unittest.TestCase):
     def test_install_failure_keeps_the_old_launcher(self):
         self.assertEqual(self.run_bootstrap("--version", TAG).returncode, 0)
         launcher = bootstrap.launcher_path(self.dirs["bins"])
+        launcher.write_text(bootstrap.MARK + "old\n", encoding="utf-8")
         before = launcher.read_bytes()
         write(self.dirs["overlay"] / "profiles.toml", "not = [valid\n")
         done = self.run_bootstrap()
