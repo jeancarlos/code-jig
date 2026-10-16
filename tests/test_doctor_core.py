@@ -140,6 +140,12 @@ class Release(unittest.TestCase):
         git(self.core.parent, "init", "-q")
         self.assertEqual(self.levels(Overlay(self.core, "v0.1.0", False)), {"core pin": "ok", "core clean": "ok"})
 
+    def test_unreadable_version_fails(self):
+        with mock.patch("pathlib.Path.read_text", side_effect=PermissionError("denied")):
+            out = check_core(self.core, Overlay(self.core, "v0.1.0", False))
+        self.assertEqual(out[0][0], "FAIL")
+        self.assertIn("cannot read VERSION", out[0][2])
+
     def test_garbled_version_file_fails_readonly(self):
         write(self.core / "VERSION", "nonsense")
         levels = self.levels(Overlay(self.core, "v0.1.0", False))

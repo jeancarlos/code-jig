@@ -10,9 +10,8 @@ Linux and macOS:
 Windows (PowerShell):
   irm https://setup-harness.jeansouza.dev/bootstrap.py | py -3 -I - --overlay <path|git-url>
 
-Download, check and run:
+Download, read and run:
   ${RELEASES}/latest/download/bootstrap.py
-  ${RELEASES}/latest/download/SHA256SUMS
   python3 -I bootstrap.py --overlay <path|git-url>
 
 This site counts requests for bootstrap.py and release zips: event, version, client type, country.

@@ -1,6 +1,7 @@
 import contextlib
 import io
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -80,3 +81,7 @@ class PathHint(unittest.TestCase):
         with mock.patch.dict(os.environ, {"PATH": ""}), contextlib.redirect_stdout(out):
             bootstrap.path_hint(bins)
         self.assertIn("not on PATH", out.getvalue())
+        if os.name == "nt":
+            self.assertIn("SetEnvironmentVariable", out.getvalue())
+        else:
+            self.assertIn(f"export PATH={shlex.quote(str(bins))}:$PATH", out.getvalue())

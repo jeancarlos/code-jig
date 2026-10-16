@@ -55,6 +55,9 @@ class Names(unittest.TestCase):
             with self.subTest(name=name):
                 self.refused(name)
 
+    def test_pycache_refused(self):
+        self.refused("harness/__pycache__/x.pyc")
+
     def test_case_collision_refused(self):
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
@@ -129,6 +132,10 @@ class Unpack(unittest.TestCase):
 
 
 class Tags(unittest.TestCase):
+    def test_non_ascii_digits_refused(self):
+        with self.assertRaises(bootstrap.Refused):
+            bootstrap.valid_tag("v\u0661.\u0662.\u0663")
+
     def test_grammar(self):
         self.assertEqual(bootstrap.valid_tag("v0.11.0"), "v0.11.0")
         for bad in ("0.11.0", "v0.11", "v0.11.0.evil", "v0.11.0-rc1", "latest", "", None):

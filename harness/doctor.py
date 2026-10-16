@@ -272,7 +272,10 @@ def _git(core: Path, *args: str) -> subprocess.CompletedProcess | None:
 
 def check_release(core: Path, ov: Overlay) -> list[Check]:
     strict = "FAIL" if not ov.core_writable else "warn"
-    words = (core / "VERSION").read_text(encoding="utf-8", errors="replace").split()
+    try:
+        words = (core / "VERSION").read_text(encoding="utf-8", errors="replace").split()
+    except OSError as e:
+        return [("FAIL", "core pin", f"cannot read VERSION: {e}")]
     tag, digest = (words + ["", ""])[:2]
     pin = ("ok", "core pin", tag) if tag == ov.core_version else (
         strict, "core pin", f"core is release {tag or 'unknown'}, overlay pins {ov.core_version}")

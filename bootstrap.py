@@ -19,7 +19,7 @@ BASE_URL = "https://setup-harness.jeansouza.dev"
 REPO = "jeancarlos/codex-harness"
 ZIP = "codex-harness.zip"
 SUMS = "SHA256SUMS"
-TAG = re.compile(r"v\d+\.\d+\.\d+")
+TAG = re.compile(r"v\d+\.\d+\.\d+", re.ASCII)
 TIMEOUT = 30
 MAX_ZIP = 50 * 1024 * 1024
 MAX_SUMS = 64 * 1024
@@ -73,6 +73,8 @@ def check_names(zf):
         parts = name[:-1].split("/") if name.endswith("/") else name.split("/")
         if not name or "\\" in name or ":" in name or name.startswith("/") or any(p in ("", ".", "..") for p in parts):
             raise Refused(f"unsafe archive entry {name!r}")
+        if "__pycache__" in parts:
+            raise Refused(f"archive entry {name!r} is undigested bytecode")
         if any(p.split(".")[0].lower() in RESERVED or p != p.rstrip(". ") for p in parts):
             raise Refused(f"archive entry {name!r} is not a portable Windows name")
         mode = info.external_attr >> 16
@@ -223,7 +225,7 @@ CLONE_CONFIG = ["-c", "protocol.ext.allow=never", "-c", "protocol.file.allow=nev
 
 def classify(value):
     if value.startswith("-"):
-        raise Refused(f"overlay {value!r} looks like an option")
+        raise Refused("the overlay looks like an option")
     parts = urllib.parse.urlsplit(value)
     if parts.scheme in ("https", "ssh"):
         if parts.password or (parts.scheme == "https" and parts.username):
@@ -231,8 +233,10 @@ def classify(value):
         return "git"
     if SCP.fullmatch(value):
         return "git"
-    if "::" in value or "://" in value:
-        raise Refused(f"unsupported overlay URL {value!r}; use https://, ssh:// or user@host:path")
+    if "::" in value:
+        raise Refused("transport helpers are not allowed in the overlay; use https://, ssh:// or user@host:path")
+    if "://" in value:
+        raise Refused(f"unsupported overlay URL scheme {parts.scheme!r}; use https://, ssh:// or user@host:path")
     return "path"
 
 
@@ -376,7 +380,11 @@ def path_hint(bin_dir):
     want = os.path.normcase(os.path.abspath(bin_dir))
     dirs = [os.path.normcase(os.path.abspath(p)) for p in os.environ.get("PATH", "").split(os.pathsep) if p]
     if want not in dirs:
-        print(f"bootstrap: {bin_dir} is not on PATH; add it to run harness by name")
+        print(f"bootstrap: {bin_dir} is not on PATH; to run harness by name, add this line to your shell profile:")
+        if os.name == "nt":
+            print(f'[Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";{bin_dir}", "User")')
+        else:
+            print(f"export PATH={shlex.quote(str(bin_dir))}:$PATH")
 
 
 def parse_args(argv):
@@ -454,6 +462,9 @@ def run(args):
 
 
 def main(argv=None):
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
     print("codex-harness bootstrap", flush=True)
     if sys.version_info < (3, 11):
         print("bootstrap: Python 3.11 or newer is required", file=sys.stderr)

@@ -35,6 +35,12 @@ class Classify(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(bootstrap.Refused):
                 bootstrap.classify(bad)
 
+    def test_refusal_never_echoes_the_value(self):
+        for bad in ("http://alice:ghp_SECRET@github.com/o/r", "ext::sh -c ghp_SECRET", "--ghp_SECRET"):
+            with self.subTest(bad=bad), self.assertRaises(bootstrap.Refused) as ctx:
+                bootstrap.classify(bad)
+            self.assertNotIn("ghp_SECRET", str(ctx.exception))
+
 
 class Clone(unittest.TestCase):
     def setUp(self):
