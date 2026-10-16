@@ -5,17 +5,24 @@ import os
 import shutil
 import subprocess
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
-from harness import collect, evidence
-from harness.analyze import Finding
-from harness.evidence import Commit, group_stats, in_window, is_test, parse_log, reworked
+from codejig import collect, evidence
+from codejig.analyze import Finding
+from codejig.evidence import (
+    Commit,
+    group_stats,
+    in_window,
+    is_test,
+    parse_log,
+    reworked,
+)
 from tests.test_collect import home_with
 from tests.util import tree, write
 
-T0 = datetime(2026, 3, 1, 10, 0, tzinfo=timezone.utc)
+T0 = datetime(2026, 3, 1, 10, 0, tzinfo=UTC)
 
 
 def c(sha, days, subject="change", body="", hunks=None):
@@ -51,7 +58,7 @@ class ParseLog(unittest.TestCase):
         a, b = parse_log(text)
         self.assertEqual((a.sha, a.subject, a.body.strip()), ("aaa", "add", "body line"))
         self.assertEqual(a.hunks, {"x.py": [(1, 0, 1, 3), (9, 1, 12, 1)]})
-        self.assertEqual(b.when, datetime(2026, 3, 2, 13, 0, tzinfo=timezone.utc))
+        self.assertEqual(b.when, datetime(2026, 3, 2, 13, 0, tzinfo=UTC))
         self.assertEqual(b.hunks, {})
 
     def test_parse_log_binary_and_deleted_files(self):
@@ -169,7 +176,7 @@ class GitRepos(unittest.TestCase):
         con = db(self, sessions=[("s1", "main", None, "2026-03-01T10:00:00Z", str(root / "sub"))],
                  usage=[("s1", "r1", "2026-03-01T11:00:00Z", 100, 50, 10)])
         now = T0 + timedelta(days=200)
-        data = evidence.report(con, datetime(2025, 12, 1, tzinfo=timezone.utc), now)
+        data = evidence.report(con, datetime(2025, 12, 1, tzinfo=UTC), now)
         [repo] = data["repos"]
         self.assertEqual(Path(repo["root"]), root.resolve())
         self.assertEqual((repo["harness"]["commits"], repo["baseline"]["commits"]), (2, 2))
@@ -179,13 +186,13 @@ class GitRepos(unittest.TestCase):
         commit(root, "a.py", "1\n", "2026-03-01T07:30:00-03:00")
         con = db(self, sessions=[("s1", "main", None, "2026-03-01T10:00:00Z", str(root))],
                  usage=[("s1", "r1", "2026-03-01T11:00:00Z", 1, 0, 1)])
-        data = evidence.report(con, datetime(2026, 2, 1, tzinfo=timezone.utc), T0 + timedelta(days=30))
+        data = evidence.report(con, datetime(2026, 2, 1, tzinfo=UTC), T0 + timedelta(days=30))
         self.assertEqual(data["repos"][0]["harness"]["commits"], 1)
 
     def test_non_ascii_paths_in_hunks(self):
         root = new_repo(self)
         commit(root, "dir with space/ação.py", "x = 1\n", "2026-03-01T10:00:00Z")
-        [c0] = evidence.git_log(root, datetime(2026, 1, 1, tzinfo=timezone.utc))
+        [c0] = evidence.git_log(root, datetime(2026, 1, 1, tzinfo=UTC))
         self.assertEqual(list(c0.hunks), ["dir with space/ação.py"])
 
     def test_rework_through_real_git(self):
@@ -194,7 +201,7 @@ class GitRepos(unittest.TestCase):
         commit(root, "a.py", "1\nTWO\n3\n", "2026-03-05T10:00:00Z", "tweak")
         commit(root, "b.py", "b\n", "2026-03-06T10:00:00Z", "add b")
         git(root, "revert", "--no-edit", "HEAD", date="2026-03-07T10:00:00Z")
-        every = evidence.git_log(root, datetime(2026, 1, 1, tzinfo=timezone.utc))
+        every = evidence.git_log(root, datetime(2026, 1, 1, tzinfo=UTC))
         by = {c0.subject: c0 for c0 in every}
         self.assertTrue(evidence.reworked(by["add a"], every))
         self.assertTrue(evidence.reworked(by["add b"], every))
@@ -206,7 +213,7 @@ class GitRepos(unittest.TestCase):
                                  ("plain", "main", None, "2026-03-01T10:00:00Z", str(tree(self))),
                                  ("empty", "main", None, "2026-03-01T10:00:00Z", str(empty)),
                                  ("none", "main", None, "2026-03-01T10:00:00Z", None)])
-        data = evidence.report(con, datetime(2026, 2, 1, tzinfo=timezone.utc), T0)
+        data = evidence.report(con, datetime(2026, 2, 1, tzinfo=UTC), T0)
         self.assertEqual(len(data["unreachable"]), 3)
         self.assertEqual(data["repos"][0]["harness"]["commits"], 0)
 
@@ -214,7 +221,7 @@ class GitRepos(unittest.TestCase):
         root = new_repo(self)
         commit(root, "a.py", "1\n", "2026-03-01T10:00:00Z")
         con = db(self)
-        data = evidence.report(con, datetime(2026, 2, 1, tzinfo=timezone.utc), T0, repo=root)
+        data = evidence.report(con, datetime(2026, 2, 1, tzinfo=UTC), T0, repo=root)
         self.assertEqual([r["baseline"]["commits"] for r in data["repos"]], [1])
 
 
@@ -236,7 +243,7 @@ class FromDatabase(unittest.TestCase):
     def test_sessions_span_children(self):
         sess = {s.id: s for s in evidence.sessions(self.con, self.since)}
         self.assertEqual(set(sess), {"s1", "s2"})
-        self.assertEqual(sess["s1"].end, datetime(2026, 3, 1, 10, 30, tzinfo=timezone.utc))
+        self.assertEqual(sess["s1"].end, datetime(2026, 3, 1, 10, 30, tzinfo=UTC))
 
     def test_discipline_counts_subagent_runs_for_the_owner(self):
         self.assertEqual(evidence.discipline(self.con, {"s1", "s2"}),
@@ -266,7 +273,7 @@ class FromDatabase(unittest.TestCase):
         for name in ("b", "a"):
             write(root / name / "SKILL.md", "x\n")
         (root / "not-a-skill").mkdir()
-        with mock.patch("harness.paths.agents_skills", return_value=root):
+        with mock.patch("codejig.paths.agents_skills", return_value=root):
             self.assertEqual(evidence.installed_skills(), ["a", "b"])
 
 
@@ -290,10 +297,10 @@ class Quality(unittest.TestCase):
         root = new_repo(self)
         write(root / "pyproject.toml", "[project]\nname='x'\n")
         commit(root, "a.py", "x = 1\n", "2026-03-01T10:00:00Z")
-        [c0] = evidence.git_log(root, datetime(2026, 1, 1, tzinfo=timezone.utc))
+        [c0] = evidence.git_log(root, datetime(2026, 1, 1, tzinfo=UTC))
         empty = tree(self)
         self.assertIsNone(evidence.analyze_commit(root, c0, path=str(empty)))
-        listed = subprocess.run(["git", "-C", str(root), "worktree", "list"], capture_output=True, text=True, encoding="utf-8").stdout
+        listed = subprocess.run(["git", "-C", str(root), "worktree", "list"], capture_output=True, text=True, encoding="utf-8", check=False).stdout
         self.assertEqual(len(listed.strip().splitlines()), 1)
 
     @unittest.skipIf(shutil.which("git") is None, "git not installed")
@@ -303,15 +310,15 @@ class Quality(unittest.TestCase):
         con = db(self, sessions=[("s1", "main", None, "2026-03-01T10:00:00Z", str(root))],
                  usage=[("s1", "r1", "2026-03-01T11:00:00Z", 1, 0, 1)])
         runner = lambda r, commit: [Finding("bug", "ruff", "B1", "a.py", 1, "m")]
-        data = evidence.report(con, datetime(2026, 2, 1, tzinfo=timezone.utc), T0 + timedelta(days=30), analyze_n=1, runner=runner)
+        data = evidence.report(con, datetime(2026, 2, 1, tzinfo=UTC), T0 + timedelta(days=30), analyze_n=1, runner=runner)
         self.assertEqual(data["repos"][0]["harness"]["quality"]["findings"], {"bug": 1})
         self.assertEqual(data["totals"]["harness"]["quality"]["findings"], {"bug": 1})
-        self.assertIsNone(evidence.report(con, datetime(2026, 2, 1, tzinfo=timezone.utc), T0)["repos"][0]["harness"]["quality"])
+        self.assertIsNone(evidence.report(con, datetime(2026, 2, 1, tzinfo=UTC), T0)["repos"][0]["harness"]["quality"])
 
 
 class Cli(unittest.TestCase):
     def run_cli(self, *argv):
-        from harness.__main__ import main
+        from codejig.__main__ import main
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = main(list(argv))
@@ -326,7 +333,7 @@ class Cli(unittest.TestCase):
         self.assertEqual(data["unreachable"], ["/w"])
         self.assertEqual(data["use"]["guardian"], {"allow": 1})
         self.assertEqual(data["use"]["skills"], {"bug-hunt": 1, "code-analysis": 1, "grilling": 1, "regression-tests": 1, "using-superpowers": 1})
-        self.assertTrue(collect.db_path(home).is_file())
+        self.assertTrue(collect.db_path().is_file())
 
     def test_text_report_marks_insufficient_and_caveat(self):
         home = home_with(tree(self), ["main"])
@@ -384,7 +391,7 @@ class ReviewFixesGit(unittest.TestCase):
         root = new_repo(self)
         commit(root, "fix.txt", "8=FIX\x019=12\n", "2026-03-01T10:00:00Z")
         commit(root, "b.txt", "b\n", "2026-03-02T10:00:00Z")
-        every = evidence.git_log(root, datetime(2026, 1, 1, tzinfo=timezone.utc))
+        every = evidence.git_log(root, datetime(2026, 1, 1, tzinfo=UTC))
         self.assertEqual(sorted(p for c0 in every for p in c0.hunks), ["b.txt", "fix.txt"])
 
     def test_noprefix_config_keeps_hunks(self):
@@ -392,7 +399,7 @@ class ReviewFixesGit(unittest.TestCase):
         commit(root, "a.py", "1\n", "2026-03-01T10:00:00Z")
         extra = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "diff.noprefix", "GIT_CONFIG_VALUE_0": "true"}
         with mock.patch.dict(os.environ, extra):
-            [c0] = evidence.git_log(root, datetime(2026, 1, 1, tzinfo=timezone.utc))
+            [c0] = evidence.git_log(root, datetime(2026, 1, 1, tzinfo=UTC))
         self.assertEqual(list(c0.hunks), ["a.py"])
 
     def test_rebased_session_commit_stays_harness(self):
@@ -403,5 +410,5 @@ class ReviewFixesGit(unittest.TestCase):
         subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", "rebased"], check=True, capture_output=True, env=env)
         con = db(self, sessions=[("s1", "main", None, "2026-03-01T10:00:00Z", str(root))],
                  usage=[("s1", "r1", "2026-03-01T11:00:00Z", 1, 0, 1)])
-        data = evidence.report(con, datetime(2026, 2, 1, tzinfo=timezone.utc), T0 + timedelta(days=30))
+        data = evidence.report(con, datetime(2026, 2, 1, tzinfo=UTC), T0 + timedelta(days=30))
         self.assertEqual((data["repos"][0]["harness"]["commits"], data["repos"][0]["baseline"]["commits"]), (1, 0))

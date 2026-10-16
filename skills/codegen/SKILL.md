@@ -43,4 +43,4 @@ Use the stack's own templates: `dotnet new <template>` (with `DOTNET_CLI_TELEMET
 
 ## After generating
 
-Then run the repository's own build and test commands (from its README, AGENTS.md or CI configuration) and `harness analyze --base main`, and report what changed, which generator or script made the change, and the build, test and analysis results.
+Then run the repository's own build and test commands (from its README, AGENTS.md or CI configuration) and `code-jig analyze --base main`, and report what changed, which generator or script made the change, and the build, test and analysis results.

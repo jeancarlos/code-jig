@@ -19,7 +19,7 @@ def http_error(url, code, location=None):
 
 class Allowed(unittest.TestCase):
     def test_schemes(self):
-        self.assertTrue(bootstrap.allowed("https://setup-harness.jeansouza.dev/x"))
+        self.assertTrue(bootstrap.allowed("https://code-jig.jeansouza.dev/x"))
         self.assertTrue(bootstrap.allowed("http://127.0.0.1:8765/x"))
         self.assertTrue(bootstrap.allowed("http://localhost/x"))
         for url in ("http://example.com/x", "file:///etc/passwd", "ftp://h/x", "http://127.0.0.1.evil.com/x"):
@@ -102,8 +102,8 @@ class Latest(unittest.TestCase):
 class Sums(unittest.TestCase):
     def test_parse(self):
         digest = "a" * 64
-        self.assertEqual(bootstrap.parse_sums(f"{digest}  codex-harness.zip\n".encode()), digest)
-        self.assertEqual(bootstrap.parse_sums(f"{digest} *codex-harness.zip\n".encode()), digest)
+        self.assertEqual(bootstrap.parse_sums(f"{digest}  code-jig.zip\n".encode()), digest)
+        self.assertEqual(bootstrap.parse_sums(f"{digest} *code-jig.zip\n".encode()), digest)
         with self.assertRaises(bootstrap.Refused):
             bootstrap.parse_sums(f"{digest}  other.zip\n".encode())
 
@@ -112,7 +112,7 @@ class GetCore(unittest.TestCase):
     def setUp(self):
         self.data = tree(self) / "data"
         self.blob = make_zip(FILES)
-        self.sums = f"{hashlib.sha256(self.blob).hexdigest()}  codex-harness.zip\n".encode()
+        self.sums = f"{hashlib.sha256(self.blob).hexdigest()}  code-jig.zip\n".encode()
 
     def serve(self, sums, blob):
         return mock.patch.object(bootstrap, "fetch_asset", side_effect=lambda tag, name, *a: sums if name == "SHA256SUMS" else blob)
@@ -125,7 +125,7 @@ class GetCore(unittest.TestCase):
         self.assertEqual(fa.call_count, 2)
 
     def test_checksum_mismatch_refused(self):
-        with self.serve(("0" * 64 + "  codex-harness.zip\n").encode(), self.blob), self.assertRaises(bootstrap.Refused):
+        with self.serve(("0" * 64 + "  code-jig.zip\n").encode(), self.blob), self.assertRaises(bootstrap.Refused):
             bootstrap.get_core(TAG, self.data, "https://w", "o/r")
         self.assertFalse((self.data / TAG).exists())
 

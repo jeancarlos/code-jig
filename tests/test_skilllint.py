@@ -3,7 +3,7 @@ import io
 import types
 import unittest
 
-from harness import paths, skilllint
+from codejig import paths, skilllint
 from tests.util import tree, write
 
 GOOD = "---\nname: demo\ndescription: Use when the user asks for a demo.\n---\n\n# Demo\n\nDo it.\n\n## Common mistakes\n\nNone.\n"

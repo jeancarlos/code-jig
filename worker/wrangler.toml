@@ -1,12 +1,12 @@
-name = "setup-harness"
+name = "code-jig"
 main = "index.mjs"
 compatibility_date = "2026-09-01"
 workers_dev = false
-routes = [{ pattern = "setup-harness.jeansouza.dev", custom_domain = true }]
+routes = [{ pattern = "code-jig.jeansouza.dev", custom_domain = true }]
 
 [[analytics_engine_datasets]]
 binding = "INSTALLS"
-dataset = "codex_harness_installs"
+dataset = "code_jig_installs"
 
 [observability]
 enabled = false

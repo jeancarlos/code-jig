@@ -1,6 +1,6 @@
 ---
 name: improve
-description: Use when the user asks to improve the harness, its rules, Guardian policy, skills or knowledge from experience on this machine, or says "remember this for next time", "make this a rule", "teach the harness".
+description: Use when the user asks to improve code-jig, its rules, Guardian policy, skills or knowledge from experience on this machine, or says "remember this for next time", "make this a rule", "teach code-jig", "teach the harness".
 ---
 
 # Improve
@@ -9,8 +9,8 @@ Turn something learned into a durable change, in the right place, without leakin
 
 ## Start
 
-1. Run `harness doctor` and fix any FAIL first.
-2. Read `overlay.toml` in the overlay (`$CODEX_HARNESS_OVERLAY`, in PowerShell `$env:CODEX_HARNESS_OVERLAY`, or the path the user gives). `core_writable` decides where you may write.
+1. Run `code-jig doctor` and fix any FAIL first.
+2. Read `overlay.toml` in the overlay (`$CODE_JIG_OVERLAY`, in PowerShell `$env:CODE_JIG_OVERLAY`, or the path the user gives). `core_writable` decides where you may write.
 
 ## Where changes go
 
@@ -33,6 +33,6 @@ With `core_writable = false`, write only to these overlay slots. Never edit the 
 
 ## Finish
 
-1. Run `harness install`, then `harness doctor`.
+1. Run `code-jig install`, then `code-jig doctor`.
 2. Summarise what changed and where.
 3. End with **Upstream candidates**: improvements that would help anyone, written in generic language. Leave out company and product names, hosts, people, numbers measured at work, and code copied from work. The user decides whether to restate them on another machine. Nothing is copied across.

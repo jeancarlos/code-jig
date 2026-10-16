@@ -4,7 +4,7 @@ import sqlite3
 import unittest
 from pathlib import Path
 
-from harness import collect
+from codejig import collect
 from tests.util import tree, write
 
 FIX = Path(__file__).parent / "fixtures" / "rollouts"
@@ -27,7 +27,7 @@ class Scan(unittest.TestCase):
     def setUp(self):
         self.root = tree(self)
         self.home = home_with(self.root, ["main", "guardian", "subagent", "legacy", "bad"])
-        self.con = collect.connect(collect.db_path(self.home))
+        self.con = collect.connect(collect.db_path())
         self.addCleanup(self.con.close)
 
     def test_records_win_over_token_count(self):
@@ -77,7 +77,7 @@ class Scan(unittest.TestCase):
         f = home / "sessions" / "rollout-x.jsonl"
         lines = (FIX / "subagent.jsonl").read_text(encoding="utf-8").splitlines(keepends=True)
         write(f, lines[0] + lines[1] + lines[2].rstrip("\n")[:40])
-        con = collect.connect(collect.db_path(home))
+        con = collect.connect(home / "usage.sqlite3")
         self.addCleanup(con.close)
         collect.scan(con, home)
         self.assertEqual(totals(con, "sub-1"), (None, None, None))
@@ -90,7 +90,7 @@ class Scan(unittest.TestCase):
         f = home / "sessions" / "rollout-y.jsonl"
         lines = (FIX / "main.jsonl").read_text(encoding="utf-8").splitlines(keepends=True)
         write(f, "".join(lines[:5]))
-        con = collect.connect(collect.db_path(home))
+        con = collect.connect(home / "usage.sqlite3")
         self.addCleanup(con.close)
         collect.scan(con, home)
         write(f, "".join(lines))
@@ -113,7 +113,7 @@ class Robustness(unittest.TestCase):
 
     def scan(self, names):
         home = home_with(self.root / names[0], names)
-        con = collect.connect(collect.db_path(home))
+        con = collect.connect(collect.db_path())
         self.addCleanup(con.close)
         return con, collect.scan(con, home)
 
@@ -134,7 +134,7 @@ class Tools(unittest.TestCase):
     def setUp(self):
         self.root = tree(self)
         self.home = home_with(self.root, ["tools", "guardian", "main"])
-        self.con = collect.connect(collect.db_path(self.home))
+        self.con = collect.connect(collect.db_path())
         self.addCleanup(self.con.close)
         collect.scan(self.con, self.home)
 
@@ -159,7 +159,7 @@ class Tools(unittest.TestCase):
         f = home / "sessions" / "rollout-late.jsonl"
         lines = (FIX / "tools.jsonl").read_text(encoding="utf-8").splitlines(keepends=True)
         write(f, "".join(lines[:6]))
-        con = collect.connect(collect.db_path(home))
+        con = collect.connect(home / "usage.sqlite3")
         self.addCleanup(con.close)
         collect.scan(con, home)
         self.assertIsNone(con.execute("SELECT exit_code FROM call_view WHERE call_id='k2'").fetchone()[0])

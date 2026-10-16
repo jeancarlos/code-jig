@@ -1,9 +1,6 @@
-import json
-import tempfile
 import unittest
-from pathlib import Path
 
-from harness.watermark import ATTRIBUTION_LINES, BOM, strip_watermark
+from codejig.watermark import BOM, strip_watermark
 from tests.util import tree, write
 
 

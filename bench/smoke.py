@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from harness import collect, paths
+from codejig import collect, paths
 
 CASES = {
     "routine": "Run `git status --short` and reply with its output.",
@@ -71,7 +71,7 @@ def main() -> int:
         for run in range(1, args.runs + 1):
             for case, prompt in CASES.items():
                 sessions.append((case, run, run_case(args.codex_bin, repo, home, args.profile, args.overrides, prompt)))
-        con = collect.connect(collect.db_path(home))
+        con = collect.connect(collect.db_path())
         try:
             collect.scan(con, home)
             for case, run, session in sessions:

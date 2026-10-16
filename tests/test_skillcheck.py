@@ -7,11 +7,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from harness import install, paths, probe, skillcheck
+from codejig import install, paths, probe, skillcheck
 from tests.util import tree, write
 
-SKILL = "---\nname: demo\ndescription: Use when the user asks for a demo.\n---\n\n# Demo\n\nRun `harness doctor`.\n\n## Common mistakes\n\nNone.\n"
-EVALS = '[[case]]\nprompt = "show me a demo"\ncommands = ["harness doctor"]\noutput = ["(?i)done"]\n'
+SKILL = "---\nname: demo\ndescription: Use when the user asks for a demo.\n---\n\n# Demo\n\nRun `code-jig doctor`.\n\n## Common mistakes\n\nNone.\n"
+EVALS = '[[case]]\nprompt = "show me a demo"\ncommands = ["code-jig doctor"]\noutput = ["(?i)done"]\n'
 
 FAKE = r'''
 import json, os, sys
@@ -28,7 +28,7 @@ if mode == "good":
     events.append({"type": "item.completed", "item": {"id": "1", "type": "command_execution",
                    "command": "/bin/bash -lc 'cat ~/.agents/skills/demo/SKILL.md'", "aggregated_output": "", "exit_code": 0, "status": "completed"}})
     events.append({"type": "item.completed", "item": {"id": "2", "type": "command_execution",
-                   "command": "/bin/bash -lc 'harness doctor'", "aggregated_output": "", "exit_code": 0, "status": "completed"}})
+                   "command": "/bin/bash -lc 'code-jig doctor'", "aggregated_output": "", "exit_code": 0, "status": "completed"}})
     events.append({"type": "item.completed", "item": {"id": "3", "type": "collab_tool_call", "tool": "spawn_agent",
                    "sender_thread_id": "t", "receiver_thread_ids": ["c"], "agents_states": {}, "status": "completed"}})
 events.append({"type": "item.completed", "item": {"id": "4", "type": "agent_message", "text": "Done." if mode == "good" else "No."}})
@@ -47,11 +47,12 @@ class Static(unittest.TestCase):
         found = skillcheck.claude_only(text)
         self.assertEqual([name for name, _ in found], ["Agent tool", "subagent_type", "TodoWrite", "WebFetch", "~/.claude"])
         self.assertTrue(any("spawn_agent" in hint for _, hint in found))
-        self.assertEqual(skillcheck.claude_only("Spawn an `explorer` subagent and run `harness doctor`."), [])
+        self.assertEqual(skillcheck.claude_only("Spawn an `explorer` subagent and run `code-jig doctor`."), [])
 
-    def test_unknown_harness_commands_fail(self):
-        text = "Run `harness doctor`, then\n```sh\npython -m harness nope --x\nharness lint-skill dir\n```\nThe harness core is fine."
-        self.assertEqual(skillcheck.unknown_commands(text), ["nope"])
+    def test_unknown_code_jig_commands_fail(self):
+        text = ("Run `code-jig doctor`, then\n```sh\npython -m codejig nope --x\ncode-jig lint-skill dir\npy -3 -m codejig nada\n"
+                "python -P -s -m codejig nix\n```\nThe code-jig core is fine.")
+        self.assertEqual(skillcheck.unknown_commands(text), ["nada", "nix", "nope"])
 
     def test_evals_are_required_and_parsed(self):
         d = write(self.root / "demo" / "SKILL.md", SKILL).parent
@@ -59,7 +60,7 @@ class Static(unittest.TestCase):
         write(d / "evals.toml", EVALS)
         self.assertNotIn("FAIL", [lv for lv, _ in skillcheck.static(d)])
         [case] = skillcheck.load_cases(d)
-        self.assertEqual((case.prompt, case.commands, case.read_skill, case.sandbox), ("show me a demo", ["harness doctor"], True, "read-only"))
+        self.assertEqual((case.prompt, case.commands, case.read_skill, case.sandbox), ("show me a demo", ["code-jig doctor"], True, "read-only"))
 
     def test_bad_evals_fail(self):
         d = write(self.root / "demo" / "SKILL.md", SKILL).parent
@@ -67,7 +68,8 @@ class Static(unittest.TestCase):
                      "[[case]]\nprompt = 'x'\nfixture = '../../etc'\n", "[[case]]\nprompt = 'x'\nsetup = ['touch pwned']\n",
                      "[[case]]\nprompt = 'x'\ncommits = ['not a table']\n", "[[case]]\nprompt = 'x'\nspawns = '2'\n",
                      "[[case]]\nprompt = 'x'\ncommands = [1]\n", "[[case]]\nprompt = 'x'\noutput = [1]\n",
-                     "[[case]]\nprompt = 'x'\nread_skill = 'no'\n"):
+                     "[[case]]\nprompt = 'x'\nread_skill = 'no'\n", "[[case]]\nprompt = 'x'\nnetwork = true\n",
+                     "[[case]]\nprompt = 'x'\nsandbox = 'workspace-write'\nnetwork = 'yes'\n"):
             write(d / "evals.toml", text)
             with self.subTest(text=text):
                 self.assertIn("FAIL", [lv for lv, _ in skillcheck.static(d)])
@@ -127,7 +129,7 @@ class Events(unittest.TestCase):
         self.assertEqual((run.spawns, run.message, run.input_tokens), (1, "all done", 10))
         case = skillcheck.Case(prompt="p", commands=["SKILL.md"], output=["(?i)DONE"], spawns=1)
         self.assertEqual(skillcheck.judge("demo", case, run), [])
-        miss = skillcheck.Case(prompt="p", commands=["harness doctor"], output=["nope"], spawns=2)
+        miss = skillcheck.Case(prompt="p", commands=["code-jig doctor"], output=["nope"], spawns=2)
         self.assertEqual(len(skillcheck.judge("other", miss, run)), 4)
 
     def test_spawns_missing_from_the_json_stream_are_counted_from_the_session_log(self):
@@ -166,12 +168,27 @@ class Inputs(unittest.TestCase):
         self.assertNotIn(case.prompt, seen["cmd"])
         self.assertEqual(seen["input"], case.prompt)
 
+    def test_network_is_granted_only_when_the_case_asks(self):
+        root = tree(self)
+        skill = write(root / "demo" / "SKILL.md", SKILL).parent
+        cmds = []
+
+        def fake_run(cmd, **kw):
+            cmds.append(cmd)
+            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+        with mock.patch.object(skillcheck.subprocess, "run", side_effect=fake_run):
+            skillcheck.live(skill, skillcheck.Case(prompt="p"), Path("codex"), root, "default")
+            skillcheck.live(skill, skillcheck.Case(prompt="p", sandbox="workspace-write", network=True), Path("codex"), root, "default")
+        grant = "sandbox_workspace_write.network_access=true"
+        self.assertNotIn(grant, cmds[-2])
+        self.assertIn(grant, cmds[-1])
+
     def test_commits_are_built_without_a_shell_and_keep_their_trailers(self):
         work = tree(self)
         subprocess.run(["git", "init", "-q", str(work)], check=True)
         skillcheck.make_commits(work, [{"message": "first"}, {"message": "second\n\nCo-authored-by: Codex <noreply@openai.com>"},
                                        {"message": "$(touch pwned); `touch pwned2`"}])
-        log = subprocess.run(["git", "-C", str(work), "log", "--format=%B%x00"], capture_output=True, text=True).stdout
+        log = subprocess.run(["git", "-C", str(work), "log", "--format=%B%x00"], capture_output=True, text=True, check=False).stdout
         self.assertIn("Co-authored-by: Codex", log)
         self.assertIn("$(touch pwned)", log)
         self.assertFalse((work / "pwned").exists() or (work / "pwned2").exists())
@@ -246,8 +263,8 @@ class WithFakeCodex(unittest.TestCase):
         install.install_skills({"demo": self.skill}, self.agents)
 
     def args(self, **kw):
-        base = dict(skills=[str(self.skill)], review=True, live=True, profile="default", codex_bin=str(self.root / "codex"),
-                    codex_home=str(self.home), trust_evals=True)
+        base = {"skills": [str(self.skill)], "review": True, "live": True, "profile": "default", "codex_bin": str(self.root / "codex"),
+                "codex_home": str(self.home), "trust_evals": True}
         return types.SimpleNamespace(**{**base, **kw})
 
     def run_cli(self, mode="good", **kw):
@@ -289,7 +306,7 @@ class WithFakeCodex(unittest.TestCase):
         write(self.skill / "SKILL.md", SKILL + "Changed.\n")
         code, out = self.run_cli(review=False)
         self.assertEqual(code, 1)
-        self.assertIn("harness install", out)
+        self.assertIn("code-jig install", out)
 
     def test_static_only_never_stamps(self):
         code, _ = self.run_cli(review=False, live=False)
@@ -313,7 +330,7 @@ class CoreSkills(unittest.TestCase):
         for d in sorted(p.parent for p in (paths.CORE / "skills").glob("*/SKILL.md")):
             with self.subTest(skill=d.name):
                 self.assertTrue(skillcheck.stamp_current(d),
-                                f"run: harness skill-check skills/{d.name} --review --live (after harness install)")
+                                f"run: code-jig skill-check skills/{d.name} --review --live (after code-jig install)")
 
 
 if __name__ == "__main__":

@@ -1,14 +1,14 @@
 # Runbook: reading the token report
 
-The `Stop` hook copies every finished Codex turn from the rollout files into `$CODEX_HOME/codex-harness/usage.sqlite3`. Nothing leaves the machine. `tokens` summarises it.
+The `Stop` hook copies every finished Codex turn from the rollout files into `~/.local/share/code-jig/usage.sqlite3`. Nothing leaves the machine. `tokens` summarises it.
 
 ```sh
-PYTHONPATH=<core> python3 -m harness tokens                 # last 7 days
-PYTHONPATH=<core> python3 -m harness tokens --days 30 --top 20
-PYTHONPATH=<core> python3 -m harness collect --rescan       # rebuild after a hook gap
+PYTHONPATH=<core> python3 -m codejig tokens                 # last 7 days
+PYTHONPATH=<core> python3 -m codejig tokens --days 30 --top 20
+PYTHONPATH=<core> python3 -m codejig collect --rescan       # rebuild after a hook gap
 ```
 
-Whether the harness is worth its tokens is a different question; see [evidence.md](evidence.md).
+Whether code-jig is worth its tokens is a different question; see [evidence.md](evidence.md).
 
 If `tokens` says the database is missing, the hook has never run: check `doctor`'s `stop hook` line and accept the trust prompt in an interactive session. Then run `collect` once by hand.
 

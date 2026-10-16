@@ -20,37 +20,53 @@ class Launcher(unittest.TestCase):
         self.root = tree(self)
         odd = "it's 100% & ação" if os.name != "nt" else "100% & ação"
         self.core = self.root / odd / "core"
-        shutil.copytree(ROOT / "harness", self.core / "harness", ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copytree(ROOT / "codejig", self.core / "codejig", ignore=shutil.ignore_patterns("__pycache__"))
         self.overlay = self.root / odd / "overlay"
         write(self.overlay / "overlay.toml", 'core_version = "v0.11.0"\ncore_writable = false\n')
         self.bins = self.root / "bin"
 
     def test_foreign_launcher_refused(self):
-        write(bootstrap.launcher_path(self.bins), "#!/bin/sh\nexec python3 -m harness \"$@\"\n")
+        path = bootstrap.launcher_paths(self.bins)[0]
+        write(path, "#!/bin/sh\nexec python3 -m codejig \"$@\"\n")
         with self.assertRaises(bootstrap.Refused):
-            bootstrap.check_launcher(bootstrap.launcher_path(self.bins))
+            bootstrap.check_launcher(path)
+
+    def test_both_launchers_are_written_and_identical(self):
+        paths = bootstrap.write_launcher(self.bins, sys.executable, self.core, self.overlay, "v0.11.0")
+        ext = ".cmd" if os.name == "nt" else ""
+        self.assertEqual([p.name for p in paths], ["code-jig" + ext, "cjig" + ext])
+        self.assertEqual(paths[0].read_bytes(), paths[1].read_bytes())
+
+    def test_a_foreign_cjig_blocks_both_launchers(self):
+        code_jig, cjig = bootstrap.launcher_paths(self.bins)
+        write(cjig, "#!/bin/sh\necho mine\n")
+        with self.assertRaises(bootstrap.Refused):
+            bootstrap.write_launcher(self.bins, sys.executable, self.core, self.overlay, "v0.11.0")
+        self.assertFalse(code_jig.exists())
 
     def test_own_launcher_is_replaced(self):
-        path = bootstrap.write_launcher(self.bins, sys.executable, self.core, self.overlay, "v0.11.0")
-        bootstrap.check_launcher(path)
-        path = bootstrap.write_launcher(self.bins, sys.executable, self.core, self.overlay, "v0.12.0")
-        self.assertIn(bootstrap.MARK + "v0.12.0", path.read_text(encoding="utf-8"))
-        self.assertEqual(sorted(p.name for p in self.bins.iterdir()), [path.name])
+        paths = bootstrap.write_launcher(self.bins, sys.executable, self.core, self.overlay, "v0.11.0")
+        for path in paths:
+            bootstrap.check_launcher(path)
+        paths = bootstrap.write_launcher(self.bins, sys.executable, self.core, self.overlay, "v0.12.0")
+        for path in paths:
+            self.assertIn(bootstrap.MARK + "v0.12.0", path.read_text(encoding="utf-8"))
+        self.assertEqual(sorted(p.name for p in self.bins.iterdir()), sorted(p.name for p in paths))
 
     def round_trip(self):
-        path = bootstrap.write_launcher(self.bins, sys.executable, self.core, self.overlay, "v0.11.0")
-        env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "CODEX_HARNESS_OVERLAY")}
+        path = bootstrap.write_launcher(self.bins, sys.executable, self.core, self.overlay, "v0.11.0")[0]
+        env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "CODE_JIG_OVERLAY")}
         done = subprocess.run([str(path), "--help"], env=env, capture_output=True, text=True, encoding="utf-8",
-                              cwd=self.root)
+                              cwd=self.root, check=False)
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertIn("usage: harness", done.stdout)
+        self.assertIn("usage: code-jig", done.stdout)
         return path
 
     @unittest.skipIf(os.name == "nt", "sh launcher")
     def test_sh_launcher_round_trip(self):
         path = self.round_trip()
         self.assertTrue(os.access(path, os.X_OK))
-        self.assertIn("-P -s -m harness", path.read_text(encoding="utf-8"))
+        self.assertIn("-P -s -m codejig", path.read_text(encoding="utf-8"))
 
     @unittest.skipUnless(os.name == "nt", "cmd launcher")
     def test_cmd_launcher_round_trip_non_ascii(self):
@@ -58,16 +74,16 @@ class Launcher(unittest.TestCase):
         self.assertTrue(path.read_bytes().count(b"\r\n") > 3)
 
     def test_exit_code_propagates(self):
-        path = bootstrap.write_launcher(self.bins, sys.executable, self.core, self.overlay, "v0.11.0")
-        done = subprocess.run([str(path), "no-such-command"], capture_output=True, text=True, encoding="utf-8")
+        path = bootstrap.write_launcher(self.bins, sys.executable, self.core, self.overlay, "v0.11.0")[0]
+        done = subprocess.run([str(path), "no-such-command"], capture_output=True, text=True, encoding="utf-8", check=False)
         self.assertEqual(done.returncode, 2)
 
     def test_planted_module_in_cwd_is_ignored(self):
-        path = bootstrap.write_launcher(self.bins, sys.executable, self.core, self.overlay, "v0.11.0")
+        path = bootstrap.write_launcher(self.bins, sys.executable, self.core, self.overlay, "v0.11.0")[0]
         cwd = self.root / "hostile"
-        write(cwd / "harness" / "__init__.py", "raise SystemExit(99)\n")
-        write(cwd / "harness" / "__main__.py", "raise SystemExit(99)\n")
-        done = subprocess.run([str(path), "--help"], capture_output=True, text=True, encoding="utf-8", cwd=cwd)
+        write(cwd / "codejig" / "__init__.py", "raise SystemExit(99)\n")
+        write(cwd / "codejig" / "__main__.py", "raise SystemExit(99)\n")
+        done = subprocess.run([str(path), "--help"], capture_output=True, text=True, encoding="utf-8", cwd=cwd, check=False)
         self.assertEqual(done.returncode, 0, done.stderr)
 
 

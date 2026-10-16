@@ -1,9 +1,9 @@
 import json
 import unittest
 
-from harness.doctor import catalog, check_tiers, family
-from harness.install import run
-from harness.overlay import Overlay
+from codejig.doctor import catalog, check_tiers, family
+from codejig.install import run
+from codejig.overlay import Overlay
 from tests.util import tree, write
 
 CATALOG = {"models": [
@@ -41,7 +41,7 @@ class Tiers(unittest.TestCase):
     def test_model_not_in_catalog_fails_with_candidates(self):
         write(self.ov.root / "profiles.toml", 'default = "zzz"\nreview = "n-b"\n')
         run(self.core, self.ov, self.home)
-        detail = [d for lv, n, d in check_tiers(self.home, self.core, self.ov) if n == "tier default model"][0]
+        detail = next(d for lv, n, d in check_tiers(self.home, self.core, self.ov) if n == "tier default model")
         self.assertIn("m-a", detail)
         self.assertEqual(self.levels()["tier default model"], "FAIL")
 
@@ -73,7 +73,7 @@ class Tiers(unittest.TestCase):
 
     def test_bad_profiles_is_one_fail(self):
         write(self.ov.root / "profiles.toml", "x")
-        [(level, name, detail)] = check_tiers(self.home, self.core, self.ov)
+        [(level, name, _detail)] = check_tiers(self.home, self.core, self.ov)
         self.assertEqual((level, name), ("FAIL", "tiers"))
 
 

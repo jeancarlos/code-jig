@@ -1,6 +1,6 @@
 [[case]]
 prompt = "Some commits in this repo carry AI attribution. List them; do not rewrite anything yet."
-commands = ["harness scrub"]
+commands = ["code-jig scrub"]
 output = ["(?i)second"]
 
 [[case.commits]]

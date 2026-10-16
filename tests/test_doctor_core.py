@@ -1,11 +1,14 @@
+import contextlib
 import hashlib
+import io
 import subprocess
+import types
 import unittest
 from unittest import mock
 
-from harness.doctor import check_core, check_global
-from harness.install import release_digest, render_agents, stamp
-from harness.overlay import Overlay
+from codejig.doctor import check_core, check_global, cli
+from codejig.install import release_digest, render_agents, stamp
+from codejig.overlay import Overlay
 from tests.util import tree, write
 
 
@@ -53,7 +56,7 @@ class NotGit(unittest.TestCase):
             self.assertEqual(levels["core clean"], "FAIL")
 
     def test_missing_git_fails_without_crashing(self):
-        with mock.patch("harness.doctor.subprocess.run", side_effect=FileNotFoundError("git")):
+        with mock.patch("codejig.doctor.subprocess.run", side_effect=FileNotFoundError("git")):
             checks = check_core(self.core, Overlay(self.core, "v0.1.0", False))
         self.assertEqual({name: level for level, name, _ in checks}["core clean"], "FAIL")
 
@@ -65,7 +68,7 @@ class GitFailure(unittest.TestCase):
 
     def test_stderr_in_detail_and_pin_not_untagged(self):
         fail = mock.Mock(returncode=128, stdout="", stderr="fatal: detected dubious ownership\nmore\n")
-        with mock.patch("harness.doctor.subprocess.run", return_value=fail):
+        with mock.patch("codejig.doctor.subprocess.run", return_value=fail):
             pin, clean = check_core(self.core, Overlay(self.core, "v0.1.0", False))
         self.assertIn("dubious ownership", clean[2])
         self.assertNotIn("more", clean[2])
@@ -114,7 +117,7 @@ class GlobalAgents(unittest.TestCase):
 class Release(unittest.TestCase):
     def setUp(self):
         self.core = tree(self) / "core"
-        write(self.core / "harness" / "x.py", "a\n")
+        write(self.core / "codejig" / "x.py", "a\n")
         write(self.core / "VERSION", f"v0.1.0\n{release_digest(self.core)}\n")
 
     def levels(self, ov):
@@ -124,7 +127,7 @@ class Release(unittest.TestCase):
         self.assertEqual(self.levels(Overlay(self.core, "v0.1.0", False)), {"core pin": "ok", "core clean": "ok"})
 
     def test_edited_release_fails_readonly_ok_writable(self):
-        write(self.core / "harness" / "x.py", "b\n")
+        write(self.core / "codejig" / "x.py", "b\n")
         self.assertEqual(self.levels(Overlay(self.core, "v0.1.0", False))["core clean"], "FAIL")
         self.assertEqual(self.levels(Overlay(self.core, "v0.1.0", True))["core clean"], "ok")
 
@@ -133,7 +136,7 @@ class Release(unittest.TestCase):
         self.assertEqual(self.levels(Overlay(self.core, "v9.9.9", True))["core pin"], "warn")
 
     def test_pycache_and_version_are_not_digested(self):
-        write(self.core / "harness" / "__pycache__" / "x.cpython-313.pyc", "bytecode")
+        write(self.core / "codejig" / "__pycache__" / "x.cpython-313.pyc", "bytecode")
         self.assertEqual(self.levels(Overlay(self.core, "v0.1.0", False)), {"core pin": "ok", "core clean": "ok"})
 
     def test_parent_git_repo_does_not_count(self):
@@ -161,3 +164,13 @@ class ReleaseDigest(unittest.TestCase):
         for rel in sorted(["a-b/x", "a/b"]):
             h.update(rel.encode() + b"\0" + (root / rel).read_bytes() + b"\0")
         self.assertEqual(release_digest(root), h.hexdigest())
+
+
+class Requirements(unittest.TestCase):
+    def test_doctor_fails_without_git(self):
+        out = io.StringIO()
+        args = types.SimpleNamespace(codex_bin=None, codex_home=str(tree(self) / "h"), check_binary=True, overlay=None, live=False)
+        with mock.patch("shutil.which", return_value=None), contextlib.redirect_stdout(out):
+            code = cli(args)
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL requirements: git not found", out.getvalue())

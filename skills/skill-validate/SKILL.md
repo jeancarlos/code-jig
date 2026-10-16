@@ -10,7 +10,7 @@ Three passes. A script decides everything a pattern can decide; a reviewer from 
 ## Pass 1: mechanical
 
 ```sh
-harness lint-skill path/to/skill-dir
+code-jig lint-skill path/to/skill-dir
 ```
 
 `FAIL` breaks loading or a hard rule and exits 1. `WARN` is a judgement call. Run pass 2 whatever pass 1 says: its FAILs go in the report with everything else.
@@ -36,13 +36,13 @@ Require one line per rule, `N | PASS or FAIL | shortest quote that decides it | 
 
 ## Pass 3: Codex runs it
 
-A skill that reads well can still name tools Codex does not have, or never trigger. After pass 2 says `VERDICT: ship` and the skill is installed (`harness install`); when pass 2 says fix, skip pass 3 and report it as skipped because pass 2 failed:
+A skill that reads well can still name tools Codex does not have, or never trigger. After pass 2 says `VERDICT: ship` and the skill is installed (`code-jig install`); when pass 2 says fix, skip pass 3 and report it as skipped because pass 2 failed:
 
 ```sh
-harness skill-check path/to/skill-dir --review --live
+code-jig skill-check path/to/skill-dir --review --live
 ```
 
-It needs an `evals.toml` next to SKILL.md with at least one `[[case]]` (`prompt`, and any of `commands`, `output`, `spawns`, `fixture`, `commits`, `sandbox`). It runs a Codex review on the `review` tier, then each case through `codex exec`, and writes `.skill-check` when everything passes. In the codex-harness repository that stamp is required in the same commit as the skill.
+It needs an `evals.toml` next to SKILL.md with at least one `[[case]]` (`prompt`, and any of `commands`, `output`, `spawns`, `fixture`, `commits`, `sandbox`). It runs a Codex review on the `review` tier, then each case through `codex exec`, and writes `.skill-check` when everything passes. In the code-jig repository that stamp is required in the same commit as the skill.
 
 ## Report
 

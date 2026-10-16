@@ -13,10 +13,10 @@ Take scope from the request: a path, a category (security, logic, data integrity
 
 ## 1. Recon, all deterministic
 
-With the harness core on `PYTHONPATH`, or the `harness` launcher on `PATH`:
+With the code-jig core on `PYTHONPATH`, or the `code-jig` launcher on `PATH`:
 
 ```
-harness analyze --json [--base main] [path]
+code-jig analyze --json [--base main] [path]
 git ls-files | grep -E "(^|/)\.env($|\.)|\.(pem|key|pfx|p12)$|credentials\.json$|secrets?\.(json|ya?ml)$"
 git log --oneline -i -E --grep="security|cve|vuln|bypass|injection|xss|csrf|auth" -n 30
 git log --since=90.days --name-only --format= | sort | uniq -c | sort -rn | head -20

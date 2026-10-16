@@ -3,9 +3,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from harness import managed, paths
-from harness.managed import check_requirements
-from harness.tiers import Tier
+from codejig import managed, paths
+from codejig.managed import check_requirements
+from codejig.tiers import Tier
 from tests.util import tree, write
 
 TS = [Tier("default", "m-a", "medium"), Tier("review", "n-b", "high")]
@@ -22,7 +22,7 @@ class Requirements(unittest.TestCase):
         return {n: lv for lv, n, _ in check_requirements(self.req, self.bench, TS)}
 
     def detail(self, name):
-        return [d for lv, n, d in check_requirements(self.req, self.bench, TS) if n == name][0]
+        return next(d for lv, n, d in check_requirements(self.req, self.bench, TS) if n == name)
 
     def test_absent_says_cloud_is_invisible(self):
         [(level, _, detail), *_] = check_requirements(self.req, self.bench, TS)

@@ -2,12 +2,11 @@ import contextlib
 import io
 import json
 import subprocess
-import types
 import unittest
 from unittest import mock
 
-from harness import trace
-from harness.__main__ import build_parser
+from codejig import trace
+from codejig.__main__ import build_parser
 from tests.util import tree, write
 
 

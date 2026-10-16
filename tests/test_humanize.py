@@ -1,9 +1,8 @@
 import contextlib
 import io
 import unittest
-from pathlib import Path
 
-from harness.humanize import humanize_file
+from codejig.humanize import humanize_file
 from tests.util import tree, write
 
 
@@ -32,7 +31,6 @@ class HumanizeDashes(unittest.TestCase):
         path = self.root / "test.py"
         write(path, "code — value\nresult = 5\n")
         result = humanize_file(str(path), root=str(self.root))
-        text = path.read_text(encoding="utf-8")
         self.assertFalse(result.get("changed"))
 
 
@@ -93,7 +91,7 @@ class HumanizeEmoji(unittest.TestCase):
     def test_emoji_not_removed_from_code(self):
         path = self.root / "test.py"
         write(path, "icon = '🚀'  # Launch\ncode = 1\n")
-        result = humanize_file(str(path), root=str(self.root))
+        humanize_file(str(path), root=str(self.root))
         text = path.read_text(encoding="utf-8")
         self.assertIn("icon = '🚀'", text)
         self.assertIn("# Launch", text)
@@ -179,7 +177,7 @@ class HumanizeSymlinks(unittest.TestCase):
 
 class HumanizeCheck(unittest.TestCase):
     def test_check_does_not_write_files_or_directories(self):
-        from harness.__main__ import main
+        from codejig.__main__ import main
         root = tree(self)
         path = root / "check.py"
         content = "# Range — 1 to 10\n"

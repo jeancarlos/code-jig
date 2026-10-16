@@ -1,8 +1,8 @@
 import unittest
 
-from harness.doctor import check_knowledge, check_superpowers
-from harness.install import render_agents
-from harness.overlay import Overlay
+from codejig.doctor import check_knowledge, check_superpowers
+from codejig.install import render_agents
+from codejig.overlay import Overlay
 from tests.util import tree, write
 
 
