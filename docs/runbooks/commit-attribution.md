@@ -42,7 +42,7 @@ prose_gate = true   # optional, see below
 |---|---|
 | `commit-msg` | Removes `Co-authored-by:` lines naming Codex, Claude, ChatGPT or an AI, `Generated with` lines naming them, `Claude-Session:` and robot-emoji lines; turns em and en dashes into `-`. Never blocks. |
 | `pre-commit` | Removes invisible Unicode (zero-width, bidi controls; no-break spaces become spaces) from staged text files, in the index and the working tree, and turns dashes into `-` in prose files. With `prose_gate`, refuses the commit when it comes from an agent session and stages human-facing prose. |
-| `pre-push` | Refuses to push commits by you whose message still carries attribution, and points at `code-jig scrub`. |
+| `pre-push` | Refuses to push commits by you whose message still carries attribution, and points at `code-jig scrub`. Then, when `git config codejig.testCommand "<command>"` is set (local, global or included), runs it from the repo top level and refuses the push if it exits non-zero. `CODE_JIG_SKIP_TESTS=1` skips the run for an emergency. |
 
 "You" is `git config user.email` plus every `git config --global --add codejig.email <address>`, for older addresses of yours.
 

@@ -135,6 +135,21 @@ def pre_push(lines: list[str]) -> int:
             print(f"  {sha[:10]} {_git('log', '-1', '--format=%s', sha).decode().strip()}", file=sys.stderr)
         print("Remove it with: code-jig scrub (rewrites messages only, then prints the push commands)", file=sys.stderr)
         return 1
+    return _run_tests()
+
+
+def _run_tests() -> int:
+    cmd = _git("config", "--get", "codejig.testCommand", check=False).decode("utf-8", "replace").strip()
+    if not cmd:
+        return 0
+    if os.environ.get("CODE_JIG_SKIP_TESTS") == "1":
+        print("code-jig: CODE_JIG_SKIP_TESTS=1, skipping the pre-push tests", file=sys.stderr)
+        return 0
+    top = _git("rev-parse", "--show-toplevel").decode("utf-8", "replace").strip()
+    rc = subprocess.run(cmd, shell=True, cwd=top).returncode
+    if rc:
+        print(f"code-jig: push refused, tests fail ({cmd} exited {rc})", file=sys.stderr)
+        return 1
     return 0
 
 

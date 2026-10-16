@@ -128,6 +128,53 @@ class PrePush(unittest.TestCase):
         self.assertEqual(in_repo(repo, gitgate.pre_push, [f"refs/heads/main {tip} refs/heads/main {zero}"])[0], 1)
 
 
+class PrePushTests(unittest.TestCase):
+    def setUp(self):
+        self.repo = new_repo(self)
+        self.base = commit(self.repo, "init\n", ME, {"a": "1\n"}, 1_700_000_000)
+
+    def line(self, message="next\n"):
+        tip = commit(self.repo, message, ME, {"b": "1\n"}, 1_700_000_100)
+        return f"refs/heads/main {tip} refs/heads/main {self.base}"
+
+    def command(self, rc):
+        return f'"{sys.executable}" -c "open(\'ran\', \'w\'); raise SystemExit({rc})"'
+
+    def push(self, line, env=None):
+        return in_repo(self.repo, gitgate.pre_push, [line], env=env)
+
+    def test_pre_push_runs_the_test_command_and_refuses_on_failure(self):
+        git(self.repo, "config", "codejig.testCommand", self.command(3))
+        code, err = self.push(self.line())
+        self.assertEqual(code, 1)
+        self.assertIn("code-jig: push refused, tests fail", err)
+        self.assertIn("exited 3", err)
+        self.assertTrue((self.repo / "ran").exists())
+
+    def test_pre_push_passes_when_the_test_command_passes(self):
+        git(self.repo, "config", "codejig.testCommand", self.command(0))
+        self.assertEqual(self.push(self.line())[0], 0)
+        self.assertTrue((self.repo / "ran").exists())
+
+    def test_pre_push_without_a_test_command_runs_nothing(self):
+        self.assertEqual(self.push(self.line())[0], 0)
+        self.assertFalse((self.repo / "ran").exists())
+
+    def test_skip_env_skips_with_a_notice(self):
+        git(self.repo, "config", "codejig.testCommand", self.command(1))
+        code, err = self.push(self.line(), env={"CODE_JIG_SKIP_TESTS": "1"})
+        self.assertEqual(code, 0)
+        self.assertIn("CODE_JIG_SKIP_TESTS", err)
+        self.assertFalse((self.repo / "ran").exists())
+
+    def test_attribution_refusal_happens_before_tests(self):
+        git(self.repo, "config", "codejig.testCommand", self.command(0))
+        code, err = self.push(self.line(f"mine\n\n{CODEX}\n"))
+        self.assertEqual(code, 1)
+        self.assertIn("AI attribution", err)
+        self.assertFalse((self.repo / "ran").exists())
+
+
 @unittest.skipIf(os.name == "nt", "POSIX shell shims")
 class Shims(unittest.TestCase):
     def test_real_commit_through_the_shims_chains_to_repo_hooks(self):
