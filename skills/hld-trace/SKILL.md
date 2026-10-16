@@ -11,7 +11,7 @@ Requirements get IDs, tests cite them, and `harness trace` checks the links dete
 
 Write them to a file, one per line, or as JSON (a list of IDs, or objects with an `id` field).
 
-Before any `az` command below: the `azure-devops` extension (`az extension add --name azure-devops`), `az login` done in your own terminal, and defaults set with `az devops configure --defaults organization=<url> project=<name>`.
+Before any `az` command below, check that `az` exists (`command -v az`; PowerShell: `Get-Command az`) and is logged in (`az account show`), that the `azure-devops` extension is there (`az extension show --name azure-devops`), and that defaults are set (`az devops configure --list`). Before any `gh` command, check `command -v gh` (PowerShell: `Get-Command gh`) and `gh auth status`. Logging in is interactive, so never run `az login` or `gh auth login` yourself: ask the user to run it in their own terminal, then check again. Ask before `az extension add --name azure-devops` and before `az devops configure --defaults organization=<url> project=<name>`.
 
 - Azure DevOps work items (child items of a feature or epic):
 
@@ -31,7 +31,7 @@ Before any `az` command below: the `azure-devops` extension (`az extension add -
 - GitHub issues: `gh issue list --label requirement --json number --jq ".[].number" > ids.txt` (`--jq` is built into `gh`, so the line is the same in PowerShell).
 - A Markdown HLD in the repo: the same `grep` as the wiki case.
 
-When the source needs `az` or `gh` and `command -v az` (PowerShell: `Get-Command az`) finds nothing, do not install it: ask the user to paste the IDs or export the page, and continue from that file.
+When `az` or `gh` is missing, or the user cannot log in, do not install anything: ask the user to paste the IDs or export the page (a work item query saved as CSV or JSON, the wiki page as Markdown, `gh issue list` output), and turn it into the ID file above before tracing: a CSV export becomes one ID per line with `python3 -c "import csv,sys; [print(r['ID']) for r in csv.DictReader(open(sys.argv[1], encoding='utf-8-sig'))]" export.csv > ids.txt` (PowerShell: `Import-Csv export.csv | ForEach-Object { $_.ID } > ids.txt`), using the export's ID column name; Markdown gets the same `grep` as the wiki case.
 
 ## 2. Tag the tests
 

@@ -31,10 +31,10 @@ Put tests where the repo already keeps them, with its framework, naming and fixt
 | Python | `coverage run -m pytest`, then `coverage xml` (in PowerShell 5.1, which has no `&&`: `coverage run -m pytest; coverage xml`) |
 | .NET | `DOTNET_CLI_TELEMETRY_OPTOUT=1 dotnet test --collect:"XPlat Code Coverage"` writes `TestResults/*/coverage.cobertura.xml` |
 | Node with c8 | `npx c8 --reporter=cobertura npm test` writes `coverage/cobertura-coverage.xml` |
-| Vitest | `npx vitest run --coverage --coverage.reporter=cobertura` |
-| Jest | `npx jest --coverage --coverageReporters=cobertura` |
+| Vitest | `npx vitest run --coverage --coverage.reporter=cobertura` writes `coverage/cobertura-coverage.xml` |
+| Jest | `npx jest --coverage --coverageReporters=cobertura` writes `coverage/cobertura-coverage.xml` |
 
-Windows PowerShell has no `NAME=value command` form: write the variable first in the same command, for example `$env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'; dotnet test`.
+Windows PowerShell has no `NAME=value command` form: write the variable first in the same command, for example `$env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'; dotnet test --collect:"XPlat Code Coverage"`.
 
 Then:
 
