@@ -1,0 +1,93 @@
+import { test, afterEach } from "node:test"
+import assert from "node:assert/strict"
+import worker, { client } from "./index.mjs"
+
+const realFetch = globalThis.fetch
+afterEach(() => { globalThis.fetch = realFetch })
+
+function env() {
+  const points = []
+  return { points, INSTALLS: { writeDataPoint: (p) => points.push(p) } }
+}
+
+function req(path, ua = "curl/8.9.1", method = "GET") {
+  return new Request(`https://setup-harness.jeansouza.dev${path}`, { method, headers: { "user-agent": ua } })
+}
+
+const RELEASES = "https://github.com/jeancarlos/codex-harness/releases"
+
+test("zip redirects to the tag and counts a download, query ignored", async () => {
+  const e = env()
+  const r = await worker.fetch(req("/v/v0.11.0/codex-harness.zip?from=v0.10.0&os=linux"), e)
+  assert.equal(r.status, 302)
+  assert.equal(r.headers.get("location"), `${RELEASES}/download/v0.11.0/codex-harness.zip`)
+  assert.deepEqual(e.points, [{ blobs: ["download", "v0.11.0", "curl", ""], indexes: ["download"] }])
+})
+
+test("sums and bootstrap under a tag redirect without counting", async () => {
+  for (const file of ["SHA256SUMS", "bootstrap.py"]) {
+    const e = env()
+    const r = await worker.fetch(req(`/v/v0.11.0/${file}`), e)
+    assert.equal(r.status, 302)
+    assert.equal(r.headers.get("location"), `${RELEASES}/download/v0.11.0/${file}`)
+    assert.deepEqual(e.points, [])
+  }
+})
+
+test("bad tags, files and paths are 404 and not counted", async () => {
+  for (const path of ["/v/v0.11.0.evil/codex-harness.zip", "/v/latest/codex-harness.zip", "/v/0.11.0/codex-harness.zip",
+    "/v/v0.11.0/other.zip", "/v/v0.11.0/../x", "/latest/codex-harness.zip", "/stats", "/v/v0.11.0/codex-harness.zip/x"]) {
+    const e = env()
+    const r = await worker.fetch(req(path), e)
+    assert.equal(r.status, 404, path)
+    assert.deepEqual(e.points, [])
+  }
+})
+
+test("root page lists both one-liners", async () => {
+  const r = await worker.fetch(req("/"), env())
+  assert.equal(r.status, 200)
+  assert.match(r.headers.get("content-type"), /^text\/plain/)
+  const body = await r.text()
+  assert.match(body, /curl -fsSL https:\/\/setup-harness\.jeansouza\.dev\/bootstrap\.py \| python3 -I -/)
+  assert.match(body, /irm https:\/\/setup-harness\.jeansouza\.dev\/bootstrap\.py \| py -3 -I -/)
+})
+
+test("bootstrap.py is proxied as text and counted", async () => {
+  const seen = []
+  globalThis.fetch = async (url) => { seen.push(String(url)); return new Response("print(1)\n", { status: 200 }) }
+  const e = env()
+  const r = await worker.fetch(req("/bootstrap.py", "Mozilla/5.0 (Windows NT 10.0) WindowsPowerShell/5.1"), e)
+  assert.equal(r.status, 200)
+  assert.equal(r.headers.get("content-type"), "text/plain; charset=utf-8")
+  assert.equal(await r.text(), "print(1)\n")
+  assert.deepEqual(seen, [`${RELEASES}/latest/download/bootstrap.py`])
+  assert.deepEqual(e.points, [{ blobs: ["bootstrap", "", "powershell", ""], indexes: ["bootstrap"] }])
+  assert.ok(!JSON.stringify(e.points).includes("Mozilla"))
+})
+
+test("upstream failure is 502 and not counted", async () => {
+  globalThis.fetch = async () => new Response("nope", { status: 404 })
+  const e = env()
+  const r = await worker.fetch(req("/bootstrap.py"), e)
+  assert.equal(r.status, 502)
+  assert.deepEqual(e.points, [])
+})
+
+test("only GET and HEAD", async () => {
+  const r = await worker.fetch(req("/", "curl/8", "POST"), env())
+  assert.equal(r.status, 405)
+})
+
+test("client mapping keeps no raw user-agent", () => {
+  assert.equal(client("curl/8.9.1"), "curl")
+  assert.equal(client("Mozilla/5.0 (Windows NT 10.0; Microsoft Windows 10.0.26100) PowerShell/7.5.0"), "powershell")
+  assert.equal(client("Python-urllib/3.13"), "python")
+  assert.equal(client("Mozilla/5.0 Firefox/140.0"), "other")
+  assert.equal(client(null), "other")
+})
+
+test("missing binding never breaks a download", async () => {
+  const r = await worker.fetch(req("/v/v0.11.0/codex-harness.zip"), {})
+  assert.equal(r.status, 302)
+})
