@@ -1,6 +1,6 @@
 ---
 name: improve
-description: Use when the user asks to improve code-jig, its rules, Guardian policy, skills or knowledge from experience on this machine, or says "remember this for next time", "make this a rule", "teach code-jig".
+description: Use when the user asks to improve code-jig, its rules, Guardian policy, skills or knowledge from experience on this machine, or says "remember this for next time", "make this a rule", "teach code-jig", "teach the harness".
 ---
 
 # Improve

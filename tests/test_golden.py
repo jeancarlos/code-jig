@@ -30,7 +30,7 @@ RENAME: list[tuple[str, str | Callable[[re.Match], str]]] = [
     (re.escape("the harness core"), "the code-jig core"),
     (re.escape("contains `harness/`"), "contains `codejig/`"),
     (re.escape("improve the harness,"), "improve code-jig,"),
-    (re.escape('"teach the harness"'), '"teach code-jig"'),
+    (re.escape('"teach the harness"'), '"teach code-jig", "teach the harness"'),
     (re.escape("The harness git gate"), "The code-jig git gate"),
     (r'(?m)^description: (Use when AI attribution leaked.*)$',
      lambda m: 'description: "' + m[1].replace('"', '\\"') + '"'),

@@ -8,7 +8,7 @@ from codejig import VERSION
 from codejig.__main__ import build_parser
 
 ROOT = Path(__file__).resolve().parent.parent
-OLD_NAMES = ("codex-" "harness", "codex" "harness", "CODEX_" "HARNESS_", "-m " "harness", "from " "harness")
+OLD_NAMES = ("codex-" "harness", "codex" "harness", "CODEX_" "HARNESS_", "-m " "harness", '"-m", "' 'harness"', "from " "harness")
 OLD_NAMES_ALLOWED = ("docs/", "README.md", "CONTRIBUTING.md", "tests/fixtures/", "codejig/migrate.py",
                      "tests/test_migrate.py", "tests/test_golden.py")
 

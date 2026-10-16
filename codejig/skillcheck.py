@@ -29,7 +29,7 @@ CLAUDE_ONLY = {
     r"\b(?:EnterPlanMode|ExitPlanMode|run_in_background)\b": "not a Codex tool",
 }
 CODE = re.compile(r"```[\w-]*\n(.*?)```|`([^`\n]+)`", re.DOTALL)
-CODE_JIG_CMD = re.compile(r"(?:^|[\s;&|(])(?:python3?\s+-m\s+codejig|code-jig|cjig)\s+([a-z][a-z-]*)", re.MULTILINE)
+CODE_JIG_CMD = re.compile(r"(?:^|[\s;&|(])(?:codejig|code-jig|cjig)\s+([a-z][a-z-]*)", re.MULTILINE)
 RUBRIC = """You are reviewing an agent skill (SKILL.md and its files) that must work in OpenAI Codex CLI, though it was often written with Claude Code in mind. Codex differs: it runs shell commands through its exec tool, edits files with apply_patch, spawns subagents with spawn_agent and an agent_type (explorer, reviewer, judge, default, worker), keeps a plan with update_plan, searches with web_search only when enabled, has no question tool in exec mode, keeps .git read-only in its sandbox, and needs an approved escalation for network access from the sandbox.
 
 The `code-jig` command ships with this pack and is installed wherever the skill runs, the same as the skill itself; its commands are: {commands}. Treat it as available, not as an external dependency. Codex asks for an escalation on its own when a command needs the network or writes outside the workspace, and Guardian or the user reviews it, so a skill does not need to say that for each download or install.

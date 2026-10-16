@@ -50,8 +50,9 @@ class Static(unittest.TestCase):
         self.assertEqual(skillcheck.claude_only("Spawn an `explorer` subagent and run `code-jig doctor`."), [])
 
     def test_unknown_code_jig_commands_fail(self):
-        text = "Run `code-jig doctor`, then\n```sh\npython -m codejig nope --x\ncode-jig lint-skill dir\n```\nThe code-jig core is fine."
-        self.assertEqual(skillcheck.unknown_commands(text), ["nope"])
+        text = ("Run `code-jig doctor`, then\n```sh\npython -m codejig nope --x\ncode-jig lint-skill dir\npy -3 -m codejig nada\n"
+                "python -P -s -m codejig nix\n```\nThe code-jig core is fine.")
+        self.assertEqual(skillcheck.unknown_commands(text), ["nada", "nix", "nope"])
 
     def test_evals_are_required_and_parsed(self):
         d = write(self.root / "demo" / "SKILL.md", SKILL).parent
