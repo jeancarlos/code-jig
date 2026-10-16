@@ -157,6 +157,7 @@ def fetch_asset(tag, name, base, repo, limit):
     try:
         return fetch(primary, limit)
     except urllib.error.HTTPError as e:
+        e.close()
         if e.code == 404:
             raise Refused(f"{tag} has no {name}; {NO_ZIP}")
         if e.code < 500:
@@ -169,6 +170,7 @@ def fetch_asset(tag, name, base, repo, limit):
     try:
         return fetch(fallback, limit)
     except urllib.error.HTTPError as e:
+        e.close()
         raise Refused(f"{fallback}: HTTP {e.code}" + (f"; {NO_ZIP}" if e.code == 404 else ""))
     except OSError as e:
         raise Refused(f"{fallback}: {e}")
@@ -179,6 +181,7 @@ def resolve_latest(repo):
     try:
         urllib.request.build_opener(NoRedirect).open(urllib.request.Request(url, method="HEAD"), timeout=TIMEOUT)
     except urllib.error.HTTPError as e:
+        e.close()
         found = re.search(r"/tag/([^/]+)$", e.headers.get("Location", "") or "")
         if e.code in (301, 302, 303, 307, 308) and found:
             return valid_tag(found.group(1))
