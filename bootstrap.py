@@ -476,7 +476,7 @@ def run(args):
     return 0
 
 
-def missing_requirements() -> list[str]:
+def missing_requirements():
     lines = []
     if sys.version_info < (3, 11):
         lines.append("Python 3.11 or newer")

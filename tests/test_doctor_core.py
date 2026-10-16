@@ -1,8 +1,8 @@
 import contextlib
 import hashlib
 import io
-import types
 import subprocess
+import types
 import unittest
 from unittest import mock
 

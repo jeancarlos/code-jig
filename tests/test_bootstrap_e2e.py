@@ -1,3 +1,4 @@
+import ast
 import contextlib
 import functools
 import http.server
@@ -13,7 +14,7 @@ from unittest import mock
 from pathlib import Path
 
 import bootstrap
-from codejig import VERSION
+from codejig import VERSION, install
 from tests.util import tree, write
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -169,3 +170,21 @@ class RefusesWithoutGit(unittest.TestCase):
                 self.assertRaises(SystemExit) as cm:
             bootstrap.main(["--help"])
         self.assertEqual(cm.exception.code, 0)
+
+    def test_git_line_matches_install(self):
+        with mock.patch("shutil.which", return_value=None):
+            self.assertEqual(bootstrap.missing_requirements()[-1], install.missing_requirements()[-1])
+
+
+class OldPythonSafe(unittest.TestCase):
+    def test_no_annotations_or_match_before_the_version_check(self):
+        tree_ = ast.parse(SOURCE, feature_version=(3, 8))
+        bad = []
+        for node in ast.walk(tree_):
+            if isinstance(node, ast.FunctionDef):
+                args = node.args.posonlyargs + node.args.args + node.args.kwonlyargs
+                if node.returns or any(a.annotation for a in args):
+                    bad.append(node.name)
+            elif isinstance(node, ast.AnnAssign) or type(node).__name__ == "Match":
+                bad.append(type(node).__name__)
+        self.assertEqual(bad, [])
