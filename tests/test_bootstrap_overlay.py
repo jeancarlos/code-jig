@@ -59,6 +59,12 @@ class Clone(unittest.TestCase):
         self.run_clone(url)
         self.assertEqual(bootstrap.read_pin(self.dest), "v0.12.0")
 
+    def test_insteadof_rewrite_does_not_break_rerun(self):
+        url = str(self.origin)
+        self.run_clone(url)
+        git(self.dest, "config", f"url.{url}/.insteadOf", url)
+        self.run_clone(url)
+
     def test_other_origin_refused(self):
         self.run_clone(str(self.origin))
         with self.assertRaises(bootstrap.Refused):
@@ -109,6 +115,15 @@ class Pins(unittest.TestCase):
         self.assertEqual(bootstrap.read_pin(overlay(self.root / "a")), "v0.11.0")
         with self.assertRaises(bootstrap.Refused):
             bootstrap.read_pin(overlay(self.root / "b", pin="main"))
+
+    def test_git_overlay_is_never_owned(self):
+        ov = overlay(self.root / "g", own=True)
+        self.assertTrue(bootstrap.owned(ov))
+        git(ov, "init", "-q")
+        self.assertFalse(bootstrap.owned(ov))
+        with mock.patch.object(bootstrap, "resolve_latest", return_value="v0.13.0"):
+            with self.assertRaisesRegex(bootstrap.Refused, "bump core_version"):
+                bootstrap.choose_tag("v0.12.0", ov, "o/r")
 
     def test_create_overlay_writes_own_marker_and_pin(self):
         core = self.root / "core"

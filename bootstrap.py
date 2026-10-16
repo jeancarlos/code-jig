@@ -245,7 +245,7 @@ def git_run(cmd):
 
 def clone(url, dest):
     if dest.exists():
-        origin = git_run(["git", "-C", str(dest), "remote", "get-url", "origin"])
+        origin = git_run(["git", "-C", str(dest), "config", "--get", "remote.origin.url"])
         if origin.returncode or origin.stdout.strip() != url:
             raise Refused(f"{dest} exists and is not a clone of that URL; pass --overlay-dir")
         cmd = ["git", "-C", str(dest), "pull", "--ff-only"]
@@ -287,6 +287,8 @@ def read_pin(overlay):
 
 
 def owned(overlay):
+    if (overlay / ".git").exists():
+        return False
     try:
         with open(overlay / "overlay.toml", encoding="utf-8") as f:
             return f.readline().rstrip("\r\n") == OWN
