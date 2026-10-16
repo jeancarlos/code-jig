@@ -4,24 +4,32 @@ Run this once on every machine that had the previous, Codex-only version. `code-
 
 ## Steps
 
+`code-jig` and `cjig` exist only after a bootstrap install or after `migrate` has run. On a checkout, run the module instead. `migrate` needs the overlay: pass `--overlay PATH` before the subcommand, or set `CODE_JIG_OVERLAY`. The old `CODEX_HARNESS_OVERLAY` is no longer read, so set the new one in your shell first.
+
 1. Get the new version, from a checkout of this repo or with the bootstrap (see the README). Close Codex and Claude Code, so nothing holds the tracker database. `install` may already have run; that is fine as long as it has not tracked any new sessions.
-2. See what would change:
+2. See what would change. On a checkout (Linux, macOS):
 
    ```sh
-   code-jig migrate --dry-run
+   PYTHONPATH=<checkout> python3 -m codejig --overlay <overlay> migrate --dry-run
    ```
 
-   On Windows: `py -3 -m codejig migrate --dry-run` from the core folder.
-3. Run it, naming each repo that carries a repo-level `allowProse` setting. With no repo it uses the current one:
+   On Windows (PowerShell):
 
-   ```sh
-   code-jig migrate ~/src/app ~/src/api
+   ```powershell
+   $env:PYTHONPATH = "<checkout>"; py -3 -m codejig --overlay <overlay> migrate --dry-run
    ```
 
-4. Check the result:
+   After a bootstrap install the launcher works: `code-jig --overlay <overlay> migrate --dry-run` (`code-jig.cmd` on Windows).
+3. Run it without `--dry-run`, naming each repo that carries a repo-level `allowProse` setting. With no repo it uses the current one:
 
    ```sh
-   code-jig doctor
+   PYTHONPATH=<checkout> python3 -m codejig --overlay <overlay> migrate ~/src/app ~/src/api
+   ```
+
+4. Check the result. The launcher now exists:
+
+   ```sh
+   code-jig --overlay <overlay> doctor
    ```
 
    `doctor` fails with `run code-jig migrate` while old state remains.
@@ -31,7 +39,7 @@ Run this once on every machine that had the previous, Codex-only version. `code-
 It prints `code-jig migrate is deprecated and will be removed in the next release` first, then each action. It:
 
 1. Moves the tracker database to `~/.local/share/code-jig/usage.sqlite3` (`%LOCALAPPDATA%\code-jig\usage.sqlite3`).
-2. Points global `core.hooksPath` at the new `git-hooks` folder.
+2. Unsets the old global `core.hooksPath`. The `install` it runs sets the new one when `git_gate = true` in the overlay.
 3. Copies the old git config keys (`email`, `allowProse`) to the `codejig` section and unsets the old ones.
 4. Removes the files the old version generated, including its hook entries in `~/.codex/hooks.json` and `~/.claude/settings.json`, then runs `install` to write the new ones.
 5. Renames skill sidecars and replaces skill links that point into the old checkout with copies.

@@ -6,7 +6,7 @@ Add to your shell profile, with your own paths:
 
 ```sh
 export CODE_JIG_OVERLAY=~/code-jig-overlay
-alias code-jig='PYTHONPATH=~/code-jig python3 -m codejig'
+alias code-jig='PYTHONPATH=~/PROJECTS/code-jig python3 -m codejig'
 alias cx='codex --profile default'
 ```
 
