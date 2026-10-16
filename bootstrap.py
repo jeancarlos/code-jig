@@ -266,7 +266,7 @@ def classify(value):
 
 def git_run(cmd):
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+        return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", check=False)
     except OSError as e:
         raise Refused(f"git is needed to clone the overlay: {e}")
 
@@ -280,7 +280,7 @@ def clone(url, dest):
     else:
         cmd = ["git", *CLONE_CONFIG, "clone", "--", url, str(dest)]
     try:
-        done = subprocess.run(cmd)
+        done = subprocess.run(cmd, check=False)
     except OSError as e:
         raise Refused(f"git is needed to clone the overlay: {e}")
     if done.returncode:
@@ -478,14 +478,14 @@ def interpreter():
 def run_install(python, core, overlay, codex_home, launcher):
     env = dict(os.environ, PYTHONPATH=str(core), CODE_JIG_OVERLAY=str(overlay), CODE_JIG_LAUNCHER=str(launcher))
     home = ["--codex-home", codex_home] if codex_home else []
-    return subprocess.run([python, "-P", "-s", "-m", "codejig", *home, "install"], env=env).returncode
+    return subprocess.run([python, "-P", "-s", "-m", "codejig", *home, "install"], env=env, check=False).returncode
 
 
 def run_doctor(python, core, overlay, codex_home, codex_bin, launcher):
     env = dict(os.environ, PYTHONPATH=str(core), CODE_JIG_OVERLAY=str(overlay), CODE_JIG_LAUNCHER=str(launcher))
     home = ["--codex-home", codex_home] if codex_home else []
     binary = ["--codex-bin", codex_bin] if codex_bin else []
-    if subprocess.run([python, "-P", "-s", "-m", "codejig", *home, "doctor", *binary], env=env).returncode:
+    if subprocess.run([python, "-P", "-s", "-m", "codejig", *home, "doctor", *binary], env=env, check=False).returncode:
         print("bootstrap: installed; doctor reported problems above")
 
 
