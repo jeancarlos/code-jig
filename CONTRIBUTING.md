@@ -9,6 +9,7 @@
 - Every code change ships with a test that fails without it. CI runs the unit tests on Linux and Windows, Python 3.11 and 3.13, plus real-tool checks, CodeQL, gitleaks, osv-scanner, zizmor, REUSE and fuzzing.
 - Contributions are accepted under the Apache-2.0 license, and every file is covered by `REUSE.toml`.
 - Secure design: the core is configuration and stdlib Python, runs no network calls except the documented source check and refuses non-public addresses there. It is installed only as a wheel from PyPI or the GitHub release, which CI builds once, signs and attests. Common errors to avoid: shell injection (subprocess lists, never user text in a shell), path traversal, unchecked archive members, secrets in files.
+- No code comments, except the one SPDX license header per source file that REUSE or OpenSSF gold asks for.
 
 ## Rules
 
