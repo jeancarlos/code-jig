@@ -64,7 +64,6 @@ Installed into `~/.agents/skills`, picked up by every session. Ask for them by n
 | `bug-hunt` | Property tests, fuzzing, mutation testing on the changed files. |
 | `codegen` | OpenAPI clients, codemods, scaffolding from a script kept in the repo. |
 | `skill-validate` | Before shipping a new or edited skill: `code-jig lint-skill`, then a `reviewer` pass against a fixed rubric. |
-| `remove-ai-attribution` | AI co-author or "Generated with" lines already in commits: `code-jig scrub`, with your approval before each push. |
 
 superpowers (`codex plugin add superpowers@openai-curated-remote`) adds brainstorming, planning, TDD and debugging workflows.
 

@@ -35,10 +35,11 @@ class PostToolUseHook(unittest.TestCase):
         path = write(self.root / "a.py", f"x = 1{ZWSP}\n# Certainly\nCo-Authored-By: Claude <x@y>\n")
         code, out = run_hook({"cwd": str(self.root), "tool_name": "Write", "tool_input": {"file_path": str(path)}})
         self.assertEqual(code, 0)
-        self.assertEqual(path.read_text(encoding="utf-8"), "x = 1\n")
+        self.assertEqual(path.read_text(encoding="utf-8"), "x = 1\nCo-Authored-By: Claude <x@y>\n")
         report = json.loads(out)
         self.assertEqual(report["hookSpecificOutput"]["hookEventName"], "PostToolUse")
-        self.assertIn("1 invisible chars, 1 attribution lines", report["systemMessage"])
+        self.assertIn("stripped 1 invisible chars", report["systemMessage"])
+        self.assertIn("line 3 looks like AI attribution", report["systemMessage"])
         self.assertIn("boilerplate", report["hookSpecificOutput"]["additionalContext"])
 
     def test_codex_apply_patch_targets_are_cleaned(self):

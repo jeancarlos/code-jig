@@ -79,7 +79,7 @@ def is_comment_line(line: str, markers) -> bool:
 
 def is_boilerplate_line(line: str, markers=None) -> bool:
     stripped = line.strip()
-    if not stripped:
+    if not stripped or (stripped.startswith("/*") and not (stripped.endswith("*/") and stripped.count("*/") == 1)):
         return False
 
     comment_text = stripped
@@ -149,7 +149,9 @@ def humanize_file(path: str, root: str | None = None, write: bool = True) -> dic
                 return result
         new_text, counts = humanize_text(text, markers, comment_lines)
         result.update(counts)
-        if new_text != text:
+        if new_text != text and comment_lines is None:
+            result["left"] = True
+        elif new_text != text:
             result["changed"] = True
             if write:
                 atomic_write(target, new_text.encode("utf-8"))
@@ -161,7 +163,7 @@ def humanize_file(path: str, root: str | None = None, write: bool = True) -> dic
 
 
 def report_result(result: dict) -> str | None:
-    if not result.get("changed"):
+    if not result.get("changed") and not result.get("left"):
         return None
     parts = []
     if result.get("boilerplate"):
@@ -176,6 +178,9 @@ def report_result(result: dict) -> str | None:
         parts.append(f"{result['emoji']} emoji")
 
     msg = f"humanize: {result['file']}: fixed {', '.join(parts)}"
+    if result.get("left"):
+        msg = (f"humanize: {result['file']}: {', '.join(parts)} in comment-like lines, not changed: only Python comments "
+               "are edited, so fix these by hand if they are comments")
     print(msg, file=sys.stderr)
     return msg
 
@@ -200,7 +205,6 @@ def cli(args) -> int:
         root = start if start.is_dir() else start.parent
         for f in _files(start):
             result = humanize_file(str(f), root=str(root), write=not args.check)
-            if result.get("changed"):
-                changed += 1
-                report_result(result)
+            changed += bool(result.get("changed"))
+            report_result(result)
     return 1 if args.check and changed else 0

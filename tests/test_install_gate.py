@@ -88,17 +88,25 @@ class Gate(unittest.TestCase):
         git(repo, "config", "codejig.pushCleanup", "false")
         code, err = in_repo(repo, gitgate.pre_push, [f"refs/heads/main {tip} refs/heads/main {base}"], True)
         self.assertEqual(code, 1)
-        self.assertIn("code-jig scrub", err)
+        self.assertIn("not on any remote yet", err)
         self.assertEqual(git(repo, "rev-parse", "main"), tip)
 
-    def test_repo_override_warns(self):
+    def test_repo_override_fails(self):
         install.git_gate(self.on)
         repo = tree(self)
         subprocess.run(["git", "init", "-q", str(repo)], check=True)
         subprocess.run(["git", "-C", str(repo), "config", "core.hooksPath", ".husky"], check=True)
         [(level, _, detail)] = check_git_gate(self.on, repo)
-        self.assertEqual(level, "warn")
+        self.assertEqual(level, "FAIL")
         self.assertIn(".husky", detail)
+        subprocess.run(["git", "-C", str(repo), "config", "core.hooksPath", str(self.target)], check=True)
+        self.assertEqual(check_git_gate(self.on, repo)[0][0], "ok")
+
+    def test_a_failed_git_config_write_is_not_reported_as_active(self):
+        with mock.patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": str(tree(self) / "missing" / "gitconfig")}):
+            lines = install.git_gate(self.on)
+            self.assertFalse(any(line.startswith("git gate active") for line in lines))
+            self.assertTrue(any("NOT active" in line for line in lines), lines)
 
 
 if __name__ == "__main__":
