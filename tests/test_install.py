@@ -1,5 +1,6 @@
 import contextlib
 import io
+import json
 import os
 import types
 import unittest
@@ -209,7 +210,8 @@ class Run(unittest.TestCase):
         os.chdir(root)
         self.addCleanup(os.chdir, cwd)
         [hooks] = [text for target, text in install.plan(core, ov, install.Path("rel home")) if target.name == "hooks.json"]
-        self.assertIn(str(root / "rel home"), hooks)
+        commands = [h["command"] for group in json.loads(hooks)["hooks"]["Stop"] for h in group["hooks"]]
+        self.assertTrue(any(str(root / "rel home") in c for c in commands), commands)
 
 
 class SymlinkedConfig(unittest.TestCase):
