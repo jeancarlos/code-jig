@@ -1,12 +1,16 @@
 import re
 import sys
 
-BUMP = re.compile(r"^chore\(deps\): bump (\S+) from v?(\d+)(?:\.\S*)? to v?(\d+)(?:\.\S*)?$")
+VERSION = r"v?(\d+)(?:\.(\d+))?(?:[.+-][0-9A-Za-z.+-]*)?"
+BUMP = re.compile(rf"chore\(deps\): bump (\S+) from {VERSION} to {VERSION}(?: in /\S*)?")
 
 
 def same_major(title: str) -> bool:
     m = BUMP.fullmatch(title)
-    return bool(m) and m.group(2) == m.group(3)
+    if not m:
+        return False
+    _, old_major, old_minor, new_major, new_minor = m.groups()
+    return old_major == new_major and (old_major != "0" or old_minor == new_minor)
 
 
 if __name__ == "__main__":

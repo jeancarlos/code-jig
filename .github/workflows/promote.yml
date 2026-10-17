@@ -7,17 +7,27 @@ on:
 permissions: {}
 jobs:
   promote:
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.repository_owner == 'jeancarlos'
+    if: >-
+      github.event.workflow_run.conclusion == 'success'
+      && github.repository_owner == 'jeancarlos'
+      && github.event.workflow_run.head_branch == 'develop'
+      && github.event.workflow_run.head_repository.full_name == github.repository
+      && (github.event.workflow_run.event == 'push'
+      || (github.event.workflow_run.event == 'workflow_dispatch'
+      && contains(fromJSON('["jeancarlos", "github-actions[bot]"]'), github.event.workflow_run.actor.login)))
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
+    outputs:
+      pr: ${{ steps.merge.outputs.pr }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
       - name: open the develop to main pull request and merge it when develop still points at the commit ci passed
+        id: merge
         run: |
           n=$(gh pr list --base main --head develop --state open --json number --jq '.[0].number')
           if [ -z "$n" ]; then
@@ -25,3 +35,32 @@ jobs:
             n=$(gh pr list --base main --head develop --state open --json number --jq '.[0].number')
           fi
           gh pr merge "$n" --auto --merge --match-head-commit "$HEAD_SHA"
+          echo "pr=$n" >> "$GITHUB_OUTPUT"
+  main-ci:
+    needs: promote
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      actions: write
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ needs.promote.outputs.pr }}
+    steps:
+      - name: wait for the promotion to merge, then run ci and security on main
+        run: |
+          if ! [[ "$PR" =~ ^[0-9]+$ ]]; then echo "no pull request number"; exit 1; fi
+          for _ in $(seq 60); do
+            case "$(gh pr view "$PR" --json state --jq .state)" in
+              MERGED)
+                gh workflow run ci.yml --ref main
+                gh workflow run security.yml --ref main
+                exit 0
+                ;;
+              CLOSED) echo "pull request $PR closed without merging"; exit 0 ;;
+            esac
+            sleep 30
+          done
+          echo "pull request $PR not merged within 30 minutes"
+          exit 1
