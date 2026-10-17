@@ -3,3 +3,4 @@ __pycache__/
 docs/deck/data.local.js
 worker/.wrangler/
 .coverage
+node_modules/

@@ -133,6 +133,15 @@ class Sources(unittest.TestCase):
     def test_script_text_is_not_page_text(self):
         self.assertEqual(self.verdicts([{"claim": "c", "url": f"{self.base}/doc", "quote": "not text"}]), ["quote-missing"])
 
+    def test_parser_assertion_keeps_only_the_text_collected_so_far(self):
+        def feed(parser, data):
+            parser.parts.append("default limit ")
+            raise AssertionError("expected name token")
+
+        with mock.patch.object(sources._Text, "feed", feed):
+            text = sources.page_text(b"<script>hidden</script><![\x00", "text/html")
+        self.assertEqual(text, "default limit")
+
     def test_every_outcome(self):
         rows = [
             {"claim": "a", "url": f"{self.base}/plain", "quote": "line one line two"},

@@ -63,18 +63,18 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
-      - run: npm install -g @openai/codex@0.162.1
+      - run: npm ci --prefix ci/npm --ignore-scripts
       - name: doctor --check-binary
         shell: bash
         run: |
-          bin=$(find "$(npm root -g)/@openai" -type f \( -name codex -o -name codex.exe \) -size +10M | head -1)
+          bin=$(find "ci/npm/node_modules/@openai" -type f \( -name codex -o -name codex.exe \) -size +10M | head -1)
           echo "native binary: $bin"
           python -m codejig doctor --check-binary --codex-bin "$bin"
       - name: execpolicy example and full doctor
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          bin=$(find "$(npm root -g)/@openai" -type f -name codex -size +10M | head -1)
+          bin=$(find "ci/npm/node_modules/@openai" -type f -name codex -size +10M | head -1)
           "$bin" execpolicy check --rules overlay-examples/personal/rules/toolchain.rules git push --force origin main | grep -q '"decision":"forbidden"'
           test "$("$bin" execpolicy check --rules overlay-examples/personal/rules/toolchain.rules git push origin main)" = '{"matchedRules":[]}'
           home="$RUNNER_TEMP/codex home"
@@ -96,8 +96,10 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
-      - run: python -m pip install lizard==1.24.1 ruff==0.17.0 vulture==2.16
-      - run: npm install -g knip@6.41.0
+      - run: python -m pip install --require-hashes -r ci/analyze.txt
+      - run: npm ci --prefix ci/npm --ignore-scripts
+      - shell: bash
+        run: echo "$PWD/ci/npm/node_modules/.bin" >> "$GITHUB_PATH"
       - name: ruff
         if: runner.os == 'Linux'
         run: ruff check codejig tests bootstrap.py
@@ -145,7 +147,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
-      - run: python -m pip install coverage==7.16.2
+      - run: python -m pip install --require-hashes -r ci/coverage.txt
       - name: measure
         id: measure
         run: |
@@ -170,7 +172,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
-      - run: npx --yes agnix@0.57.0 .
+      - run: npm ci --prefix ci/npm
+      - run: ci/npm/node_modules/.bin/agnix .
   bootstrap:
     strategy:
       fail-fast: false
@@ -187,7 +190,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
-      - run: npm install -g @openai/codex@0.162.1
+      - run: npm ci --prefix ci/npm --ignore-scripts
       - name: serve the release (Linux, macOS)
         if: runner.os != 'Windows'
         shell: bash
@@ -217,7 +220,7 @@ jobs:
           Remove-Item Env:PYTHONPATH
           Start-Process python -ArgumentList "-m", "http.server", "8765", "--bind", "127.0.0.1", "--directory", "$env:RUNNER_TEMP/srv"
           foreach ($i in 1..10) { try { Invoke-WebRequest "http://127.0.0.1:8765/v/$tag/SHA256SUMS" | Out-Null; break } catch { Start-Sleep 1 } }
-          $bin = (Get-ChildItem "$(npm root -g)/@openai" -Recurse -Filter codex.exe | Where-Object Length -gt 10MB | Select-Object -First 1).FullName
+          $bin = (Get-ChildItem "ci/npm/node_modules/@openai" -Recurse -Filter codex.exe | Where-Object Length -gt 10MB | Select-Object -First 1).FullName
           irm "http://127.0.0.1:8765/v/$tag/bootstrap.py" | py -3 -I - --base-url http://127.0.0.1:8765/v --version $tag --overlay-dir "$env:RUNNER_TEMP/codex overlay ação" --codex-home "$env:RUNNER_TEMP/codex home" --codex-bin $bin
           if ($LASTEXITCODE) { throw "bootstrap failed" }
           & "$env:LOCALAPPDATA/code-jig/bin/code-jig.cmd" --codex-home "$env:RUNNER_TEMP/codex home" doctor --check-binary --codex-bin $bin
@@ -233,3 +236,14 @@ jobs:
         with:
           node-version: "22"
       - run: node --test worker/index.test.mjs
+  reuse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --require-hashes -r ci/reuse.txt
+      - run: reuse lint

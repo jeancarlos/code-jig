@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / ".github" / "scripts" / "build_release.py"
 TAG = f"v{VERSION}"
 TOP = {"codejig", "core", "skills", "overlay-examples", "bench", "install.sh", "install.ps1", "bootstrap.py",
-       "LICENSE", "README.md", "VERSION"}
+       "LICENSE", "LICENSES", "REUSE.toml", "README.md", "VERSION"}
 REQUIRED = {"VERSION", "bench/requirements.toml", "codejig/__main__.py", "core/AGENTS.core.md", "core/tiers.toml",
             "overlay-examples/release/overlay.toml", "overlay-examples/release/profiles.toml", "install.sh",
             "install.ps1", "bootstrap.py", "LICENSE", "README.md"}
