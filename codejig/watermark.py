@@ -123,7 +123,7 @@ def strip_watermark(path: str, root: str | None = None) -> dict:
     return result
 
 
-def report_result(result: dict, hook_type: str = "cli") -> str | None:
+def report_result(result: dict) -> str | None:
     if not result.get("changed"):
         return None
     parts = [
@@ -143,5 +143,5 @@ def report_result(result: dict, hook_type: str = "cli") -> str | None:
 def cli(args) -> int:
     for path in (args.path or []):
         result = strip_watermark(path)
-        report_result(result, "cli")
+        report_result(result)
     return 0

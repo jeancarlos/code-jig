@@ -64,8 +64,7 @@ def page_text(body: bytes, ctype: str) -> str:
             parser.feed(text)
         except AssertionError:
             pass
-        else:
-            text = "".join(parser.parts)
+        text = "".join(parser.parts)
     return normalize(text)
 
 
