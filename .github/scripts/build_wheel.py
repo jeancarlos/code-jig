@@ -1,5 +1,4 @@
 import io
-import re
 import shutil
 import subprocess
 import sys
@@ -7,7 +6,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from build_release import archive
+from build_release import TAG, archive
 
 from codejig import VERSION
 from codejig.install import release_digest
@@ -25,7 +24,7 @@ def stage(tag: str, root: Path) -> None:
 
 
 def build(tag: str, out: Path) -> None:
-    if not re.fullmatch(r"v\d+\.\d+\.\d+", tag) or tag != f"v{VERSION}":
+    if not TAG.fullmatch(tag) or tag != f"v{VERSION}":
         raise SystemExit(f"build_wheel: tag {tag} does not match code-jig VERSION {VERSION}")
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
