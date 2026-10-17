@@ -1,6 +1,3 @@
-const RELEASES = "https://github.com/jeancarlos/code-jig/releases"
-const TAG = /^v\d+\.\d+\.\d+$/
-const FILES = new Set(["code-jig.zip", "SHA256SUMS", "bootstrap.py"])
 const TEXT = { "content-type": "text/plain; charset=utf-8" }
 const PAGE = `<!doctype html>
 <html lang="en">
@@ -25,56 +22,26 @@ a { color: var(--link) }
 <p class="mute">Supported today: Codex. Claude Code, Antigravity and Copilot from the next releases.</p>
 <p>Requires Python 3.11+ and git.</p>
 <h2>Linux and macOS</h2>
-<pre>curl -fsSL https://code-jig.jeansouza.dev/setup | python3 -I - --overlay &lt;path|git-url&gt;</pre>
-<h2>Windows (PowerShell)</h2>
-<pre>irm https://code-jig.jeansouza.dev/setup | py -3 -I - --overlay &lt;path|git-url&gt;</pre>
-<h2>Download, read and run</h2>
-<pre>curl -fsSL -o bootstrap.py https://code-jig.jeansouza.dev/setup
+<pre>curl -fsSL https://github.com/jeancarlos/code-jig/releases/latest/download/bootstrap.py | python3 -I - --overlay &lt;path|git-url&gt;</pre>
+<p>Or download, read and run:</p>
+<pre>curl -fsSL -o bootstrap.py https://github.com/jeancarlos/code-jig/releases/latest/download/bootstrap.py
 python3 -I bootstrap.py --overlay &lt;path|git-url&gt;</pre>
-<pre>irm https://code-jig.jeansouza.dev/setup -OutFile bootstrap.py
+<h2>Windows (PowerShell)</h2>
+<pre>irm https://github.com/jeancarlos/code-jig/releases/latest/download/bootstrap.py -OutFile bootstrap.py
 py -3 -I bootstrap.py --overlay &lt;path|git-url&gt;</pre>
-<p>No one-liner allowed? Download <code>code-jig.zip</code>, <code>SHA256SUMS</code> and <code>bootstrap.py</code> from the <a href="https://github.com/jeancarlos/code-jig/releases/latest">GitHub release</a>, then run <code>py -3 -I bootstrap.py --zip code-jig.zip --overlay &lt;path&gt;</code> (<code>python3 -I</code> on Linux and macOS).</p>
-<p class="mute">This site counts requests for the setup script and release zips: event, version, client type, country. No IP address, user-agent string or install ID is stored. The tool itself sends nothing.</p>
+<p>Everything downloads from GitHub. No one-liner allowed? Download <code>code-jig.zip</code>, <code>SHA256SUMS</code> and <code>bootstrap.py</code> from the <a href="https://github.com/jeancarlos/code-jig/releases/latest">GitHub release</a>, then run <code>py -3 -I bootstrap.py --zip code-jig.zip --overlay &lt;path&gt;</code> (<code>python3 -I</code> on Linux and macOS).</p>
 <p><a href="https://github.com/jeancarlos/code-jig">Source on GitHub</a></p>
 </body>
 </html>
 `
 const HTML = { "content-type": "text/html; charset=utf-8" }
 
-export function client(ua) {
-  const s = (ua || "").toLowerCase()
-  if (s.startsWith("curl/")) return "curl"
-  if (s.includes("powershell")) return "powershell"
-  if (s.startsWith("python-urllib/")) return "python"
-  return "other"
-}
-
-function count(env, request, event, tag) {
-  if (request.method !== "GET") return
-  env.INSTALLS?.writeDataPoint({
-    blobs: [event, tag, client(request.headers.get("user-agent")), request.cf?.country || ""],
-    indexes: [event],
-  })
-}
-
 export default {
-  async fetch(request, env) {
+  async fetch(request) {
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response("method not allowed\n", { status: 405, headers: TEXT })
     }
-    const { pathname } = new URL(request.url)
-    if (pathname === "/") return new Response(PAGE, { headers: HTML })
-    if (pathname === "/setup") {
-      const upstream = await fetch(`${RELEASES}/latest/download/bootstrap.py`)
-      if (!upstream.ok) return new Response("setup is unavailable\n", { status: 502, headers: TEXT })
-      count(env, request, "bootstrap", "")
-      return new Response(upstream.body, { headers: { ...TEXT, "cache-control": "no-store" } })
-    }
-    const m = pathname.match(/^\/v\/([^/]+)\/([^/]+)$/)
-    if (m && TAG.test(m[1]) && FILES.has(m[2])) {
-      if (m[2] === "code-jig.zip") count(env, request, "download", m[1])
-      return Response.redirect(`${RELEASES}/download/${m[1]}/${m[2]}`, 302)
-    }
+    if (new URL(request.url).pathname === "/") return new Response(PAGE, { headers: HTML })
     return new Response("not found\n", { status: 404, headers: TEXT })
   },
 }

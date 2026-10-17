@@ -70,21 +70,21 @@ class ZipInstall(unittest.TestCase):
         with self.assertRaises(bootstrap.Refused):
             self.go("--version", "v9.9.9")
 
-    def test_github_flag_never_contacts_the_site(self):
+    def test_downloads_from_github_by_default(self):
         urls = []
 
         def fake(url, limit):
             urls.append(url)
             return self.blob if url.endswith(".zip") else f"{hashlib.sha256(self.blob).hexdigest()}  code-jig.zip\n".encode()
 
-        argv = ["--github", "--version", TAG, "--overlay", str(self.overlay), "--data-dir", str(self.root / "data"),
+        argv = ["--version", TAG, "--overlay", str(self.overlay), "--data-dir", str(self.root / "data"),
                 "--bin-dir", str(self.root / "bin")]
         with mock.patch.object(bootstrap, "fetch", side_effect=fake), \
                 mock.patch.object(bootstrap, "run_install", return_value=0), mock.patch.object(bootstrap, "run_doctor"), \
                 contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(bootstrap.run(bootstrap.parse_args(argv)), 0)
         self.assertEqual(len(urls), 2)
-        self.assertTrue(all(u.startswith("https://github.com/") for u in urls), urls)
+        self.assertEqual(urls, [f"https://github.com/jeancarlos/code-jig/releases/download/{TAG}/{n}" for n in ("SHA256SUMS", "code-jig.zip")])
 
 
 class LauncherPath(unittest.TestCase):
