@@ -28,7 +28,7 @@ Codex updates on its own schedule. After an update:
 
 `pipx install --force code-jig==X.Y.Z` with the older version, set `core_version` back to `vX.Y.Z`, then `code-jig install` and `code-jig doctor`. From a checkout, check out the previous tag instead. Generated files are rewritten in place. Core skills that the older version does not ship are removed, unless you edited them by hand, in which case `install` leaves them and warns. Rules come from the overlay, so a core rollback does not change them.
 
-Versions up to v0.12.0 were also released as `code-jig.zip` for the old `bootstrap.py` installer. Those zips stay on their release pages, but the installer is gone; install those versions from PyPI too (v0.12.0 is the first one there).
+Versions up to v0.12.0 were also released as `code-jig.zip` for the old `bootstrap.py` installer. Those zips stay on their release pages, but the installer is gone; PyPI has v0.12.1 and later.
 
 The tracker database survives a rollback: newer versions only add tables, so an older `Stop` hook keeps writing to it. Those tables (exit codes, skill reads, Guardian outcomes) stop updating until you upgrade again and run `collect --rescan`.
 
