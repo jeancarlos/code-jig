@@ -17,4 +17,4 @@ A failing review or case is fixed in the skill, never by loosening the case unti
 
 ## Other rules
 
-See [CONTRIBUTING.md](CONTRIBUTING.md): stdlib only, no code comments, explicit utf-8, the public data and clean-room rules.
+See [CONTRIBUTING.md](CONTRIBUTING.md): stdlib only, no code comments (SPDX license headers excepted), explicit utf-8, the public data and clean-room rules.
