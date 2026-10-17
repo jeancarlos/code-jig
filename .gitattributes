@@ -2,7 +2,6 @@
 tests/** export-ignore
 docs/** export-ignore
 worker/** export-ignore
-.github/** export-ignore
 bench/** export-ignore
 bench/requirements.toml -export-ignore
 skills/*/evals/** export-ignore
@@ -17,7 +16,3 @@ CLAUDE.md export-ignore
 CONTRIBUTING.md export-ignore
 dashboard.json export-ignore
 .agnix.toml export-ignore
-ci/** export-ignore
-SECURITY.md export-ignore
-fuzz/** export-ignore
-.clusterfuzzlite/** export-ignore
