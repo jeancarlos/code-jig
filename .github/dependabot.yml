@@ -2,13 +2,22 @@ version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
+    target-branch: develop
     schedule:
       interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
   - package-ecosystem: pip
     directory: /ci
+    target-branch: develop
     schedule:
       interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
   - package-ecosystem: npm
     directory: /ci/npm
+    target-branch: develop
     schedule:
       interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
