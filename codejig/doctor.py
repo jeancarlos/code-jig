@@ -159,45 +159,55 @@ def family(slug: str) -> str:
     return slug.rsplit("-", 1)[0]
 
 
+def _legacy_check(home: Path, ts, cfg: dict) -> Check:
+    profiles = cfg.get("profiles") if isinstance(cfg.get("profiles"), dict) else {}
+    legacy = [t.name for t in ts if cfg.get("profile") == t.name or t.name in profiles]
+    return ("FAIL", "legacy profiles", f"{home / 'config.toml'} has profile = or [profiles.*] for {', '.join(legacy)}; Codex refuses --profile with them") \
+        if legacy else ("ok", "legacy profiles", "none")
+
+
+def _profile_check(home: Path, t, policy, ov: Overlay) -> Check:
+    f = home / f"{t.name}.config.toml"
+    name = f"tier {t.name} profile"
+    if not f.is_file():
+        return ("warn", name, f"{f} is missing; Codex silently uses the base config; run code-jig install")
+    if f.read_bytes() != render_profile(t, policy, ov.auto_compact_token_limit).encode("utf-8"):
+        return ("warn", name, f"{f} is stale or edited; run code-jig install")
+    return ("ok", name, f"{t.model} at {t.effort}")
+
+
+def _model_check(t, cat: dict) -> Check:
+    name = f"tier {t.name} model"
+    if t.model not in cat:
+        return ("FAIL", name, f"{t.model} is not in this account's catalog; candidates: {', '.join(sorted(cat))}")
+    if cat[t.model] and t.effort not in cat[t.model]:
+        return ("FAIL", name, f"{t.model} does not support {t.effort}; supported: {', '.join(sorted(cat[t.model]))}")
+    return ("ok", name, f"{t.model} supports {t.effort}")
+
+
+def _family_checks(ts) -> list[Check]:
+    by = {t.name: t for t in ts}
+    if "review" not in by or "default" not in by:
+        return []
+    same = family(by["review"].model) == family(by["default"].model)
+    return [("warn", "review family", f"review and default are both {family(by['default'].model)}; cross-family review catches different bugs")
+            if same else ("ok", "review family", f"{by['review'].model} vs {by['default'].model}")]
+
+
 def check_tiers(home: Path, core: Path, ov: Overlay) -> list[Check]:
     try:
         ts = tiers.load(core, ov.root)
     except ValueError as e:
         return [("FAIL", "tiers", str(e))]
-    checks: list[Check] = []
-    cfg = read_config(home)
-    profiles = cfg.get("profiles") if isinstance(cfg.get("profiles"), dict) else {}
-    legacy = [t.name for t in ts if cfg.get("profile") == t.name or t.name in profiles]
-    checks.append(("FAIL", "legacy profiles", f"{home / 'config.toml'} has profile = or [profiles.*] for {', '.join(legacy)}; Codex refuses --profile with them")
-                  if legacy else ("ok", "legacy profiles", "none"))
+    checks: list[Check] = [_legacy_check(home, ts, read_config(home))]
     policy = tiers.extra_policy(ov.root)
-    for t in ts:
-        f = home / f"{t.name}.config.toml"
-        name = f"tier {t.name} profile"
-        if not f.is_file():
-            checks.append(("warn", name, f"{f} is missing; Codex silently uses the base config; run code-jig install"))
-        elif f.read_bytes() != render_profile(t, policy, ov.auto_compact_token_limit).encode("utf-8"):
-            checks.append(("warn", name, f"{f} is stale or edited; run code-jig install"))
-        else:
-            checks.append(("ok", name, f"{t.model} at {t.effort}"))
+    checks += [_profile_check(home, t, policy, ov) for t in ts]
     cat = catalog(home)
     if cat is None:
         checks.append(("warn", "model catalog", f"{home / 'models_cache.json'} missing or unreadable; start codex once"))
     else:
-        for t in ts:
-            name = f"tier {t.name} model"
-            if t.model not in cat:
-                checks.append(("FAIL", name, f"{t.model} is not in this account's catalog; candidates: {', '.join(sorted(cat))}"))
-            elif cat[t.model] and t.effort not in cat[t.model]:
-                checks.append(("FAIL", name, f"{t.model} does not support {t.effort}; supported: {', '.join(sorted(cat[t.model]))}"))
-            else:
-                checks.append(("ok", name, f"{t.model} supports {t.effort}"))
-    by = {t.name: t for t in ts}
-    if "review" in by and "default" in by:
-        same = family(by["review"].model) == family(by["default"].model)
-        checks.append(("warn", "review family", f"review and default are both {family(by['default'].model)}; cross-family review catches different bugs")
-                      if same else ("ok", "review family", f"{by['review'].model} vs {by['default'].model}"))
-    return checks
+        checks += [_model_check(t, cat) for t in ts]
+    return checks + _family_checks(ts)
 
 
 def check_roles(home: Path, core: Path, ov: Overlay) -> list[Check]:
@@ -297,6 +307,15 @@ def check_release(core: Path, ov: Overlay) -> list[Check]:
     return [pin, ("FAIL", "core clean", "core differs from its release digest but core_writable = false")]
 
 
+def _git_failure(core: Path, ov: Overlay, strict: str, status) -> list[Check]:
+    reason = f"{core} is not a readable git repo or git is missing"
+    first = (status.stderr.strip().splitlines() or [""])[0] if status else ""
+    if first:
+        reason += f": {first}"
+    pin = (strict, "core pin", f"cannot be checked; overlay pins {ov.core_version}")
+    return [pin, ("FAIL", "core clean", reason)]
+
+
 def check_core(core: Path, ov: Overlay) -> list[Check]:
     if (core / "VERSION").is_file() and not (core / ".git").exists():
         return check_release(core, ov)
@@ -305,12 +324,7 @@ def check_core(core: Path, ov: Overlay) -> list[Check]:
     tag = described.stdout.strip() if described and described.returncode == 0 else ""
     status = _git(core, "status", "--porcelain")
     if status is None or status.returncode != 0:
-        reason = f"{core} is not a readable git repo or git is missing"
-        first = (status.stderr.strip().splitlines() or [""])[0] if status else ""
-        if first:
-            reason += f": {first}"
-        pin = (strict, "core pin", f"cannot be checked; overlay pins {ov.core_version}")
-        return [pin, ("FAIL", "core clean", reason)]
+        return _git_failure(core, ov, strict, status)
     pin = ("ok", "core pin", tag) if tag == ov.core_version else (
         strict, "core pin", f"core is at {tag or 'an untagged commit'}, overlay pins {ov.core_version}")
     dirty = status.stdout.strip()

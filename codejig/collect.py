@@ -66,30 +66,35 @@ def _usage(u) -> tuple[int, ...] | None:
     return tuple(u[k] for k in USAGE_KEYS)
 
 
+def _custom_call(call_id: str, payload: dict) -> tuple[str, str, bool] | None:
+    text = payload.get("input")
+    m = CMD.search(text) if isinstance(text, str) else None
+    if not m:
+        return None
+    return call_id, _decode(m.group(1)), "require_escalated" in text
+
+
+def _function_call(call_id: str, payload: dict) -> tuple[str, str, bool] | None:
+    try:
+        args = json.loads(payload.get("arguments") or "{}")
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(args, dict):
+        return None
+    cmd = args.get("cmd", args.get("command"))
+    if isinstance(cmd, list):
+        cmd = " ".join(str(c) for c in cmd)
+    if not isinstance(cmd, str):
+        return None
+    return call_id, cmd, args.get("sandbox_permissions") == "require_escalated"
+
+
 def tool_call(payload: dict) -> tuple[str, str, bool] | None:
-    kind, call_id = payload.get("type"), payload.get("call_id")
+    call_id = payload.get("call_id")
     if not isinstance(call_id, str):
         return None
-    if kind == "custom_tool_call":
-        text = payload.get("input")
-        m = CMD.search(text) if isinstance(text, str) else None
-        if not m:
-            return None
-        return call_id, _decode(m.group(1)), "require_escalated" in text
-    if kind == "function_call":
-        try:
-            args = json.loads(payload.get("arguments") or "{}")
-        except (TypeError, ValueError):
-            return None
-        if not isinstance(args, dict):
-            return None
-        cmd = args.get("cmd", args.get("command"))
-        if isinstance(cmd, list):
-            cmd = " ".join(str(c) for c in cmd)
-        if not isinstance(cmd, str):
-            return None
-        return call_id, cmd, args.get("sandbox_permissions") == "require_escalated"
-    return None
+    build = {"custom_tool_call": _custom_call, "function_call": _function_call}.get(payload.get("type"))
+    return build(call_id, payload) if build else None
 
 
 def _decode(raw: str) -> str:
@@ -155,82 +160,124 @@ def _response_item(con: sqlite3.Connection, thread: str, turn: str | None, ts: s
                         (thread, p["call_id"], code, thread, p["call_id"], thread, p["call_id"]))
 
 
+class _Cursor:
+    def __init__(self, thread=None, model=None, turn=None, line=0, last_total=-1):
+        self.thread, self.model, self.turn, self.line, self.last_total = thread, model, turn, line, last_total
+
+
+def _session_meta(con, st, p, ts, quarantine) -> None:
+    if st.thread is None and isinstance(p.get("id"), str):
+        st.thread = p["id"]
+        con.execute("INSERT OR REPLACE INTO threads VALUES (?,?,?,?,?)",
+                    (st.thread, _s(p.get("parent_thread_id")), kind_of(p), _s(p.get("timestamp")) or ts, _s(p.get("cwd"))))
+
+
+def _turn_context(con, st, p, ts, quarantine) -> None:
+    st.model = _s(p.get("model")) or st.model
+    st.turn = _s(p.get("turn_id")) or st.turn
+
+
+def _token_usage_record(con, st, p, ts, quarantine) -> None:
+    u = _usage(p.get("usage"))
+    if u is None or not isinstance(p.get("response_id"), str):
+        quarantine("token_usage_record shape")
+        return
+    con.execute("INSERT OR IGNORE INTO usage VALUES (?,?,?,?,?,?,?,?,?)",
+                (st.thread, p["response_id"], _s(p.get("turn_id")) or st.turn, ts, st.model, *u))
+
+
+def _token_count(con, st, p, ts, quarantine) -> None:
+    info = p.get("info")
+    if info is None:
+        return
+    total = (info.get("total_token_usage") or {}).get("total_tokens") if isinstance(info, dict) else None
+    u = _usage(info.get("last_token_usage")) if isinstance(info, dict) else None
+    if u is None or not isinstance(total, int):
+        quarantine("token_count shape")
+        return
+    if total == st.last_total:
+        return
+    st.last_total = total
+    con.execute("INSERT OR IGNORE INTO usage VALUES (?,?,?,?,?,?,?,?,?)",
+                (st.thread, f"tc:{st.line}", st.turn, ts, st.model, *u))
+
+
+def _compacted(con, st, p, ts, quarantine) -> None:
+    con.execute("INSERT OR IGNORE INTO compactions VALUES (?,?,?)", (st.thread, st.line, ts))
+
+
+def _response(con, st, p, ts, quarantine) -> None:
+    _response_item(con, st.thread, st.turn, ts, p)
+
+
+def _task_complete(con, st, p, ts, quarantine) -> None:
+    outcome = guardian_outcome(p)
+    if outcome and con.execute("SELECT 1 FROM threads WHERE id=? AND kind='guardian'", (st.thread,)).fetchone():
+        con.execute("INSERT OR IGNORE INTO guardian VALUES (?,?,?,?)", (st.thread, st.line, ts, outcome))
+
+
+_RECORDS = {"turn_context": _turn_context, "token_usage_record": _token_usage_record,
+            "compacted": _compacted, "response_item": _response}
+_EVENTS = {"token_count": _token_count, "task_complete": _task_complete}
+
+
+def _handler(t, p):
+    if t == "event_msg":
+        kind = p.get("type")
+        return _EVENTS.get(kind) if isinstance(kind, str) else None
+    return _RECORDS.get(t) if isinstance(t, str) else None
+
+
+def _record(con, st, raw, quarantine) -> None:
+    try:
+        o = json.loads(raw)
+    except ValueError:
+        quarantine("not JSON")
+        return
+    p = o.get("payload") if isinstance(o, dict) else None
+    if not isinstance(p, dict):
+        quarantine("no payload")
+        return
+    t, ts = o.get("type"), _s(o.get("timestamp"))
+    if t == "session_meta":
+        _session_meta(con, st, p, ts, quarantine)
+    elif st.thread is None:
+        quarantine("before session_meta")
+    else:
+        handler = _handler(t, p)
+        if handler:
+            handler(con, st, p, ts, quarantine)
+
+
 def _scan_file(con: sqlite3.Connection, path: Path) -> tuple[int, int]:
     size = path.stat().st_size
     row = con.execute("SELECT offset, thread_id, model, turn_id, line, last_total FROM files WHERE path=?", (str(path),)).fetchone()
-    offset, thread, model, turn, line, last_total = row or (0, None, None, None, 0, -1)
+    offset, *state = row or (0, None, None, None, 0, -1)
     if size < offset:
-        offset, thread, model, turn, line, last_total = 0, None, None, None, 0, -1
+        offset, state = 0, [None, None, None, 0, -1]
     if size == offset:
         return 0, 0
     with open(path, "rb") as f:
         f.seek(offset)
         data = f.read()
     end = data.rfind(b"\n") + 1
+    st = _Cursor(*state)
     count = bad = 0
     for raw in data[:end].split(b"\n")[:-1]:
-        line += 1
+        st.line += 1
         count += 1
 
-        def quarantine(reason: str, line: int = line) -> None:
+        def quarantine(reason: str, line: int = st.line) -> None:
             nonlocal bad
             bad += 1
             con.execute("INSERT OR IGNORE INTO quarantine VALUES (?,?,?)", (str(path), line, reason))
 
         try:
-            try:
-                o = json.loads(raw)
-            except ValueError:
-                quarantine("not JSON")
-                continue
-            p = o.get("payload") if isinstance(o, dict) else None
-            if not isinstance(p, dict):
-                quarantine("no payload")
-                continue
-            t, ts = o.get("type"), o.get("timestamp")
-            if t == "session_meta":
-                if thread is None and isinstance(p.get("id"), str):
-                    thread = p["id"]
-                    con.execute("INSERT OR REPLACE INTO threads VALUES (?,?,?,?,?)",
-                                (thread, _s(p.get("parent_thread_id")), kind_of(p), _s(p.get("timestamp")) or _s(ts), _s(p.get("cwd"))))
-            elif thread is None:
-                quarantine("before session_meta")
-            elif t == "turn_context":
-                model = _s(p.get("model")) or model
-                turn = _s(p.get("turn_id")) or turn
-            elif t == "token_usage_record":
-                u = _usage(p.get("usage"))
-                if u is None or not isinstance(p.get("response_id"), str):
-                    quarantine("token_usage_record shape")
-                    continue
-                con.execute("INSERT OR IGNORE INTO usage VALUES (?,?,?,?,?,?,?,?,?)",
-                            (thread, p["response_id"], _s(p.get("turn_id")) or turn, _s(ts), model, *u))
-            elif t == "event_msg" and p.get("type") == "token_count":
-                info = p.get("info")
-                if info is None:
-                    continue
-                total = (info.get("total_token_usage") or {}).get("total_tokens") if isinstance(info, dict) else None
-                u = _usage(info.get("last_token_usage")) if isinstance(info, dict) else None
-                if u is None or not isinstance(total, int):
-                    quarantine("token_count shape")
-                    continue
-                if total == last_total:
-                    continue
-                last_total = total
-                con.execute("INSERT OR IGNORE INTO usage VALUES (?,?,?,?,?,?,?,?,?)",
-                            (thread, f"tc:{line}", turn, _s(ts), model, *u))
-            elif t == "compacted":
-                con.execute("INSERT OR IGNORE INTO compactions VALUES (?,?,?)", (thread, line, _s(ts)))
-            elif t == "response_item":
-                _response_item(con, thread, turn, _s(ts), p)
-            elif t == "event_msg" and p.get("type") == "task_complete":
-                outcome = guardian_outcome(p)
-                if outcome and con.execute("SELECT 1 FROM threads WHERE id=? AND kind='guardian'", (thread,)).fetchone():
-                    con.execute("INSERT OR IGNORE INTO guardian VALUES (?,?,?,?)", (thread, line, _s(ts), outcome))
+            _record(con, st, raw, quarantine)
         except Exception as e:
             quarantine(type(e).__name__)
     con.execute("INSERT OR REPLACE INTO files VALUES (?,?,?,?,?,?,?,?)",
-                (str(path), offset + end, size, thread, model, turn, line, last_total))
+                (str(path), offset + end, size, st.thread, st.model, st.turn, st.line, st.last_total))
     return count, bad
 
 

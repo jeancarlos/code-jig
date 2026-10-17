@@ -97,7 +97,7 @@ def _staged() -> list[tuple[str, str, str]]:
     Read from one raw diff, so a file name is never interpreted as a pathspec."""
     fields = _git("diff", "--cached", "--raw", "-z", "--no-renames", "--no-abbrev", "--diff-filter=AM").split(b"\0")
     out = []
-    for meta, path in zip(fields[0::2], fields[1::2]):
+    for meta, path in zip(fields[0::2], fields[1::2], strict=False):
         parts = meta.decode().lstrip(":").split()
         if len(parts) == 5 and parts[1] in ("100644", "100755"):
             out.append((os.fsdecode(path), parts[1], parts[3]))
@@ -180,34 +180,50 @@ def _clean(branches: dict[str, tuple[str, str, list[str]]], emails: set[str]) ->
     return True
 
 
-def pre_push(lines: list[str], cleanup: bool = False) -> int:
-    emails = my_emails(Path.cwd())
+def _bad_commits(local: str, remote: str, emails: set[str]) -> list[str]:
+    bad = []
+    for sha in _outgoing(local, remote):
+        email, _, body = _git("log", "-1", "--format=%ae%x00%B", sha).partition(b"\0")
+        if email.decode("utf-8", "replace").lower() in emails and has_watermark(body):
+            bad.append(sha)
+    return bad
+
+
+def _push_ref(ref: str) -> str:
+    if ref == "HEAD":
+        return _git("symbolic-ref", "-q", "HEAD", check=False).decode().strip() or ref
+    return ref
+
+
+def _collect_problems(lines: list[str], emails: set[str]) -> tuple[list[str], dict]:
     problems, branches = [], {}
-    for line in lines:
-        parts = line.split()
+    for parts in (line.split() for line in lines):
         if len(parts) != 4 or parts[1] == ZERO:
             continue
-        bad = []
-        for sha in _outgoing(parts[1], parts[3]):
-            email, _, body = _git("log", "-1", "--format=%ae%x00%B", sha).partition(b"\0")
-            if email.decode("utf-8", "replace").lower() in emails and has_watermark(body):
-                bad.append(sha)
+        bad = _bad_commits(parts[1], parts[3], emails)
         if bad:
             problems += bad
-            ref = parts[0]
-            if ref == "HEAD":
-                ref = _git("symbolic-ref", "-q", "HEAD", check=False).decode().strip() or ref
-            branches[ref] = (parts[1], parts[3], bad)
-    if problems and _cleanup_on(cleanup) and all(_cleanable(ref, local, remote, bad, emails)
-                                                 for ref, (local, remote, bad) in branches.items()) and _clean(branches, emails):
+            branches[_push_ref(parts[0])] = (parts[1], parts[3], bad)
+    return problems, branches
+
+
+def _refuse(problems: list[str]) -> int:
+    print("code-jig: push refused, commit messages carry AI attribution:", file=sys.stderr)
+    for sha in dict.fromkeys(problems):
+        print(f"  {sha[:10]} {_git('log', '-1', '--format=%s', sha).decode().strip()}", file=sys.stderr)
+    print("Remove it with: code-jig scrub (rewrites messages only, then prints the push commands)", file=sys.stderr)
+    return 1
+
+
+def pre_push(lines: list[str], cleanup: bool = False) -> int:
+    emails = my_emails(Path.cwd())
+    problems, branches = _collect_problems(lines, emails)
+    if not problems:
+        return _run_tests()
+    if _cleanup_on(cleanup) and all(_cleanable(ref, local, remote, bad, emails)
+                                    for ref, (local, remote, bad) in branches.items()) and _clean(branches, emails):
         return 1
-    if problems:
-        print("code-jig: push refused, commit messages carry AI attribution:", file=sys.stderr)
-        for sha in dict.fromkeys(problems):
-            print(f"  {sha[:10]} {_git('log', '-1', '--format=%s', sha).decode().strip()}", file=sys.stderr)
-        print("Remove it with: code-jig scrub (rewrites messages only, then prints the push commands)", file=sys.stderr)
-        return 1
-    return _run_tests()
+    return _refuse(problems)
 
 
 def _run_tests() -> int:
