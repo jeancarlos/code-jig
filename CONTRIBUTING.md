@@ -1,5 +1,15 @@
 # Contributing
 
+## How to contribute
+
+- Bugs and enhancement requests: open an issue at <https://github.com/jeancarlos/code-jig/issues>. Vulnerabilities go through [SECURITY.md](SECURITY.md), never a public issue.
+- Changes: branch `feature/*`, `fix/*` or `chore/*` off `develop`, open a pull request into `develop`. `develop` is merged into `main` and a tag `vX.Y.Z` publishes the release.
+- Every code change ships with a test that fails without it. CI runs the unit tests on Linux and Windows, Python 3.11 and 3.13, plus real-tool checks, CodeQL, gitleaks, osv-scanner, zizmor, REUSE and fuzzing.
+- Contributions are accepted under the Apache-2.0 license, and every file is covered by `REUSE.toml`.
+- Secure design: the core is configuration and stdlib Python, runs no network calls except the documented bootstrap download and source check, refuses non-public addresses, verifies sha256 before unpacking and rejects archive paths outside the target. Common errors to avoid: shell injection (subprocess lists, never user text in a shell), path traversal, unchecked archive members, secrets in files.
+
+## Rules
+
 - Python 3.11+, stdlib only. No new dependencies.
 - Run tests: `python -m unittest discover -s tests -v`
 - A new or changed skill ships only after `code-jig skill-check skills/<name> --review --live` passes on Codex and its `.skill-check` stamp is committed with it; see [AGENTS.md](AGENTS.md).
