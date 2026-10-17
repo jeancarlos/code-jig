@@ -1,7 +1,14 @@
 import os
 from pathlib import Path
 
-CORE = Path(__file__).resolve().parent.parent
+CODE = Path(__file__).resolve().parent
+
+
+def locate_core(code: Path) -> Path:
+    return code / "_core" if (code / "_core").is_dir() else code.parent
+
+
+CORE = locate_core(CODE)
 
 
 def codex_home(arg: str | None) -> Path:
