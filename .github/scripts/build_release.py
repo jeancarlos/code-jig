@@ -12,10 +12,11 @@ from codejig import VERSION
 from codejig.install import release_digest
 
 ROOT = Path(__file__).resolve().parents[2]
+HIDDEN = (".github", "ci", "fuzz", ".clusterfuzzlite", "SECURITY.md")
 
 
 def archive(*extra: str) -> bytes:
-    return subprocess.run(["git", "-C", str(ROOT), "archive", "--format=zip", "--worktree-attributes", *extra, "HEAD"],
+    return subprocess.run(["git", "-C", str(ROOT), "archive", "--format=zip", "--worktree-attributes", *extra, "HEAD", "--", ".", *(f":(exclude){p}" for p in HIDDEN)],
                           check=True, capture_output=True).stdout
 
 
