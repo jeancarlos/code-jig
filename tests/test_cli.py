@@ -10,8 +10,7 @@ from codejig.__main__ import build_parser
 
 ROOT = Path(__file__).resolve().parent.parent
 OLD_NAMES = (("codex-" "harness"), ("codex" "harness"), ("CODEX_" "HARNESS_"), ("-m " "harness"), ('"-m", "' 'harness"'), ("from " "harness"))
-OLD_NAMES_ALLOWED = ("tests/fixtures/", "codejig/migrate.py", "tests/test_migrate.py", "tests/test_golden.py",
-                     "docs/runbooks/migrate-to-code-jig.md")
+OLD_NAMES_ALLOWED = ("tests/fixtures/", "tests/test_golden.py")
 OLD_ADR = re.compile(r"docs/adr/00(0[1-9]|1\d|2[0-7])-[^/]*\.md")
 
 
@@ -27,7 +26,7 @@ class Cli(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             build_parser().parse_args([])
 
-    def test_no_old_names_outside_migrate(self):
+    def test_no_old_names_outside_fixtures(self):
         files = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, check=True).stdout
         hits = []
         for rel in files.decode("utf-8").split("\0"):
