@@ -1,8 +1,10 @@
 import hashlib
+import io
 import os
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 import zipfile
@@ -79,6 +81,14 @@ class Build(unittest.TestCase):
                 done = build(tag, self.tmp / "c")
                 self.assertNotEqual(done.returncode, 0)
                 self.assertIn("does not match", done.stderr)
+
+
+class ScorecardSeesTheRepo(unittest.TestCase):
+    def test_the_github_tarball_keeps_what_scorecard_reads(self):
+        out = subprocess.run(["git", "-C", str(ROOT), "archive", "--format=tar", "HEAD"], check=True, capture_output=True).stdout
+        names = tarfile.open(fileobj=io.BytesIO(out)).getnames()
+        for needed in (".github/dependabot.yml", ".github/workflows/ci.yml", "SECURITY.md", "ci/analyze.txt"):
+            self.assertIn(needed, names)
 
 
 def _readme_install():
