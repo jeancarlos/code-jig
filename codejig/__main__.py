@@ -69,9 +69,6 @@ def build_parser() -> argparse.ArgumentParser:
     sk.add_argument("--trust-evals", action="store_true")
     cs = sub.add_parser("check-sources")
     cs.add_argument("files", nargs="+")
-    mg = sub.add_parser("migrate")
-    mg.add_argument("--dry-run", action="store_true")
-    mg.add_argument("repos", nargs="*")
     return p
 
 
@@ -90,7 +87,6 @@ COMMAND_MODULES = {
     "git-hook": "gitgate",
     "skill-check": "skillcheck",
     "check-sources": "sources",
-    "migrate": "migrate",
 }
 
 
