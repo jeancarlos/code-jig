@@ -10,6 +10,7 @@ from codejig.install import release_digest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / ".github" / "scripts"))
 import build_wheel
+from build_release import TAG as TAG_FORMAT
 
 TAG = f"v{VERSION}"
 
@@ -55,3 +56,11 @@ class CoreLocation(unittest.TestCase):
     def test_core_is_the_checkout_without_packaged_data(self):
         self.assertEqual(paths.locate_core(paths.CODE), ROOT)
         self.assertEqual(paths.CORE, ROOT)
+
+
+class TagFormat(unittest.TestCase):
+    def test_release_candidates_are_tags_and_other_suffixes_are_not(self):
+        for tag in ("v1.2.3", "v1.2.3-rc1", "v10.0.12-rc22"):
+            self.assertTrue(TAG_FORMAT.fullmatch(tag), tag)
+        for tag in ("v1.2", "v1.2.3-beta", "v1.2.3-rc", "1.2.3", "v1.2.3-rc1x", "v1.2.3rc1"):
+            self.assertFalse(TAG_FORMAT.fullmatch(tag), tag)

@@ -12,6 +12,7 @@ from codejig import VERSION
 from codejig.install import release_digest
 
 ROOT = Path(__file__).resolve().parents[2]
+TAG = re.compile(r"v\d+\.\d+\.\d+(?:-rc\d+)?")
 HIDDEN = (".github", "ci", "fuzz", ".clusterfuzzlite", "SECURITY.md")
 
 
@@ -21,7 +22,7 @@ def archive(*extra: str) -> bytes:
 
 
 def build(tag: str, out: Path) -> None:
-    if not re.fullmatch(r"v\d+\.\d+\.\d+", tag) or tag != f"v{VERSION}":
+    if not TAG.fullmatch(tag) or tag != f"v{VERSION}":
         raise SystemExit(f"build_release: tag {tag} does not match code-jig VERSION {VERSION}")
     with tempfile.TemporaryDirectory() as tmp:
         zipfile.ZipFile(io.BytesIO(archive())).extractall(tmp)
