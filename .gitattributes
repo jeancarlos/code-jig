@@ -17,3 +17,5 @@ CLAUDE.md export-ignore
 CONTRIBUTING.md export-ignore
 dashboard.json export-ignore
 .agnix.toml export-ignore
+ci/** export-ignore
+SECURITY.md export-ignore
