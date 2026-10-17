@@ -22,14 +22,15 @@ a { color: var(--link) }
 <p class="mute">Supported today: Codex. Claude Code, Antigravity and Copilot from the next releases.</p>
 <p>Requires Python 3.11+ and git.</p>
 <h2>Linux and macOS</h2>
-<pre>curl -fsSL https://github.com/jeancarlos/code-jig/releases/latest/download/bootstrap.py | python3 -I - --overlay &lt;path|git-url&gt;</pre>
+<pre>curl -fsSL https://github.com/jeancarlos/code-jig/releases/latest/download/bootstrap.py | python3 -I -</pre>
 <p>Or download, read and run:</p>
 <pre>curl -fsSL -o bootstrap.py https://github.com/jeancarlos/code-jig/releases/latest/download/bootstrap.py
-python3 -I bootstrap.py --overlay &lt;path|git-url&gt;</pre>
+python3 -I bootstrap.py</pre>
 <h2>Windows (PowerShell)</h2>
 <pre>irm https://github.com/jeancarlos/code-jig/releases/latest/download/bootstrap.py -OutFile bootstrap.py
-py -3 -I bootstrap.py --overlay &lt;path|git-url&gt;</pre>
-<p>Everything downloads from GitHub. No one-liner allowed? Download <code>code-jig.zip</code>, <code>SHA256SUMS</code> and <code>bootstrap.py</code> from the <a href="https://github.com/jeancarlos/code-jig/releases/latest">GitHub release</a>, then run <code>py -3 -I bootstrap.py --zip code-jig.zip --overlay &lt;path&gt;</code> (<code>python3 -I</code> on Linux and macOS).</p>
+py -3 -I bootstrap.py</pre>
+<p>Each block runs as it is, in bash, zsh or PowerShell. To use your own overlay instead of <code>~/code-jig-overlay</code>, add <code>--overlay</code> and its folder or git URL at the end of the <code>python3</code> or <code>py</code> line.</p>
+<p>Everything downloads from GitHub. No one-liner allowed? Download <code>code-jig.zip</code>, <code>SHA256SUMS</code> and <code>bootstrap.py</code> from the <a href="https://github.com/jeancarlos/code-jig/releases/latest">GitHub release</a>, then run <code>py -3 -I bootstrap.py --zip code-jig.zip</code> (<code>python3 -I</code> on Linux and macOS).</p>
 <p><a href="https://github.com/jeancarlos/code-jig">Source on GitHub</a></p>
 </body>
 </html>

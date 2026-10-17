@@ -1,4 +1,4 @@
-core_version = "v0.11.1"
+core_version = "v0.11.2"
 core_writable = false
 # git_gate = true
 # push_cleanup = true   # default when git_gate = true; false keeps the plain push refusal
