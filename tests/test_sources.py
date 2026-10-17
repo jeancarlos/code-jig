@@ -27,6 +27,13 @@ PAGES = {
     "/to-private": (301, "text/html", ""),
     "/mb4": (200, "text/html; charset=utf8mb4", "<p>caf\u00e9 opens at nine</p>"),
     "/short": (200, "text/plain", "ff\r\ncut short"),
+    "/scripts": (200, "text/html; charset=utf-8",
+                 ("<p>\u6211\u4eec\u4eca\u5929\u53bb\u5317\u4eac\u5403\u70e4\u9e2d\u3002</p>"
+                  "<p>\u6771\u4eac\u30bf\u30ef\u30fc\u306f\u3068\u3066\u3082\u9ad8\u3044\u3067\u3059\u3002</p>"
+                  "<p>\u0e20\u0e32\u0e29\u0e32\u0e44\u0e17\u0e22\u0e44\u0e21\u0e48\u0e21\u0e35\u0e01\u0e32\u0e23"
+                  "\u0e40\u0e27\u0e49\u0e19\u0e27\u0e23\u0e23\u0e04</p>"
+                  "<p>Python\u662f\u4e00\u79cd\u7f16\u7a0b\u8bed\u8a00, \u043a\u043e\u0448\u043a\u0430, "
+                  "\u03b1\u03bb\u03c6\u03ac\u03b2\u03b7\u03c4\u03bf \u0939\u093f\u0928\u094d\u0926\u0940</p>")),
 }
 
 
@@ -133,6 +140,25 @@ class Sources(unittest.TestCase):
                 {"claim": "b", "url": f"{self.base}/pep", "quote": "omllib module"},
                 {"claim": "c", "url": f"{self.base}/pep", "quote": "tomllib module"}]
         self.assertEqual(self.verdicts(rows), ["ok", "quote-missing", "ok"])
+
+    def test_scripts_without_word_spaces_match_inside_a_run(self):
+        quotes = {"\u5317\u4eac\u5403\u70e4\u9e2d": "ok",
+                  "\u4e0a\u6d77": "quote-missing",
+                  "\u30bf\u30ef\u30fc\u306f\u3068\u3066\u3082": "ok",
+                  "\u6771\u4eac": "ok",
+                  "\u0e44\u0e21\u0e48\u0e21\u0e35\u0e01\u0e32\u0e23\u0e40\u0e27\u0e49\u0e19": "ok",
+                  "\u0e44\u0e21\u0e49\u0e21\u0e35\u0e01\u0e32\u0e23": "quote-missing",
+                  "\u662f\u4e00\u79cd": "ok"}
+        rows = [{"claim": q, "url": f"{self.base}/scripts", "quote": q} for q in quotes]
+        self.assertEqual(self.verdicts(rows), list(quotes.values()))
+
+    def test_spaced_scripts_next_to_unspaced_ones_still_match_whole_words(self):
+        quotes = {"Python": "ok", "ython": "quote-missing", "Pytho": "quote-missing",
+                  "Python\u662f": "ok", "\u043a\u043e\u0448\u043a\u0430": "ok", "\u043a\u043e\u0448\u043a": "quote-missing",
+                  "\u03b1\u03bb\u03c6\u03ac\u03b2\u03b7\u03c4\u03bf": "ok", "\u03bb\u03c6\u03ac\u03b2\u03b7\u03c4\u03bf": "quote-missing",
+                  "\u0939\u093f\u0928\u094d\u0926\u0940": "ok", "\u0928\u094d\u0926": "quote-missing"}
+        rows = [{"claim": q, "url": f"{self.base}/scripts", "quote": q} for q in quotes]
+        self.assertEqual(self.verdicts(rows), list(quotes.values()))
 
     def evidence(self, rows: list[dict]) -> str:
         return str(write(tree(self) / "evidence.jsonl", "\n".join(json.dumps(r) for r in rows) + "\n"))
