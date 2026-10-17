@@ -23,6 +23,10 @@ jobs:
           python-version: "3.13"
       - name: build
         run: PYTHONPATH=. python .github/scripts/build_release.py "$GITHUB_REF_NAME" dist
+      - name: wheel
+        run: |
+          python -m pip install --require-hashes -r ci/build.txt
+          PYTHONPATH=. python .github/scripts/build_wheel.py "$GITHUB_REF_NAME" dist
       - uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: .
@@ -44,6 +48,7 @@ jobs:
             dist/SHA256SUMS
             dist/bootstrap.py
             dist/code-jig.spdx.json
+            dist/*.whl
       - name: provenance asset
         env:
           BUNDLE: ${{ steps.attest.outputs.bundle-path }}
@@ -59,9 +64,12 @@ jobs:
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes
+        run: |
+          case "$GITHUB_REF_NAME" in *-rc*) pre=--prerelease ;; *) pre= ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes $pre
   pypi:
     needs: publish
+    if: ${{ !contains(github.ref_name, '-rc') }}
     runs-on: ubuntu-latest
     environment:
       name: pypi
