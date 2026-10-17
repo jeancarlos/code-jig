@@ -8,6 +8,7 @@ import os
 import re
 import socket
 import sys
+import unicodedata
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -21,6 +22,10 @@ BLOCKED = {401, 403, 429, 451}
 SKIP_TAGS = {"script", "style", "noscript", "template"}
 TEXT_TYPES = ("text/", "application/xhtml", "application/xml", "application/json")
 FAILING = {"dead", "quote-missing", "bad-url", "no-quote", "malformed"}
+NAT64 = ipaddress.ip_network("64:ff9b::/96")
+NAT64_LOCAL = ipaddress.ip_network("64:ff9b:1::/48")
+UNSPACED = ("CJK UNIFIED IDEOGRAPH", "CJK COMPATIBILITY IDEOGRAPH", "IDEOGRAPHIC", "HIRAGANA", "KATAKANA",
+            "HALFWIDTH KATAKANA", "THAI", "LAO", "KHMER", "MYANMAR")
 
 
 @dataclass
@@ -51,13 +56,44 @@ class _Text(HTMLParser):
             self.parts.append(data)
 
 
+def _keep_marks(m: re.Match) -> str:
+    run = m.group()
+    return " " if run.isascii() else "".join(c if unicodedata.category(c)[0] == "M" else " " for c in run)
+
+
 def normalize(text: str) -> str:
-    return " ".join(re.sub(r"[\W_]+", " ", text.casefold()).split())
+    return " ".join(re.sub(r"[\W_]+", _keep_marks, text.casefold()).split())
+
+
+def _unspaced(c: str) -> bool:
+    return unicodedata.name(c, "").startswith(UNSPACED)
+
+
+def _boundary(text: str, i: int) -> bool:
+    if i in (0, len(text)):
+        return True
+    a, b = text[i - 1], text[i]
+    return " " in (a, b) or _unspaced(a) or _unspaced(b)
+
+
+def contains(text: str, quote: str) -> bool:
+    """Whether normalized `quote` is in normalized `text` as whole words. Scripts written without
+    spaces between words (Chinese, Japanese, Thai, Lao, Khmer, Myanmar) have no word edge to find,
+    so a quote may start or end anywhere next to one of their characters."""
+    i = text.find(quote)
+    while i != -1:
+        if _boundary(text, i) and _boundary(text, i + len(quote)):
+            return True
+        i = text.find(quote, i + 1)
+    return False
 
 
 def page_text(body: bytes, ctype: str) -> str:
     charset = re.search(r"charset=([\w-]+)", ctype)
-    text = body.decode(charset.group(1) if charset else "utf-8", errors="replace")
+    try:
+        text = body.decode(charset.group(1) if charset else "utf-8", errors="replace")
+    except LookupError:
+        text = body.decode("utf-8", errors="replace")
     if "html" in ctype or "xml" in ctype:
         parser = _Text()
         try:
@@ -69,7 +105,10 @@ def page_text(body: bytes, ctype: str) -> str:
 
 
 def is_public_ip(ip: str) -> bool:
-    return ipaddress.ip_address(ip.split("%")[0]).is_global
+    addr = ipaddress.ip_address(ip.split("%")[0])
+    if addr in NAT64:
+        return ipaddress.IPv4Address(int(addr) & 0xFFFFFFFF).is_global
+    return addr not in NAT64_LOCAL and addr.is_global
 
 
 def is_public(host: str) -> bool | None:
@@ -155,8 +194,9 @@ VIA_PROXY = urllib.request.build_opener(_Redirects)
 
 
 def fetch(url: str) -> tuple[str, str]:
-    """(verdict, page text or detail) for one URL. Only public http and https addresses are requested,
-    redirects included; without a proxy, the address the socket actually connected to is checked too."""
+    """(verdict, page text or detail) for one URL, verdict "partial" when the page was cut at MAX_BYTES.
+    Only public http and https addresses are requested, redirects included; without a proxy, the address
+    the socket actually connected to is checked too."""
     reason = refused(url)
     if reason:
         return "bad-url", reason
@@ -166,11 +206,12 @@ def fetch(url: str) -> tuple[str, str]:
             ctype = r.headers.get("Content-Type", "")
             if not ctype.startswith(TEXT_TYPES):
                 return "unreadable", ctype or "unknown type"
-            return "ok", page_text(r.read(MAX_BYTES), ctype)
+            body = r.read(MAX_BYTES + 1)
+            return ("partial" if len(body) > MAX_BYTES else "ok"), page_text(body[:MAX_BYTES], ctype)
     except urllib.error.HTTPError as e:
         e.close()
         return ("blocked" if e.code in BLOCKED else "dead"), f"HTTP {e.code}"
-    except (urllib.error.URLError, OSError, ValueError) as e:
+    except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException) as e:
         return "dead", str(getattr(e, "reason", e))
 
 
@@ -221,10 +262,12 @@ def check(claims: list[Claim]) -> list[Claim]:
         pages = dict(zip(urls, pool.map(fetch, urls), strict=True))
     for c in todo:
         verdict, text = pages[c.url]
-        if verdict != "ok":
+        if verdict not in ("ok", "partial"):
             c.verdict, c.detail = verdict, text
-        elif normalize(c.quote) in text:
+        elif contains(text, normalize(c.quote)):
             c.verdict = "ok"
+        elif verdict == "partial":
+            c.verdict, c.detail = "unreadable", f"the quote is not in the first {MAX_BYTES} bytes, the rest was not read"
         else:
             c.verdict, c.detail = "quote-missing", "the page does not contain the quote"
     return claims

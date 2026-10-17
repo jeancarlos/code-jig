@@ -12,6 +12,8 @@ from unittest import mock
 from codejig import sources
 from tests.util import tree, write
 
+REAL_IS_PUBLIC_IP = sources.is_public_ip
+
 PAGES = {
     "/doc": (200, "text/html; charset=utf-8",
              ("<html><head><script>var hidden = 'not text';</script><style>p{}</style></head>"
@@ -23,6 +25,15 @@ PAGES = {
     "/pdf": (200, "application/pdf", "%PDF-1.7"),
     "/moved": (301, "text/html", ""),
     "/to-private": (301, "text/html", ""),
+    "/mb4": (200, "text/html; charset=utf8mb4", "<p>caf\u00e9 opens at nine</p>"),
+    "/short": (200, "text/plain", "ff\r\ncut short"),
+    "/scripts": (200, "text/html; charset=utf-8",
+                 ("<p>\u6211\u4eec\u4eca\u5929\u53bb\u5317\u4eac\u5403\u70e4\u9e2d\u3002</p>"
+                  "<p>\u6771\u4eac\u30bf\u30ef\u30fc\u306f\u3068\u3066\u3082\u9ad8\u3044\u3067\u3059\u3002</p>"
+                  "<p>\u0e20\u0e32\u0e29\u0e32\u0e44\u0e17\u0e22\u0e44\u0e21\u0e48\u0e21\u0e35\u0e01\u0e32\u0e23"
+                  "\u0e40\u0e27\u0e49\u0e19\u0e27\u0e23\u0e23\u0e04</p>"
+                  "<p>Python\u662f\u4e00\u79cd\u7f16\u7a0b\u8bed\u8a00, \u043a\u043e\u0448\u043a\u0430, "
+                  "\u03b1\u03bb\u03c6\u03ac\u03b2\u03b7\u03c4\u03bf \u0939\u093f\u0928\u094d\u0926\u0940</p>")),
 }
 
 
@@ -33,6 +44,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if status == 301:
             self.send_header("Location", "http://10.0.0.1/secret" if self.path == "/to-private" else "/doc")
         self.send_header("Content-Type", ctype)
+        if self.path == "/short":
+            self.send_header("Transfer-Encoding", "chunked")
         self.end_headers()
         self.wfile.write(body.encode("utf-8"))
 
@@ -97,6 +110,55 @@ class Sources(unittest.TestCase):
         verdict, detail = sources.fetch(f"{self.base}/to-private")
         self.assertEqual(verdict, "dead")
         self.assertIn("private", detail)
+
+    def test_nat64_addresses_are_judged_by_the_ipv4_they_carry(self):
+        self.assertFalse(REAL_IS_PUBLIC_IP("64:ff9b::a00:1"))
+        self.assertFalse(REAL_IS_PUBLIC_IP("64:ff9b::a9fe:a9fe"))
+        self.assertFalse(REAL_IS_PUBLIC_IP("64:ff9b:1::808:808"))
+        self.assertTrue(REAL_IS_PUBLIC_IP("64:ff9b::808:808"))
+
+    def test_an_unknown_or_binary_charset_falls_back_to_utf8(self):
+        for ctype in ("text/html; charset=utf8mb4", "text/plain; charset=hex", "text/plain; charset=zlib"):
+            with self.subTest(ctype=ctype):
+                self.assertEqual(sources.page_text("caf\u00e9 au lait".encode(), ctype), "caf\u00e9 au lait")
+
+    def test_one_broken_page_does_not_abort_the_batch(self):
+        rows = [{"claim": "a", "url": f"{self.base}/mb4", "quote": "caf\u00e9 opens"},
+                {"claim": "b", "url": f"{self.base}/short", "quote": "cut short"},
+                {"claim": "c", "url": f"{self.base}/doc", "quote": "default limit"}]
+        self.assertEqual(self.verdicts(rows), ["ok", "dead", "ok"])
+
+    def test_a_quote_past_the_read_limit_is_unverified_not_missing(self):
+        with mock.patch.object(sources, "MAX_BYTES", 40):
+            verdicts = self.verdicts([{"claim": "a", "url": f"{self.base}/plain", "quote": "line two"},
+                                      {"claim": "b", "url": f"{self.base}/doc", "quote": "stops adding"},
+                                      {"claim": "c", "url": f"{self.base}/plain", "quote": "line three"}])
+        self.assertEqual(verdicts, ["ok", "unreadable", "quote-missing"])
+
+    def test_a_quote_must_match_whole_words(self):
+        rows = [{"claim": "a", "url": f"{self.base}/pep", "quote": "toml"},
+                {"claim": "b", "url": f"{self.base}/pep", "quote": "omllib module"},
+                {"claim": "c", "url": f"{self.base}/pep", "quote": "tomllib module"}]
+        self.assertEqual(self.verdicts(rows), ["ok", "quote-missing", "ok"])
+
+    def test_scripts_without_word_spaces_match_inside_a_run(self):
+        quotes = {"\u5317\u4eac\u5403\u70e4\u9e2d": "ok",
+                  "\u4e0a\u6d77": "quote-missing",
+                  "\u30bf\u30ef\u30fc\u306f\u3068\u3066\u3082": "ok",
+                  "\u6771\u4eac": "ok",
+                  "\u0e44\u0e21\u0e48\u0e21\u0e35\u0e01\u0e32\u0e23\u0e40\u0e27\u0e49\u0e19": "ok",
+                  "\u0e44\u0e21\u0e49\u0e21\u0e35\u0e01\u0e32\u0e23": "quote-missing",
+                  "\u662f\u4e00\u79cd": "ok"}
+        rows = [{"claim": q, "url": f"{self.base}/scripts", "quote": q} for q in quotes]
+        self.assertEqual(self.verdicts(rows), list(quotes.values()))
+
+    def test_spaced_scripts_next_to_unspaced_ones_still_match_whole_words(self):
+        quotes = {"Python": "ok", "ython": "quote-missing", "Pytho": "quote-missing",
+                  "Python\u662f": "ok", "\u043a\u043e\u0448\u043a\u0430": "ok", "\u043a\u043e\u0448\u043a": "quote-missing",
+                  "\u03b1\u03bb\u03c6\u03ac\u03b2\u03b7\u03c4\u03bf": "ok", "\u03bb\u03c6\u03ac\u03b2\u03b7\u03c4\u03bf": "quote-missing",
+                  "\u0939\u093f\u0928\u094d\u0926\u0940": "ok", "\u0928\u094d\u0926": "quote-missing"}
+        rows = [{"claim": q, "url": f"{self.base}/scripts", "quote": q} for q in quotes]
+        self.assertEqual(self.verdicts(rows), list(quotes.values()))
 
     def evidence(self, rows: list[dict]) -> str:
         return str(write(tree(self) / "evidence.jsonl", "\n".join(json.dumps(r) for r in rows) + "\n"))
