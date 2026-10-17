@@ -38,7 +38,7 @@ class EndToEnd(unittest.TestCase):
         cls.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=str(cls.srv)))
         cls.httpd.paths = []
         threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
-        cls.base = f"http://127.0.0.1:{cls.httpd.server_address[1]}"
+        cls.base = f"http://127.0.0.1:{cls.httpd.server_address[1]}/v"
 
     @classmethod
     def tearDownClass(cls):

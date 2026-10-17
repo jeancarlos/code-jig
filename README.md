@@ -51,32 +51,29 @@ Requires Python 3.11+ and git. Your overlay is a folder or git repository with a
 
 ### From a release (no git checkout)
 
-Linux and macOS:
+Everything downloads from GitHub. Linux and macOS:
 
 ```sh
-curl -fsSL https://code-jig.jeansouza.dev/setup | python3 -I - --overlay <path|git-url>
-```
-
-Windows (PowerShell):
-
-```powershell
-irm https://code-jig.jeansouza.dev/setup | py -3 -I - --overlay <path|git-url>
+curl -fsSL https://github.com/jeancarlos/code-jig/releases/latest/download/bootstrap.py | python3 -I - --overlay <path|git-url>
 ```
 
 A piped script cannot check itself. To read what you run, download only `bootstrap.py`, read it, then run it:
 
 ```sh
-curl -fsSL -o bootstrap.py https://code-jig.jeansouza.dev/setup
+curl -fsSL -o bootstrap.py https://github.com/jeancarlos/code-jig/releases/latest/download/bootstrap.py
 python3 -I bootstrap.py --overlay <path|git-url>
 ```
 
-On Windows: `py -3 -I bootstrap.py --overlay <path|git-url>`. The same file is at `https://github.com/jeancarlos/code-jig/releases/latest/download/bootstrap.py`.
+Windows (PowerShell):
 
-`bootstrap.py` has no checksum of its own; reading it is the check. The bootstrap downloads the zip itself and checks it against the release's `SHA256SUMS`. That catches a corrupted download, but not a compromised GitHub release.
+```powershell
+irm https://github.com/jeancarlos/code-jig/releases/latest/download/bootstrap.py -OutFile bootstrap.py
+py -3 -I bootstrap.py --overlay <path|git-url>
+```
 
-The GitHub URL above works when `code-jig.jeansouza.dev` is down. The bootstrap also falls back to GitHub on its own. Releases before v0.11.0 have no zip.
+`bootstrap.py` has no checksum of its own; reading it is the check. The bootstrap downloads the zip itself and checks it against the release's `SHA256SUMS`. That catches a corrupted download, but not a compromised GitHub release. Releases before v0.11.0 have no zip.
 
-**No one-liner allowed?** On a machine that blocks the one-liner, PATH edits or `code-jig.jeansouza.dev`, download `code-jig.zip`, `SHA256SUMS` and `bootstrap.py` from the [release page](https://github.com/jeancarlos/code-jig/releases/latest) (each file is also at `https://github.com/jeancarlos/code-jig/releases/latest/download/<file>`) and run `py -3 -I bootstrap.py --zip code-jig.zip --overlay <path>` (`python3 -I` on Linux and macOS). `--github` makes the bootstrap use github.com only. The launcher does not need to be on PATH: the generated `AGENTS.md` tells agents its full path.
+**No one-liner allowed?** On a machine that blocks the download or PATH edits, download `code-jig.zip`, `SHA256SUMS` and `bootstrap.py` from the [release page](https://github.com/jeancarlos/code-jig/releases/latest) (each file is also at `https://github.com/jeancarlos/code-jig/releases/latest/download/<file>`) and run `py -3 -I bootstrap.py --zip code-jig.zip --overlay <path>` (`python3 -I` on Linux and macOS). The launcher does not need to be on PATH: the generated `AGENTS.md` tells agents its full path.
 
 The bootstrap unpacks the release into `~/.local/share/code-jig/vX.Y.Z/` (`%LOCALAPPDATA%\code-jig\vX.Y.Z\` on Windows), runs `install`, writes `code-jig` and `cjig` launchers in `~/.local/bin` and runs `doctor`. The overlay's `core_version` picks the release. To change it, edit `core_version` and run the bootstrap again; see [upgrade and rollback](docs/runbooks/upgrade-and-rollback.md).
 

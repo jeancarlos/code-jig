@@ -15,7 +15,6 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-BASE_URL = "https://code-jig.jeansouza.dev"
 REPO = "jeancarlos/code-jig"
 ZIP = "code-jig.zip"
 SUMS = "SHA256SUMS"
@@ -154,29 +153,15 @@ def fetch(url, limit):
     return data
 
 
-def fetch_asset(tag, name, base, repo, limit):
-    fallback = f"https://github.com/{repo}/releases/download/{tag}/{name}"
-    if base:
-        primary = f"{base.rstrip('/')}/v/{tag}/{name}"
-        try:
-            return fetch(primary, limit)
-        except urllib.error.HTTPError as e:
-            e.close()
-            if e.code == 404:
-                raise Refused(f"{tag} has no {name}; {NO_ZIP}")
-            if e.code < 500:
-                raise Refused(f"{primary}: HTTP {e.code}")
-            reason = f"HTTP {e.code}"
-        except OSError as e:
-            reason = str(e)
-        print(f"bootstrap: {primary} failed ({reason}); trying {fallback}", file=sys.stderr)
+def fetch_asset(tag, name, base, limit):
+    url = f"{base.rstrip('/')}/{tag}/{name}"
     try:
-        return fetch(fallback, limit)
+        return fetch(url, limit)
     except urllib.error.HTTPError as e:
         e.close()
-        raise Refused(f"{fallback}: HTTP {e.code}" + (f"; {NO_ZIP}" if e.code == 404 else ""))
+        raise Refused(f"{url}: HTTP {e.code}" + (f"; {NO_ZIP}" if e.code == 404 else ""))
     except OSError as e:
-        raise Refused(f"{fallback}: {e}")
+        raise Refused(f"{url}: {e}")
 
 
 def resolve_latest(repo):
@@ -224,7 +209,7 @@ def read_zip(path):
     return blob, tag
 
 
-def get_core(tag, data, base, repo, blob=None):
+def get_core(tag, data, base, blob=None):
     target = data / tag
     if target.exists():
         verify_tree(target, tag)
@@ -232,8 +217,8 @@ def get_core(tag, data, base, repo, blob=None):
         return target
     data.mkdir(parents=True, exist_ok=True)
     if blob is None:
-        expected = parse_sums(fetch_asset(tag, SUMS, base, repo, MAX_SUMS))
-        blob = fetch_asset(tag, ZIP, base, repo, MAX_ZIP)
+        expected = parse_sums(fetch_asset(tag, SUMS, base, MAX_SUMS))
+        blob = fetch_asset(tag, ZIP, base, MAX_ZIP)
         if hashlib.sha256(blob).hexdigest() != expected:
             raise Refused(f"{ZIP} for {tag} does not match {SUMS}")
     unpack(blob, target, tag)
@@ -447,8 +432,7 @@ def parse_args(argv):
     p.add_argument("--overlay-dir", help="where a cloned or new overlay goes (default ~/code-jig-overlay)")
     p.add_argument("--version", help="vX.Y.Z or latest")
     p.add_argument("--zip", help="install from a downloaded code-jig.zip; no download")
-    p.add_argument("--github", action="store_true", help="use github.com only, never code-jig.jeansouza.dev")
-    p.add_argument("--base-url", default=BASE_URL)
+    p.add_argument("--base-url", help="release download base (default https://github.com/<repo>/releases/download)")
     p.add_argument("--repo", default=REPO)
     p.add_argument("--codex-bin")
     p.add_argument("--codex-home")
@@ -492,8 +476,9 @@ def run_doctor(python, core, overlay, codex_home, codex_bin, launcher):
 def run(args):
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", args.repo):
         raise Refused(f"--repo {args.repo!r} must look like owner/name")
-    if not allowed(args.base_url):
-        raise Refused(f"--base-url {args.base_url} must be https")
+    base = args.base_url or f"https://github.com/{args.repo}/releases/download"
+    if not allowed(base):
+        raise Refused(f"--base-url {base} must be https")
     data = data_dir(args.data_dir)
     bins = bin_dir(args.bin_dir, data)
     for path in launcher_paths(bins):
@@ -506,7 +491,7 @@ def run(args):
         zip_tag(tag, args.version, overlay)
     else:
         tag = choose_tag(args.version, overlay, args.repo)
-    core = get_core(tag, data, None if args.github else args.base_url, args.repo, blob)
+    core = get_core(tag, data, base, blob)
     if overlay is None:
         overlay = create_overlay(core, dest, tag)
     python = interpreter()
