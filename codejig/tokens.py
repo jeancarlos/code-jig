@@ -19,10 +19,7 @@ def prefix(cmd: str) -> str:
     return first
 
 
-def summary(con: sqlite3.Connection, since: str, top: int = 10, long_turns: int = 300) -> dict:
-    rows = con.execute("SELECT thread_id, kind, parent_id, turn_id, model, input, cached, output FROM turn_usage WHERE ts >= ?", (since,)).fetchall()
-    calls = con.execute("SELECT thread_id, cmd, escalated FROM calls WHERE ts >= ?", (since,)).fetchall()
-    comps = Counter(t for (t,) in con.execute("SELECT thread_id FROM compactions WHERE ts >= ?", (since,)))
+def _tally(rows: list, comps: Counter) -> tuple[dict, dict, dict, set]:
     by_kind: dict[str, int] = defaultdict(int)
     models: dict[str, list[int]] = defaultdict(lambda: [0, 0])
     sessions: dict[str, dict] = {}
@@ -43,9 +40,21 @@ def summary(con: sqlite3.Connection, since: str, top: int = 10, long_turns: int 
             s["input"] += inp
             s["cached"] += cached
             s["turns"] += 1
+    return by_kind, models, sessions, reviews
+
+
+def _count_polling(calls: list, sessions: dict) -> None:
     for thread, cmd, _ in calls:
         if thread in sessions and cmd.lstrip().split(" ", 1)[0] in POLL:
             sessions[thread]["polling"] += 1
+
+
+def summary(con: sqlite3.Connection, since: str, top: int = 10, long_turns: int = 300) -> dict:
+    rows = con.execute("SELECT thread_id, kind, parent_id, turn_id, model, input, cached, output FROM turn_usage WHERE ts >= ?", (since,)).fetchall()
+    calls = con.execute("SELECT thread_id, cmd, escalated FROM calls WHERE ts >= ?", (since,)).fetchall()
+    comps = Counter(t for (t,) in con.execute("SELECT thread_id FROM compactions WHERE ts >= ?", (since,)))
+    by_kind, models, sessions, reviews = _tally(rows, comps)
+    _count_polling(calls, sessions)
     total = sum(by_kind.values())
     guardian = by_kind.get("guardian", 0)
     ranked = sorted(sessions.values(), key=lambda s: s["input"] + s["guardian_input"] + s["subagent_input"], reverse=True)

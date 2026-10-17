@@ -14,17 +14,18 @@ def requirements_path() -> Path:
     return Path("/etc/codex/requirements.toml")
 
 
-def check_requirements(path: Path, bench: Path, ts: list[Tier]) -> list[Check]:
-    name = "managed requirements"
-    if path.is_file():
-        try:
-            here = tomllib.loads(path.read_text(encoding="utf-8-sig"))
-        except (OSError, ValueError) as e:
-            return [("FAIL", name, f"{path}: {e}")]
-        checks = [("ok", name, f"read {path}; cloud-delivered requirements are not visible to doctor")]
-    else:
-        here = {}
-        checks = [("ok", name, f"none at {path}; cloud-delivered requirements are not visible to doctor")]
+def _read_here(path: Path, name: str) -> tuple[dict, list[Check]]:
+    if not path.is_file():
+        return {}, [("ok", name, f"none at {path}; cloud-delivered requirements are not visible to doctor")]
+    try:
+        here = tomllib.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError) as e:
+        return {}, [("FAIL", name, f"{path}: {e}")]
+    return here, [("ok", name, f"read {path}; cloud-delivered requirements are not visible to doctor")]
+
+
+def _policy_checks(here: dict, ts: list[Tier]) -> list[Check]:
+    checks: list[Check] = []
     reviewers = here.get("allowed_approvals_reviewers")
     if isinstance(reviewers, list) and "auto_review" not in reviewers:
         checks.append(("FAIL", "guardian allowed", f"allowed_approvals_reviewers = {reviewers}; the tier profiles need auto_review"))
@@ -37,11 +38,14 @@ def check_requirements(path: Path, bench: Path, ts: list[Tier]) -> list[Check]:
         checks.append(("warn", "hooks", "allow_managed_hooks_only = true; the pack's hooks will not run"))
     if here.get("guardian_extra_policy"):
         checks.append(("warn", "guardian policy", "managed guardian_extra_policy replaces the overlay guardian-policy.md"))
+    return checks
+
+
+def _bench_diff(here: dict, bench: Path) -> Check:
     try:
         sim = tomllib.loads(bench.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
-        checks.append(("warn", "bench diff", f"{bench}: {e}"))
-        return checks
+        return ("warn", "bench diff", f"{bench}: {e}")
     parts = []
     if only_here := sorted(set(here) - set(sim)):
         parts.append(f"locked here, not simulated: {', '.join(only_here)}")
@@ -49,5 +53,12 @@ def check_requirements(path: Path, bench: Path, ts: list[Tier]) -> list[Check]:
         parts.append(f"simulated, not locked here: {', '.join(only_bench)}")
     if changed := sorted(k for k in set(here) & set(sim) if here[k] != sim[k]):
         parts.append(f"different values: {', '.join(changed)}")
-    checks.append(("warn", "bench diff", "; ".join(parts)) if parts else ("ok", "bench diff", "matches bench/requirements.toml"))
-    return checks
+    return ("warn", "bench diff", "; ".join(parts)) if parts else ("ok", "bench diff", "matches bench/requirements.toml")
+
+
+def check_requirements(path: Path, bench: Path, ts: list[Tier]) -> list[Check]:
+    name = "managed requirements"
+    here, checks = _read_here(path, name)
+    if checks[0][0] == "FAIL":
+        return checks
+    return checks + _policy_checks(here, ts) + [_bench_diff(here, bench)]

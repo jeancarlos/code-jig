@@ -60,7 +60,10 @@ def page_text(body: bytes, ctype: str) -> str:
     text = body.decode(charset.group(1) if charset else "utf-8", errors="replace")
     if "html" in ctype or "xml" in ctype:
         parser = _Text()
-        parser.feed(text)
+        try:
+            parser.feed(text)
+        except AssertionError:
+            pass
         text = "".join(parser.parts)
     return normalize(text)
 
@@ -182,28 +185,32 @@ def expand(patterns: list[str]) -> list[str]:
     return out
 
 
+def _pre_verdict(c: Claim) -> None:
+    if not c.url:
+        c.verdict, c.detail = "malformed", "no url"
+    elif not c.url.lower().startswith(("http://", "https://")):
+        c.verdict, c.detail = "bad-url", "only http and https are checked"
+    elif not normalize(c.quote):
+        c.verdict, c.detail = "no-quote", "a claim needs an exact quote with words in it"
+
+
+def _parse_line(where: str, line: str) -> Claim:
+    c = Claim(where)
+    try:
+        row = json.loads(line)
+        c.claim, c.url, c.quote = (str(row.get(k) or "").strip() for k in ("claim", "url", "quote"))
+    except (ValueError, AttributeError):
+        c.verdict, c.detail = "malformed", "not a JSON object"
+        return c
+    _pre_verdict(c)
+    return c
+
+
 def load(files: list[str]) -> list[Claim]:
     claims = []
     for name in expand(files):
         with contextlib.nullcontext(sys.stdin) if name == "-" else open(name, encoding="utf-8-sig") as f:
-            for n, line in enumerate(f, 1):
-                if not line.strip():
-                    continue
-                c = Claim(f"{name}:{n}")
-                try:
-                    row = json.loads(line)
-                    c.claim, c.url, c.quote = (str(row.get(k) or "").strip() for k in ("claim", "url", "quote"))
-                except (ValueError, AttributeError):
-                    c.verdict, c.detail = "malformed", "not a JSON object"
-                    claims.append(c)
-                    continue
-                if not c.url:
-                    c.verdict, c.detail = "malformed", "no url"
-                elif not c.url.lower().startswith(("http://", "https://")):
-                    c.verdict, c.detail = "bad-url", "only http and https are checked"
-                elif not normalize(c.quote):
-                    c.verdict, c.detail = "no-quote", "a claim needs an exact quote with words in it"
-                claims.append(c)
+            claims += [_parse_line(f"{name}:{n}", line) for n, line in enumerate(f, 1) if line.strip()]
     return claims
 
 
