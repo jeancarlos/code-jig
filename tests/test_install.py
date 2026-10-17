@@ -202,6 +202,53 @@ class Run(unittest.TestCase):
         self.assertTrue(any("AGENTS.md" in line for line in lines))
 
 
+    def test_a_relative_codex_home_is_absolute_in_the_hook_commands(self):
+        root = tree(self)
+        core, ov = tiered(root)
+        cwd = os.getcwd()
+        os.chdir(root)
+        self.addCleanup(os.chdir, cwd)
+        [hooks] = [text for target, text in install.plan(core, ov, install.Path("rel home")) if target.name == "hooks.json"]
+        self.assertIn(str(root / "rel home"), hooks)
+
+
+class SymlinkedConfig(unittest.TestCase):
+    def setUp(self):
+        self.root = tree(self)
+        self.home = self.root / "codex home"
+        self.home.mkdir()
+        self.dotfiles = self.root / "dotfiles"
+
+    def link(self, name, text):
+        real = write(self.dotfiles / name, text)
+        try:
+            (self.home / name).symlink_to(real)
+        except OSError:
+            self.skipTest("no symlinks here")
+        return real
+
+    def test_a_generated_file_is_written_through_its_link(self):
+        real = self.link("AGENTS.md", "my own rules\n")
+        backup = write_generated(self.home / "AGENTS.md", stamp("core\n"))
+        self.assertTrue((self.home / "AGENTS.md").is_symlink())
+        self.assertIn("core", real.read_text(encoding="utf-8"))
+        self.assertEqual(backup.read_text(encoding="utf-8"), "my own rules\n")
+
+    def test_merged_settings_are_written_through_their_link(self):
+        real = self.link("settings.json", "{}\n")
+        install.write_merged(self.home / "settings.json", '{"hooks": {}}\n')
+        self.assertTrue((self.home / "settings.json").is_symlink())
+        self.assertEqual(real.read_text(encoding="utf-8"), '{"hooks": {}}\n')
+
+    def test_a_dangling_link_is_refused(self):
+        try:
+            (self.home / "hooks.json").symlink_to(self.dotfiles / "missing.json")
+        except OSError:
+            self.skipTest("no symlinks here")
+        with self.assertRaisesRegex(ValueError, "missing.json"):
+            install.write_merged(self.home / "hooks.json", "{}\n")
+
+
 class Profiles(unittest.TestCase):
     def test_writes_one_profile_per_tier(self):
         root = tree(self)

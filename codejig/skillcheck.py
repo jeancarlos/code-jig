@@ -84,16 +84,12 @@ def unknown_commands(text: str) -> list[str]:
     return sorted({c for c in CODE_JIG_CMD.findall(code) if c not in known})
 
 
-def _linked(p: Path) -> bool:
-    return p.is_symlink() or (hasattr(p, "is_junction") and p.is_junction())
-
-
 def check_fixture(skill: Path, name: str) -> Path:
     evals = skill / "evals"
     src = evals / name
     if not FIXTURE_NAME.fullmatch(name) or not src.is_dir():
         raise ValueError("fixture must name a folder directly inside evals/")
-    if _linked(evals) or _linked(src) or any(_linked(f) for f in src.rglob("*")) \
+    if install.linked(evals) or install.linked(src) or any(install.linked(f) for f in src.rglob("*")) \
             or not src.resolve().is_relative_to(skill.resolve() / "evals"):
         raise ValueError("the fixture is or holds a symlink, which could hand Codex files from outside it")
     return src
@@ -220,7 +216,7 @@ def judge(name: str, case: Case, run: Run) -> list[str]:
 
 def _material(skill: Path) -> str:
     entries = sorted(skill.rglob("*"))
-    linked = [f for f in entries if _linked(f)]
+    linked = [f for f in entries if install.linked(f)]
     if linked:
         raise ValueError(f"{linked[0].relative_to(skill).as_posix()} is a symlink; the review sends only files inside the skill, remove it")
     files = [f for f in entries if f.is_file() and install.installed_file(skill, f)
