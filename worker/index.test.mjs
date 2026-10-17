@@ -30,9 +30,10 @@ test("page lists requirements before the commands", async () => {
 
 test("every command downloads from github.com", async () => {
   const body = await page()
-  assert.ok(body.includes(`curl -fsSL ${BOOTSTRAP} | python3 -I - --overlay &lt;path|git-url&gt;`))
-  assert.ok(body.includes(`curl -fsSL -o bootstrap.py ${BOOTSTRAP}\npython3 -I bootstrap.py --overlay &lt;path|git-url&gt;`))
-  assert.ok(body.includes(`irm ${BOOTSTRAP} -OutFile bootstrap.py\npy -3 -I bootstrap.py --overlay &lt;path|git-url&gt;`))
+  assert.ok(body.includes(`curl -fsSL ${BOOTSTRAP} | python3 -I -</pre>`))
+  assert.ok(body.includes(`curl -fsSL -o bootstrap.py ${BOOTSTRAP}\npython3 -I bootstrap.py</pre>`))
+  assert.ok(body.includes(`irm ${BOOTSTRAP} -OutFile bootstrap.py\npy -3 -I bootstrap.py</pre>`))
+  for (const [, cmd] of body.matchAll(/<pre>([^<]*)<\/pre>/g)) assert.ok(!/&lt;|&gt;/.test(cmd), cmd)
   assert.ok(!body.includes("/setup"))
 })
 

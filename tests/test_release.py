@@ -79,3 +79,47 @@ class Build(unittest.TestCase):
                 done = build(tag, self.tmp / "c")
                 self.assertNotEqual(done.returncode, 0)
                 self.assertIn("does not match", done.stderr)
+
+
+def _readme_install():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("readme_install", ROOT / ".github" / "scripts" / "readme_install.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class ReadmeInstall(unittest.TestCase):
+    mod = _readme_install()
+
+    def blocks(self, text, lang):
+        return [b.strip() for b in __import__("re").findall(rf"```{lang}\n(.*?)```", text, flags=__import__("re").S)]
+
+    def test_commands_paste_without_edits(self):
+        block = self.mod.render("v1.2.3")
+        commands = self.blocks(block, "sh") + self.blocks(block, "powershell")
+        self.assertEqual(len(commands), 3)
+        for cmd in commands:
+            with self.subTest(cmd=cmd):
+                self.assertNotRegex(cmd, r"[<>]")
+                self.assertIn("/releases/download/v1.2.3/bootstrap.py", cmd)
+        shells = [s for s in ("bash", "zsh") if shutil.which(s)]
+        for shell in shells:
+            for cmd in self.blocks(block, "sh"):
+                with self.subTest(shell=shell, cmd=cmd):
+                    self.assertEqual(subprocess.run([shell, "-n", "-c", cmd], check=False).returncode, 0)
+
+    def test_update_is_idempotent_and_keeps_the_rest(self):
+        text = f"top\n{self.mod.START}\nold\n{self.mod.END}\nbottom\n"
+        once = self.mod.update(text, "v1.2.3")
+        self.assertEqual(self.mod.update(once, "v1.2.3"), once)
+        self.assertTrue(once.startswith("top\n") and once.endswith("\nbottom\n"))
+        with self.assertRaises(ValueError):
+            self.mod.render("latest")
+        with self.assertRaises(ValueError):
+            self.mod.update("no block", "v1.2.3")
+
+    def test_readme_block_is_the_rendered_one(self):
+        text = (ROOT / "README.md").read_text(encoding="utf-8")
+        tag = __import__("re").search(r"Latest release: \*\*(v\d+\.\d+\.\d+)\*\*", text)[1]
+        self.assertEqual(self.mod.update(text, tag), text)
