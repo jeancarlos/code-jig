@@ -1,0 +1,27 @@
+name: promote
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [develop]
+permissions: {}
+jobs:
+  promote:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.repository_owner == 'jeancarlos'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: open the develop to main pull request and merge it when develop still points at the commit ci passed
+        run: |
+          n=$(gh pr list --base main --head develop --state open --json number --jq '.[0].number')
+          if [ -z "$n" ]; then
+            gh pr create --base main --head develop --title "release: develop to main" --body "Opened by promote after ci passed on $HEAD_SHA."
+            n=$(gh pr list --base main --head develop --state open --json number --jq '.[0].number')
+          fi
+          gh pr merge "$n" --merge --match-head-commit "$HEAD_SHA"
