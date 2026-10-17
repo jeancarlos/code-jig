@@ -1,0 +1,28 @@
+name: dependabot-merge
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+permissions: {}
+jobs:
+  merge:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.actor.login == 'dependabot[bot]' && github.event.workflow_run.head_repository.full_name == github.repository && github.repository_owner == 'jeancarlos'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: merge a dependabot pull request into develop when its one bump keeps its major version
+        run: |
+          title=$(gh pr view "$PR_NUMBER" --json author,isCrossRepository,baseRefName,commits,title --jq 'select(.author.login == "app/dependabot" and .isCrossRepository == false and .baseRefName == "develop" and all(.commits[]; (.authors | length) > 0 and all(.authors[]; .login == "dependabot[bot]"))) | .title')
+          if [ -z "$title" ]; then echo "not a clean dependabot pull request into develop, leaving it"; exit 0; fi
+          if ! python3 .github/scripts/same_major.py "$title"; then echo "not a same-major single bump, leaving it for a human"; exit 0; fi
+          gh pr merge "$PR_NUMBER" --merge --match-head-commit "$HEAD_SHA"
