@@ -6,6 +6,7 @@
 [![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jeancarlos/code-jig/badges/coverage.json)](https://github.com/jeancarlos/code-jig/actions/workflows/ci.yml)
 [![release](https://img.shields.io/github/v/release/jeancarlos/code-jig)](https://github.com/jeancarlos/code-jig/releases/latest)
 [![license](https://img.shields.io/github/license/jeancarlos/code-jig)](LICENSE)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/jeancarlos/code-jig/badge)](https://scorecard.dev/viewer/?uri=github.com/jeancarlos/code-jig)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 ![platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
 ![dependencies: none (stdlib)](https://img.shields.io/badge/dependencies-none%20(stdlib)-brightgreen)
@@ -127,6 +128,15 @@ The tool sends nothing. The download site counts requests for `bootstrap.py` and
 - **Measure, then decide.** Bench data in the repo, never guesses.
 - **Additive safety.** Local policy extends upstream policy; it never replaces it.
 - **Clean-room overlays.** Private context stays in private overlays. The core carries only what anyone could use.
+
+## Verify a release
+
+Every release asset has a Sigstore bundle (`<asset>.sigstore.json`), a SLSA build provenance file (`code-jig.intoto.jsonl`) and an SPDX SBOM (`code-jig.spdx.json`). Verify with:
+
+```
+gh attestation verify code-jig.zip --repo jeancarlos/code-jig
+cosign verify-blob code-jig.zip --bundle code-jig.zip.sigstore.json --certificate-identity-regexp '^https://github.com/jeancarlos/code-jig/' --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
 
 ## License
 
