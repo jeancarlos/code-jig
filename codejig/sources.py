@@ -60,8 +60,12 @@ def page_text(body: bytes, ctype: str) -> str:
     text = body.decode(charset.group(1) if charset else "utf-8", errors="replace")
     if "html" in ctype or "xml" in ctype:
         parser = _Text()
-        parser.feed(text)
-        text = "".join(parser.parts)
+        try:
+            parser.feed(text)
+        except AssertionError:
+            pass
+        else:
+            text = "".join(parser.parts)
     return normalize(text)
 
 
