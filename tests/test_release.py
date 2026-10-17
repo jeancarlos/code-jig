@@ -103,11 +103,18 @@ class ReadmeInstall(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 self.assertNotRegex(cmd, r"[<>]")
                 self.assertIn("/releases/download/v1.2.3/bootstrap.py", cmd)
-        shells = [s for s in ("bash", "zsh") if shutil.which(s)]
+        shells = [] if os.name == "nt" else [s for s in ("bash", "zsh") if shutil.which(s)]
         for shell in shells:
             for cmd in self.blocks(block, "sh"):
                 with self.subTest(shell=shell, cmd=cmd):
                     self.assertEqual(subprocess.run([shell, "-n", "-c", cmd], check=False).returncode, 0)
+        if shutil.which("pwsh"):
+            for cmd in self.blocks(block, "powershell"):
+                check = ("$e = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($env:CMD, [ref]$null, [ref]$e); "
+                         "exit $e.Count")
+                with self.subTest(shell="pwsh", cmd=cmd):
+                    done = subprocess.run(["pwsh", "-NoProfile", "-Command", check], env=dict(os.environ, CMD=cmd), check=False)
+                    self.assertEqual(done.returncode, 0)
 
     def test_update_is_idempotent_and_keeps_the_rest(self):
         text = f"top\n{self.mod.START}\nold\n{self.mod.END}\nbottom\n"
