@@ -86,7 +86,8 @@ class Build(unittest.TestCase):
 class ScorecardSeesTheRepo(unittest.TestCase):
     def test_the_github_tarball_keeps_what_scorecard_reads(self):
         out = subprocess.run(["git", "-C", str(ROOT), "archive", "--format=tar", "HEAD"], check=True, capture_output=True).stdout
-        names = tarfile.open(fileobj=io.BytesIO(out)).getnames()
+        with tarfile.open(fileobj=io.BytesIO(out)) as tar:
+            names = tar.getnames()
         for needed in (".github/dependabot.yml", ".github/workflows/ci.yml", "SECURITY.md", "ci/analyze.txt"):
             self.assertIn(needed, names)
 
