@@ -3,7 +3,7 @@
 ## How to contribute
 
 - Bugs and enhancement requests: open an issue at <https://github.com/jeancarlos/code-jig/issues>. Vulnerabilities go through [SECURITY.md](SECURITY.md), never a public issue.
-- Changes: branch `feature/*`, `fix/*` or `chore/*` off `develop`, open a pull request into `develop`. `develop` is merged into `main` and a tag `vX.Y.Z` publishes the release.
+- Changes: branch `feature/*`, `fix/*` or `chore/*` off `develop`, open a pull request into `develop`. `develop` is merged into `main` and a tag `vX.Y.Z` publishes the release. The `chore: vX.Y.Z` bump also runs `python3 .github/scripts/readme_install.py vX.Y.Z` so the README install commands name the new tag; main takes no direct pushes, `promote` merges develop into main after ci passes.
 - Every code change ships with a test that fails without it. CI runs the unit tests on Linux and Windows, Python 3.11 and 3.13, plus real-tool checks, CodeQL, gitleaks, osv-scanner, zizmor, REUSE and fuzzing.
 - Contributions are accepted under the Apache-2.0 license, and every file is covered by `REUSE.toml`.
 - Secure design: the core is configuration and stdlib Python, runs no network calls except the documented bootstrap download and source check, refuses non-public addresses, verifies sha256 before unpacking and rejects archive paths outside the target. Common errors to avoid: shell injection (subprocess lists, never user text in a shell), path traversal, unchecked archive members, secrets in files.

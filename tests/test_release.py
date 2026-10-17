@@ -95,6 +95,11 @@ class ReadmeInstall(unittest.TestCase):
     def blocks(self, text, lang):
         return [b.strip() for b in __import__("re").findall(rf"```{lang}\n(.*?)```", text, flags=__import__("re").S)]
 
+    def test_readme_names_the_current_version(self):
+        text = (ROOT / "README.md").read_text(encoding="utf-8")
+        start, end = text.index(self.mod.START), text.index(self.mod.END)
+        self.assertEqual(text[start:end + len(self.mod.END)], self.mod.render(TAG))
+
     def test_commands_paste_without_edits(self):
         block = self.mod.render("v1.2.3")
         commands = self.blocks(block, "sh") + self.blocks(block, "powershell")
