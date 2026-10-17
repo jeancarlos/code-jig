@@ -99,37 +99,50 @@ def check_fixture(skill: Path, name: str) -> Path:
     return src
 
 
+def _new_case(i: int, raw) -> Case:
+    if not isinstance(raw, dict) or not isinstance(raw.get("prompt"), str) or not raw["prompt"].strip():
+        raise ValueError(f"case {i} needs a prompt")
+    try:
+        return Case(**raw)
+    except TypeError as e:
+        raise ValueError(f"case {i}: {e}") from None
+
+
+def _check_run_settings(i: int, case: Case) -> None:
+    if case.sandbox not in SANDBOXES:
+        raise ValueError(f"case {i}: sandbox must be one of {', '.join(SANDBOXES)}")
+    if type(case.network) is not bool or case.network and case.sandbox != "workspace-write":
+        raise ValueError(f"case {i}: network is true or false, and true needs sandbox = \"workspace-write\"")
+
+
+def _check_field_types(i: int, case: Case) -> None:
+    if not all(isinstance(c, dict) and isinstance(c.get("message"), str) and set(c) == {"message"} for c in case.commits):
+        raise ValueError(f"case {i}: each commits entry is a table with only a message")
+    if not (all(isinstance(x, str) for x in [*case.commands, *case.output]) and isinstance(case.commands, list)
+            and isinstance(case.output, list) and type(case.spawns) is int and type(case.read_skill) is bool):
+        raise ValueError(f"case {i}: commands and output are lists of strings, spawns a number, read_skill true or false")
+
+
+def _load_case(skill: Path, i: int, raw) -> Case:
+    case = _new_case(i, raw)
+    _check_run_settings(i, case)
+    if case.fixture:
+        try:
+            check_fixture(skill, case.fixture)
+        except ValueError as e:
+            raise ValueError(f"case {i}: {e}") from None
+    _check_field_types(i, case)
+    for pattern in case.output:
+        re.compile(pattern)
+    return case
+
+
 def load_cases(skill: Path) -> list[Case]:
     data = tomllib.loads((skill / "evals.toml").read_text(encoding="utf-8-sig"))
     cases = data.get("case")
     if not isinstance(cases, list) or not cases:
         raise ValueError("evals.toml needs at least one [[case]]")
-    out = []
-    for i, raw in enumerate(cases, 1):
-        if not isinstance(raw, dict) or not isinstance(raw.get("prompt"), str) or not raw["prompt"].strip():
-            raise ValueError(f"case {i} needs a prompt")
-        try:
-            case = Case(**raw)
-        except TypeError as e:
-            raise ValueError(f"case {i}: {e}") from None
-        if case.sandbox not in SANDBOXES:
-            raise ValueError(f"case {i}: sandbox must be one of {', '.join(SANDBOXES)}")
-        if type(case.network) is not bool or case.network and case.sandbox != "workspace-write":
-            raise ValueError(f"case {i}: network is true or false, and true needs sandbox = \"workspace-write\"")
-        if case.fixture:
-            try:
-                check_fixture(skill, case.fixture)
-            except ValueError as e:
-                raise ValueError(f"case {i}: {e}") from None
-        if not all(isinstance(c, dict) and isinstance(c.get("message"), str) and set(c) == {"message"} for c in case.commits):
-            raise ValueError(f"case {i}: each commits entry is a table with only a message")
-        if not (all(isinstance(x, str) for x in [*case.commands, *case.output]) and isinstance(case.commands, list)
-                and isinstance(case.output, list) and type(case.spawns) is int and type(case.read_skill) is bool):
-            raise ValueError(f"case {i}: commands and output are lists of strings, spawns a number, read_skill true or false")
-        for pattern in case.output:
-            re.compile(pattern)
-        out.append(case)
-    return out
+    return [_load_case(skill, i, raw) for i, raw in enumerate(cases, 1)]
 
 
 def static(skill: Path) -> list[tuple[str, str]]:
@@ -147,6 +160,16 @@ def static(skill: Path) -> list[tuple[str, str]]:
     return found
 
 
+def _on_item(run: Run, item: dict) -> None:
+    kind = item.get("type")
+    if kind == "command_execution":
+        run.commands.append(str(item.get("command", "")))
+    elif kind == "collab_tool_call" and item.get("tool") == "spawn_agent":
+        run.spawns += 1
+    elif kind == "agent_message":
+        run.message = str(item.get("text", ""))
+
+
 def parse_events(stdout: str) -> Run:
     run = Run()
     for line in stdout.splitlines():
@@ -155,17 +178,14 @@ def parse_events(stdout: str) -> Run:
         except ValueError:
             continue
         item = event.get("item") or {}
-        if event.get("type") == "thread.started":
+        kind = event.get("type")
+        if kind == "thread.started":
             run.thread = str(event.get("thread_id") or "")
-        elif event.get("type") == "item.completed" and item.get("type") == "command_execution":
-            run.commands.append(str(item.get("command", "")))
-        elif event.get("type") == "item.completed" and item.get("type") == "collab_tool_call" and item.get("tool") == "spawn_agent":
-            run.spawns += 1
-        elif event.get("type") == "item.completed" and item.get("type") == "agent_message":
-            run.message = str(item.get("text", ""))
-        elif event.get("type") == "turn.completed":
+        elif kind == "item.completed":
+            _on_item(run, item)
+        elif kind == "turn.completed":
             run.input_tokens += int((event.get("usage") or {}).get("input_tokens") or 0)
-        elif event.get("type") in ("error", "turn.failed"):
+        elif kind in ("error", "turn.failed"):
             run.error = str(event.get("message") or (event.get("error") or {}).get("message") or "failed")
     return run
 
@@ -299,6 +319,51 @@ def _codex_version(bin_path: Path, home: Path) -> str:
     return r.stdout.strip() if not isinstance(r, str) else "unknown"
 
 
+def _review_step(skill: Path, bin_path: Path, home: Path) -> bool:
+    passed, text = review(skill, bin_path, home)
+    print("  " + ("ok Codex review: VERDICT: ship" if passed else "FAIL Codex review:"))
+    if not passed:
+        print("\n".join(f"    {ln}" for ln in text.splitlines()))
+    return passed
+
+
+def _live_ready(skill: Path, args) -> bool:
+    if not args.trust_evals and not skill.is_relative_to(paths.CORE / "skills"):
+        print("  FAIL live cases run commands Codex chooses from evals.toml with your login; read the cases, then pass --trust-evals")
+        return False
+    installed = paths.agents_skills() / skill.name
+    if not installed.is_dir() or install.tree_digest(installed) != install.tree_digest(skill):
+        print(f"  FAIL {installed} is not this version; run code-jig install so Codex loads it")
+        return False
+    return True
+
+
+def _print_case(i: int, problems: list[str], run: Run) -> None:
+    print(f"  {'ok' if not problems else 'FAIL'} live case {i}: {len(run.commands)} commands, {run.spawns} subagents, {run.input_tokens} input tokens")
+    for p in problems:
+        print(f"    {p}")
+    if problems:
+        print("    commands Codex ran: " + ("; ".join(c[-120:] for c in run.commands[:12]) or "none"))
+        print(f"    final answer: {run.message[:300]!r}")
+
+
+def _live_step(skill: Path, args, bin_path: Path, home: Path) -> tuple[int, int]:
+    cases = load_cases(skill)
+    passed = 0
+    for i, case in enumerate(cases, 1):
+        problems, run = live(skill, case, bin_path, home, args.profile)
+        _print_case(i, problems, run)
+        passed += not problems
+    return passed, len(cases)
+
+
+def _write_stamp(skill: Path, bin_path: Path, home: Path, passed: int, total: int) -> None:
+    stamp = {"digest": install.tree_digest(skill), "evals": evals_digest(skill), "review": "ship", "live": f"{passed}/{total}",
+             "codex": _codex_version(bin_path, home), "date": time.strftime("%Y-%m-%d")}
+    (skill / STAMP).write_text(json.dumps(stamp, indent=1) + "\n", encoding="utf-8", newline="\n")
+    print(f"  wrote {skill / STAMP}")
+
+
 def check(skill: Path, args, bin_path: Path | None, home: Path) -> bool:
     print(skill)
     found = static(skill)
@@ -312,37 +377,16 @@ def check(skill: Path, args, bin_path: Path | None, home: Path) -> bool:
     if bin_path is None:
         print("  FAIL codex not found; pass --codex-bin")
         return False
-    ok, cases_passed, cases = True, 0, []
+    ok, passed, total = True, 0, 0
     if args.review:
-        passed, text = review(skill, bin_path, home)
-        print("  " + ("ok Codex review: VERDICT: ship" if passed else "FAIL Codex review:"))
-        if not passed:
-            print("\n".join(f"    {ln}" for ln in text.splitlines()))
-        ok &= passed
+        ok &= _review_step(skill, bin_path, home)
     if args.live:
-        if not args.trust_evals and not skill.is_relative_to(paths.CORE / "skills"):
-            print("  FAIL live cases run commands Codex chooses from evals.toml with your login; read the cases, then pass --trust-evals")
+        if not _live_ready(skill, args):
             return False
-        installed = paths.agents_skills() / skill.name
-        if not installed.is_dir() or install.tree_digest(installed) != install.tree_digest(skill):
-            print(f"  FAIL {installed} is not this version; run code-jig install so Codex loads it")
-            return False
-        cases = load_cases(skill)
-        for i, case in enumerate(cases, 1):
-            problems, run = live(skill, case, bin_path, home, args.profile)
-            print(f"  {'ok' if not problems else 'FAIL'} live case {i}: {len(run.commands)} commands, {run.spawns} subagents, {run.input_tokens} input tokens")
-            for p in problems:
-                print(f"    {p}")
-            if problems:
-                print("    commands Codex ran: " + ("; ".join(c[-120:] for c in run.commands[:12]) or "none"))
-                print(f"    final answer: {run.message[:300]!r}")
-            cases_passed += not problems
-        ok &= cases_passed == len(cases)
+        passed, total = _live_step(skill, args, bin_path, home)
+        ok &= passed == total
     if ok and args.review and args.live:
-        stamp = {"digest": install.tree_digest(skill), "evals": evals_digest(skill), "review": "ship", "live": f"{cases_passed}/{len(cases)}",
-                 "codex": _codex_version(bin_path, home), "date": time.strftime("%Y-%m-%d")}
-        (skill / STAMP).write_text(json.dumps(stamp, indent=1) + "\n", encoding="utf-8", newline="\n")
-        print(f"  wrote {skill / STAMP}")
+        _write_stamp(skill, bin_path, home, passed, total)
     return ok
 
 

@@ -112,14 +112,19 @@ def valid_hook_groups(groups) -> bool:
         and all(isinstance(h, dict) for h in g.get("hooks", [])) for g in groups)
 
 
-def merged_hooks(path: Path, posix: str, windows: str, watermark: tuple[str, str] | None = None) -> str:
+def _load_hooks(path: Path, event: str) -> tuple[dict, dict]:
     try:
         data = json.loads(path.read_text(encoding="utf-8-sig")) if path.is_file() else {"hooks": {}}
     except (OSError, ValueError) as e:
         raise ValueError(f"{path}: {e}") from e
     hooks = data.setdefault("hooks", {}) if isinstance(data, dict) else None
-    if not isinstance(hooks, dict) or not valid_hook_groups(hooks.setdefault("Stop", [])):
-        raise ValueError(f'{path}: expected {{"hooks": {{"Stop": [...]}}}}')
+    if not isinstance(hooks, dict) or not valid_hook_groups(hooks.setdefault(event, [])):
+        raise ValueError(f'{path}: expected {{"hooks": {{"{event}": [...]}}}}')
+    return data, hooks
+
+
+def merged_hooks(path: Path, posix: str, windows: str, watermark: tuple[str, str] | None = None) -> str:
+    data, hooks = _load_hooks(path, "Stop")
     hooks["Stop"] = _without_status(hooks["Stop"], HOOK_STATUS)
     hooks["Stop"].append({"hooks": [{"type": "command", "command": posix, "commandWindows": windows,
                                      "timeout": 60, "statusMessage": HOOK_STATUS}]})
@@ -147,13 +152,7 @@ def write_merged(path: Path, text: str) -> Path | None:
 
 
 def merged_claude_code_hooks(path: Path, command: str) -> str:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8-sig")) if path.is_file() else {"hooks": {}}
-    except (OSError, ValueError) as e:
-        raise ValueError(f"{path}: {e}") from e
-    hooks = data.setdefault("hooks", {}) if isinstance(data, dict) else None
-    if not isinstance(hooks, dict) or not valid_hook_groups(hooks.setdefault("PostToolUse", [])):
-        raise ValueError(f'{path}: expected {{"hooks": {{"PostToolUse": [...]}}}}')
+    data, hooks = _load_hooks(path, "PostToolUse")
     hooks["PostToolUse"] = _without_status(hooks["PostToolUse"], CLAUDE_CODE_WATERMARK_STATUS)
     hooks["PostToolUse"].append({
         "matcher": "Write|Edit|MultiEdit|NotebookEdit",
@@ -232,23 +231,29 @@ def _own_skill(d: Path) -> bool:
     return side.is_file() and side.read_text(encoding="utf-8").strip() == tree_digest(d)
 
 
-def install_skills(sources: dict[str, Path], dest: Path) -> list[str]:
+def _ignore_installed(src: Path):
+    return lambda d, names: [n for n in names if n == "__pycache__" or (n in (*NOT_INSTALLED, "evals") and Path(d) == src)]
+
+
+def _install_skill(name: str, src: Path, dest: Path) -> list[str]:
     lines = []
-    dest.mkdir(parents=True, exist_ok=True)
-    for name, src in sources.items():
-        target = dest / name
-        if target.exists() and not _own_skill(target):
-            backups = dest.parent / "skills-backup"
-            backups.mkdir(parents=True, exist_ok=True)
-            backup = _backup_name(backups / name)
-            target.replace(backup)
-            lines.append(f"moved your previous {target} to {backup}")
-        elif target.exists():
-            shutil.rmtree(target)
-        shutil.copytree(src, target, ignore=lambda d, names, src=src: [n for n in names if n == "__pycache__"
-                                                               or (n in (*NOT_INSTALLED, "evals") and Path(d) == src)])
-        (target / SKILL_SIDECAR).write_text(tree_digest(target) + "\n", encoding="utf-8", newline="\n")
-        lines.append(f"wrote {target}")
+    target = dest / name
+    if target.exists() and not _own_skill(target):
+        backups = dest.parent / "skills-backup"
+        backups.mkdir(parents=True, exist_ok=True)
+        backup = _backup_name(backups / name)
+        target.replace(backup)
+        lines.append(f"moved your previous {target} to {backup}")
+    elif target.exists():
+        shutil.rmtree(target)
+    shutil.copytree(src, target, ignore=_ignore_installed(src))
+    (target / SKILL_SIDECAR).write_text(tree_digest(target) + "\n", encoding="utf-8", newline="\n")
+    lines.append(f"wrote {target}")
+    return lines
+
+
+def _prune_skills(sources: dict[str, Path], dest: Path) -> list[str]:
+    lines = []
     for d in sorted(p for p in dest.iterdir() if p.is_dir() and not p.is_symlink() and p.name not in sources and (p / SKILL_SIDECAR).is_file()):
         if _own_skill(d):
             shutil.rmtree(d)
@@ -256,6 +261,14 @@ def install_skills(sources: dict[str, Path], dest: Path) -> list[str]:
         else:
             lines.append(f"warning: left {d}: edited by hand, Codex still loads it")
     return lines
+
+
+def install_skills(sources: dict[str, Path], dest: Path) -> list[str]:
+    lines = []
+    dest.mkdir(parents=True, exist_ok=True)
+    for name, src in sources.items():
+        lines += _install_skill(name, src, dest)
+    return lines + _prune_skills(sources, dest)
 
 
 def render_profile(tier: tiers.Tier, policy: str, compact: int | None = None) -> str:

@@ -64,24 +64,28 @@ def verify_tree(root, tag):
         raise Refused(f"{root} does not match release {tag}; delete it and rerun")
 
 
+def check_entry(info):
+    name = info.filename
+    parts = name[:-1].split("/") if name.endswith("/") else name.split("/")
+    if not name or "\\" in name or ":" in name or name.startswith("/") or any(p in ("", ".", "..") for p in parts):
+        raise Refused(f"unsafe archive entry {name!r}")
+    if "__pycache__" in parts:
+        raise Refused(f"archive entry {name!r} is undigested bytecode")
+    if any(p.split(".")[0].lower() in RESERVED or p != p.rstrip(". ") for p in parts):
+        raise Refused(f"archive entry {name!r} is not a portable Windows name")
+    mode = info.external_attr >> 16
+    if stat.S_IFMT(mode) and not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+        raise Refused(f"archive entry {name!r} is not a regular file")
+    return "/".join(parts).lower()
+
+
 def check_names(zf):
     seen = set()
     total = 0
     for info in zf.infolist():
-        name = info.filename
-        parts = name[:-1].split("/") if name.endswith("/") else name.split("/")
-        if not name or "\\" in name or ":" in name or name.startswith("/") or any(p in ("", ".", "..") for p in parts):
-            raise Refused(f"unsafe archive entry {name!r}")
-        if "__pycache__" in parts:
-            raise Refused(f"archive entry {name!r} is undigested bytecode")
-        if any(p.split(".")[0].lower() in RESERVED or p != p.rstrip(". ") for p in parts):
-            raise Refused(f"archive entry {name!r} is not a portable Windows name")
-        mode = info.external_attr >> 16
-        if stat.S_IFMT(mode) and not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
-            raise Refused(f"archive entry {name!r} is not a regular file")
-        key = "/".join(parts).lower()
+        key = check_entry(info)
         if key in seen:
-            raise Refused(f"archive entry {name!r} collides with another entry")
+            raise Refused(f"archive entry {info.filename!r} collides with another entry")
         seen.add(key)
         total += info.file_size
     if total > MAX_TREE:
@@ -159,9 +163,9 @@ def fetch_asset(tag, name, base, limit):
         return fetch(url, limit)
     except urllib.error.HTTPError as e:
         e.close()
-        raise Refused(f"{url}: HTTP {e.code}" + (f"; {NO_ZIP}" if e.code == 404 else ""))
+        raise Refused(f"{url}: HTTP {e.code}" + (f"; {NO_ZIP}" if e.code == 404 else "")) from e
     except OSError as e:
-        raise Refused(f"{url}: {e}")
+        raise Refused(f"{url}: {e}") from e
 
 
 def resolve_latest(repo):
@@ -173,9 +177,9 @@ def resolve_latest(repo):
         found = re.search(r"/tag/([^/]+)$", e.headers.get("Location", "") or "")
         if e.code in (301, 302, 303, 307, 308) and found:
             return valid_tag(found.group(1))
-        raise Refused(f"{url}: HTTP {e.code}")
+        raise Refused(f"{url}: HTTP {e.code}") from e
     except OSError as e:
-        raise Refused(f"{url}: {e}")
+        raise Refused(f"{url}: {e}") from e
     raise Refused(f"{url} did not redirect to a release tag")
 
 
@@ -198,7 +202,7 @@ def read_zip(path):
         blob = path.read_bytes()
         words = zipfile.ZipFile(io.BytesIO(blob)).read("VERSION").decode("utf-8").split()
     except (OSError, KeyError, ValueError, zipfile.BadZipFile) as e:
-        raise Refused(f"{path} is not a {ZIP} release: {e}")
+        raise Refused(f"{path} is not a {ZIP} release: {e}") from e
     tag = valid_tag(words[0] if words else "")
     sums = path.with_name(SUMS)
     if sums.is_file():
@@ -253,7 +257,7 @@ def git_run(cmd):
     try:
         return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", check=False)
     except OSError as e:
-        raise Refused(f"git is needed to clone the overlay: {e}")
+        raise Refused(f"git is needed to clone the overlay: {e}") from e
 
 
 def clone(url, dest):
@@ -267,7 +271,7 @@ def clone(url, dest):
     try:
         done = subprocess.run(cmd, check=False)
     except OSError as e:
-        raise Refused(f"git is needed to clone the overlay: {e}")
+        raise Refused(f"git is needed to clone the overlay: {e}") from e
     if done.returncode:
         raise Refused(f"git could not fetch the overlay into {dest} (exit {done.returncode})")
 
@@ -295,7 +299,7 @@ def read_pin(overlay):
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError) as e:
-        raise Refused(f"{path}: {e}")
+        raise Refused(f"{path}: {e}") from e
     return valid_tag(str(data.get("core_version", "")))
 
 

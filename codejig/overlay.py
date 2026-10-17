@@ -16,6 +16,17 @@ class Overlay:
     push_cleanup: bool | None = None
 
 
+def _flags(path: Path, data: dict, compact) -> dict:
+    if compact is not None and (isinstance(compact, bool) or not isinstance(compact, int) or compact <= 0):
+        raise ValueError(f"{path}: auto_compact_token_limit must be a positive integer")
+    flags = {k: data.get(k, False) for k in ("git_gate", "prose_gate")}
+    flags["push_cleanup"] = data.get("push_cleanup")
+    bad = [k for k, v in flags.items() if not isinstance(v, bool) and not (k == "push_cleanup" and v is None)]
+    if bad:
+        raise ValueError(f"{path}: {', '.join(bad)} must be true or false")
+    return flags
+
+
 def load(root: Path) -> Overlay:
     path = root / "overlay.toml"
     try:
@@ -28,11 +39,5 @@ def load(root: Path) -> Overlay:
     if not isinstance(data["core_writable"], bool):
         raise ValueError(f"{path}: core_writable must be true or false")
     compact = data.get("auto_compact_token_limit")
-    if compact is not None and (isinstance(compact, bool) or not isinstance(compact, int) or compact <= 0):
-        raise ValueError(f"{path}: auto_compact_token_limit must be a positive integer")
-    flags = {k: data.get(k, False) for k in ("git_gate", "prose_gate")}
-    flags["push_cleanup"] = data.get("push_cleanup")
-    bad = [k for k, v in flags.items() if not isinstance(v, bool) and not (k == "push_cleanup" and v is None)]
-    if bad:
-        raise ValueError(f"{path}: {', '.join(bad)} must be true or false")
+    flags = _flags(path, data, compact)
     return Overlay(root, str(data["core_version"]), data["core_writable"], compact, **flags)

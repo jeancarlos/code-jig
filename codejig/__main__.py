@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import sys
 
 
@@ -74,44 +75,31 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+COMMAND_MODULES = {
+    "install": "install",
+    "collect": "collect",
+    "tokens": "tokens",
+    "cross-review": "review",
+    "analyze": "analyze",
+    "trace": "trace",
+    "evidence": "evidence",
+    "hooks": "hooks",
+    "humanize": "humanize",
+    "lint-skill": "skilllint",
+    "scrub": "scrub",
+    "git-hook": "gitgate",
+    "skill-check": "skillcheck",
+    "check-sources": "sources",
+    "migrate": "migrate",
+}
+
+
 def main(argv: list[str] | None = None) -> int:
     if sys.version_info < (3, 11):
         print("code-jig: Python 3.11 or newer is required", file=sys.stderr)
         return 2
     args = build_parser().parse_args(argv)
-    if args.cmd == "install":
-        from codejig.install import cli
-    elif args.cmd == "collect":
-        from codejig.collect import cli
-    elif args.cmd == "tokens":
-        from codejig.tokens import cli
-    elif args.cmd == "cross-review":
-        from codejig.review import cli
-    elif args.cmd == "analyze":
-        from codejig.analyze import cli
-    elif args.cmd == "trace":
-        from codejig.trace import cli
-    elif args.cmd == "evidence":
-        from codejig.evidence import cli
-    elif args.cmd == "hooks":
-        from codejig.hooks import cli
-    elif args.cmd == "humanize":
-        from codejig.humanize import cli
-    elif args.cmd == "lint-skill":
-        from codejig.skilllint import cli
-    elif args.cmd == "scrub":
-        from codejig.scrub import cli
-    elif args.cmd == "git-hook":
-        from codejig.gitgate import cli
-    elif args.cmd == "skill-check":
-        from codejig.skillcheck import cli
-    elif args.cmd == "check-sources":
-        from codejig.sources import cli
-    elif args.cmd == "migrate":
-        from codejig.migrate import cli
-    else:
-        from codejig.doctor import cli
-    return cli(args)
+    return importlib.import_module(f"codejig.{COMMAND_MODULES.get(args.cmd, 'doctor')}").cli(args)
 
 
 if __name__ == "__main__":
