@@ -299,7 +299,7 @@ def plan(core: Path, ov: Overlay, home: Path, claude_code_settings: Path | None 
     outputs += [(home / "agents" / name, text) for name, text in role_files(core, ts).items()]
     outputs += [(home / "rules" / name, text) for name, text in rule_files(ov.root).items()]
     lib = paths.state_dir() / "lib"
-    outputs += [(lib / "codejig" / p.name, stamp(p.read_text(encoding="utf-8"), "hash")) for p in sorted((core / "codejig").glob("*.py"))]
+    outputs += [(lib / "codejig" / p.name, stamp(p.read_text(encoding="utf-8"), "hash")) for p in sorted(((core / "codejig") if (core / "codejig").is_dir() else paths.CODE).glob("*.py"))]
     outputs.append((home / "hooks.json", merged_hooks(home / "hooks.json", *hook_commands(lib, home, interpreter()),
                                                       watermark=watermark_commands(lib, interpreter(), "codex"))))
     if claude_code_settings and claude_code_settings.is_file():
