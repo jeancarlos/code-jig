@@ -1,0 +1,11 @@
+[[PackageOverrides]]
+name = "vulture"
+ecosystem = "PyPI"
+license.override = ["MIT"]
+reason = "MIT licensed, PyPI metadata is free text"
+
+[[PackageOverrides]]
+name = "jinja2"
+ecosystem = "PyPI"
+license.override = ["BSD-3-Clause"]
+reason = "BSD-3-Clause licensed, PyPI metadata is free text"
