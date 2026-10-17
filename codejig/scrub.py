@@ -1,17 +1,14 @@
 import os
 import re
-import shlex
 import subprocess
-import sys
 import tempfile
 import time
 from pathlib import Path
 
 from codejig.watermark import clean_message, has_watermark
 
-EXPORT = ["fast-export", "--no-data", "--show-original-ids", "--reencode=no", "--signed-tags=strip",
+EXPORT = ["fast-export", "--no-data", "--show-original-ids", "--reencode=no", "--signed-tags=abort",
           "--tag-of-filtered-object=rewrite", "--reference-excluded-parents"]
-ALL = ("--branches", "--tags")
 SIGNATURE = (b"gpgsig ", b"gpgsig-sha256 ")
 EMAIL = re.compile(rb"<([^>]*)>")
 
@@ -36,7 +33,7 @@ def my_emails(repo: Path, extra: list[str] = ()) -> set[str]:
     return {e.lower() for e in [*found, *extra] if e}
 
 
-def attributed(repo: Path, emails: set[str], revs: tuple[str, ...] = ALL) -> list[str]:
+def attributed(repo: Path, emails: set[str], revs: tuple[str, ...]) -> list[str]:
     out = _git(repo, "log", "--format=%H%x00%ae%x00%B%x1e", *revs)
     hits = []
     for rec in out.split(b"\x1e"):
@@ -119,15 +116,6 @@ def verify(repo: Path, pairs: dict[str, str], emails: set[str]) -> int:
     return changed
 
 
-def _refs(repo: Path) -> dict[str, str]:
-    out = _git(repo, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags").decode()
-    return dict(line.split(" ", 1) for line in out.splitlines() if line)
-
-
-def _restore(repo: Path, bundle: Path) -> None:
-    _git(repo, "fetch", "-q", "--update-head-ok", str(bundle), "+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*")
-
-
 def _rewrite_revs(repo: Path, gitdir: Path, emails: set[str], revs: tuple[str, ...], expected: int) -> int:
     stream, origin = rewrite_stream(_git(repo, *EXPORT, *revs), emails)
     fd, marks_file = tempfile.mkstemp(prefix="scrub-marks-", dir=gitdir)
@@ -178,17 +166,6 @@ def blocker(repo: Path, revs: tuple[str, ...], emails: set[str]) -> str | None:
     return None
 
 
-def rewrite(repo: Path, gitdir: Path, emails: set[str], expected: int) -> tuple[int, dict[str, str], Path]:
-    before = _refs(repo)
-    bundle = _bundle(repo, gitdir, ALL)
-    try:
-        changed = _rewrite_revs(repo, gitdir, emails, ALL, expected)
-    except Abort:
-        _restore(repo, bundle)
-        raise
-    return changed, before, bundle
-
-
 def rewrite_range(repo: Path, branch_ref: str, base: str | None, emails: set[str]) -> tuple[int, Path | None]:
     revs = range_revs(branch_ref, base)
     expected = len(attributed(repo, emails, revs))
@@ -205,51 +182,3 @@ def rewrite_range(repo: Path, branch_ref: str, base: str | None, emails: set[str
     except Abort:
         _git(repo, "update-ref", branch_ref, old)
         raise
-
-
-def _report(repo: Path, before: dict[str, str]) -> list[str]:
-    lines = []
-    for ref, old in sorted(before.items()):
-        if not ref.startswith("refs/heads/"):
-            continue
-        branch = ref.removeprefix("refs/heads/")
-        upstream = _git(repo, "rev-parse", "-q", "--abbrev-ref", f"{branch}@{{upstream}}", check=False).decode().strip()
-        if not upstream or "/" not in upstream:
-            lines.append(f"  {branch}: no upstream")
-            continue
-        remote, _, rbranch = upstream.partition("/")
-        cmd = ["git", "push", f"--force-with-lease={rbranch}:{old}", remote, f"{branch}:{rbranch}"]
-        lines.append(f"  {branch}: {shlex.join(cmd)}")
-    return lines
-
-
-def cli(args) -> int:
-    repo = Path(args.path).resolve()
-    r = subprocess.run(["git", "-C", str(repo), "rev-parse", "--git-common-dir"], capture_output=True, text=True,
-                       encoding="utf-8", check=False)
-    if r.returncode:
-        print(f"code-jig: {repo} is not a git repository", file=sys.stderr)
-        return 2
-    gitdir = (repo / r.stdout.strip()).resolve()
-    emails = my_emails(repo, args.author)
-    if not emails:
-        print("code-jig: set git config user.email or codejig.email, or pass --author EMAIL", file=sys.stderr)
-        return 2
-    try:
-        hits = attributed(repo, emails)
-        if not hits:
-            print(f"{repo.name}: clean, no attribution in commits by {', '.join(sorted(emails))}")
-            return 0
-        print(f"{repo.name}: {len(hits)} commits by {', '.join(sorted(emails))} carry AI attribution")
-        if args.dry_run:
-            print("\n".join(f"  {h[:10]} {_git(repo, 'log', '-1', '--format=%s', h).decode().strip()}" for h in hits))
-            return 0
-        changed, before, bundle = rewrite(repo, gitdir, emails, len(hits))
-    except Abort as e:
-        print(f"code-jig: ABORT, nothing changed: {e}", file=sys.stderr)
-        return 1
-    print(f"rewrote {changed} commits, message only; trees, authors and dates verified unchanged")
-    print(f"backup: {bundle}")
-    print("nothing was pushed; to publish each branch, run:")
-    print("\n".join(_report(repo, before)))
-    return 0

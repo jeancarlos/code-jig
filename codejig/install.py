@@ -312,7 +312,7 @@ def _git_config(*args: str) -> str | None:
         r = subprocess.run(["git", "config", "--global", *args], capture_output=True, text=True, encoding="utf-8", check=False)
     except OSError:
         return None
-    return r.stdout.strip()
+    return r.stdout.strip() if r.returncode == 0 or (r.returncode == 1 and args[:1] == ("--get",)) else None
 
 
 def _same_path(a: str, b: Path) -> bool:
@@ -323,10 +323,11 @@ def git_gate(ov: Overlay) -> list[str]:
     target = paths.state_dir() / "git-hooks"
     current = _git_config("--get", "core.hooksPath")
     if current is None:
-        return ["warning: git not found; the git gate was not installed"] if ov.git_gate else []
+        return ["warning: git not found or its global config is unreadable; the git gate was not installed"] if ov.git_gate else []
     if not ov.git_gate:
         if _same_path(current, target):
-            _git_config("--unset", "core.hooksPath")
+            if _git_config("--unset", "core.hooksPath") is None:
+                return [f"warning: git config --global --unset core.hooksPath failed; the git gate in {target} is still active"]
             return [f"removed the git gate: core.hooksPath no longer points at {target}"]
         return []
     for name, text in gitgate.shims(paths.state_dir() / "lib", interpreter(), ov.prose_gate, ov.push_cleanup is not False).items():
@@ -335,8 +336,11 @@ def git_gate(ov: Overlay) -> list[str]:
     if current and not _same_path(current, target):
         return [(f"warning: git core.hooksPath is {current}; the gate is in {target} but not active. "
                  f"Activate it with: git config --global core.hooksPath \"{target}\" (each repo's own .git/hooks still run)")]
-    _git_config("core.hooksPath", str(target))
-    return [f"git gate active: core.hooksPath = {target}"]
+    if _git_config("core.hooksPath", str(target)) is None:
+        return [(f"warning: git config --global core.hooksPath failed; the git gate is NOT active. "
+                 f"Run: git config --global core.hooksPath \"{target}\"")]
+    return [(f"git gate active: core.hooksPath = {target}; a repo that sets its own core.hooksPath bypasses it "
+             "(code-jig doctor in that repo fails)")]
 
 
 def run(core: Path, ov: Overlay, home: Path) -> list[str]:
