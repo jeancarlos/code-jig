@@ -11,6 +11,8 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    outputs:
+      merged: ${{ steps.merge.outputs.merged }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -21,8 +23,22 @@ jobs:
         with:
           persist-credentials: false
       - name: merge a dependabot pull request into develop when its one bump keeps its major version
+        id: merge
         run: |
           title=$(gh pr view "$PR_NUMBER" --json author,isCrossRepository,baseRefName,commits,title --jq 'select(.author.login == "app/dependabot" and .isCrossRepository == false and .baseRefName == "develop" and all(.commits[]; (.authors | length) > 0 and all(.authors[]; .login == "dependabot[bot]"))) | .title')
           if [ -z "$title" ]; then echo "not a clean dependabot pull request into develop, leaving it"; exit 0; fi
           if ! python3 .github/scripts/same_major.py "$title"; then echo "not a same-major single bump, leaving it for a human"; exit 0; fi
           gh pr merge "$PR_NUMBER" --merge --match-head-commit "$HEAD_SHA"
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+  develop-ci:
+    needs: merge
+    if: needs.merge.outputs.merged == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: run ci on develop so promote sees the merge
+        run: gh workflow run ci.yml --ref develop
