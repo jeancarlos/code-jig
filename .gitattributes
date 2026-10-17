@@ -19,3 +19,5 @@ dashboard.json export-ignore
 .agnix.toml export-ignore
 ci/** export-ignore
 SECURITY.md export-ignore
+fuzz/** export-ignore
+.clusterfuzzlite/** export-ignore
