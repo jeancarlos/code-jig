@@ -16,7 +16,7 @@ Answers for <https://www.bestpractices.dev> (passing level). Project URL: <https
 | release_notes_vulns | N/A | no publicly known vulnerability fixed in a release so far |
 | report_process, report_tracker, report_responses, enhancement_responses, report_archive | Met | GitHub issues, CONTRIBUTING.md |
 | vulnerability_report_process, vulnerability_report_private, vulnerability_report_response | Met | SECURITY.md, GitHub private vulnerability reporting, 7 day acknowledgement |
-| build, build_common_tools, build_floss_tools | N/A | pure Python, no build step; release zip is `git archive` |
+| build, build_common_tools, build_floss_tools | N/A | pure Python; release zip is `git archive`, the PyPI wheel is built from the same tree by `.github/scripts/build_wheel.py` |
 | test, test_invocation, test_most, test_continuous_integration | Met | `python -m unittest discover -s tests`, coverage floor 93 percent, .github/workflows/ci.yml |
 | test_policy, tests_are_added, tests_documented_added | Met | CONTRIBUTING.md |
 | warnings, warnings_fixed, warnings_strict | Met | ruff in CI, `code-jig analyze` |

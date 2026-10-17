@@ -101,6 +101,8 @@ Edit `~/code-jig-overlay/profiles.toml` to pick your models; `doctor` lists the 
 
 The tool sends nothing. The download site counts requests for `bootstrap.py` and for release zips, and stores the event, the version, the client type (curl, PowerShell, Python or other) and the country. It does not store your IP address, your user-agent string or any install ID. The counts are request counts, not installs. See [ADR 0027](docs/adr/0027-install-from-a-release-url.md).
 
+**Prefer pipx?** `pipx install code-jig` installs the same release files as a wheel from PyPI, published from CI with Trusted Publishing and a PyPI attestation. Pick the overlay with `--overlay` and run `code-jig install` and `code-jig doctor`; `core_version` must match the installed version, and `pipx install code-jig==X.Y.Z` pins it. The first PyPI release is v0.12.0.
+
 ## Documentation
 
 | Read | When |
