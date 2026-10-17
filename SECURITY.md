@@ -11,7 +11,7 @@ Include the affected version (`code-jig --version`), the platform, and the small
 code-jig writes configuration for Codex and runs hooks on the user's machine. In scope:
 
 - a way to make the installer, bootstrap or a hook write outside the paths it manages, run a command it should not, or skip a check it should run;
-- a way to bypass the git gate, the watermark gate or the scrub of AI attribution;
+- a way to get a commit past the git gate without `--no-verify` (including making it pass when its checks fail), to make the gate or the watermark hook rewrite a commit already on a remote, or to make a cleaner change content it should only report;
 - a secret or private overlay content that reaches the public core or a release asset;
 - a weakness in how release assets are verified (`SHA256SUMS`, signatures, provenance).
 

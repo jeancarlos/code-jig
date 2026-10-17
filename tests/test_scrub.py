@@ -1,8 +1,5 @@
-import contextlib
-import io
 import os
 import subprocess
-import types
 import unittest
 from pathlib import Path
 
@@ -44,130 +41,9 @@ def new_repo(test) -> Path:
     return repo
 
 
-def run(repo: Path, *extra: str, dry_run: bool = False) -> tuple[int, str]:
-    out = io.StringIO()
-    args = types.SimpleNamespace(path=str(repo), author=list(extra), dry_run=dry_run)
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
-        code = scrub.cli(args)
-    return code, out.getvalue()
-
-
 def history(repo: Path) -> list[tuple[str, str, str, str]]:
     out = git(repo, "log", "--format=%T%x00%an <%ae> %ad%x00%cn <%ce> %cd%x00%B%x1e", "main")
     return [tuple(r.strip("\n").split("\0")) for r in out.split("\x1e") if r.strip()]
-
-
-class Scrub(unittest.TestCase):
-    def setUp(self):
-        self.repo = new_repo(self)
-        commit(self.repo, "one\n", ME, {"a.txt": "1\n"}, 1_700_000_000)
-        self.dirty = commit(self.repo, f"two\n\nbody\n\n{CODEX}\n", ME, {"a.txt": "2\n"}, 1_700_000_100)
-        commit(self.repo, f"three\n\n{CLAUDE}\n", OTHER, {"b.txt": "3\n"}, 1_700_000_200)
-        commit(self.repo, "four\n", ME, {"c.txt": "4\n"}, 1_700_000_300)
-        git(self.repo, "tag", "light", self.dirty)
-        git(self.repo, "tag", "-a", "annotated", "-m", "release", self.dirty,
-            env={"GIT_COMMITTER_NAME": "me", "GIT_COMMITTER_EMAIL": ME, "GIT_COMMITTER_DATE": "1700000400 +0000"})
-
-    def test_removes_only_my_trailers_and_changes_nothing_else(self):
-        before = history(self.repo)
-        write(self.repo / "a.txt", "uncommitted\n")
-        code, out = run(self.repo)
-        self.assertEqual(code, 0, out)
-        after = history(self.repo)
-        self.assertEqual([r[:3] for r in after], [r[:3] for r in before])
-        self.assertEqual(after[2][3], "two\n\nbody")
-        self.assertIn(CLAUDE, after[1][3])
-        self.assertEqual([r[3] for r in after if r is not after[2]], [r[3] for r in before if r is not before[2]])
-        self.assertEqual((self.repo / "a.txt").read_text(encoding="utf-8"), "uncommitted\n")
-        self.assertIn("1 commits", out)
-        self.assertTrue(list(Path(git(self.repo, "rev-parse", "--absolute-git-dir")).glob("code-jig-scrub-*.bundle")))
-
-    def test_tags_follow_the_rewritten_commit(self):
-        run(self.repo)
-        new_two = git(self.repo, "rev-parse", "main~2")
-        self.assertNotEqual(new_two, self.dirty)
-        self.assertEqual(git(self.repo, "rev-parse", "light"), new_two)
-        self.assertEqual(git(self.repo, "rev-parse", "annotated^{commit}"), new_two)
-
-    def test_dry_run_lists_and_changes_nothing(self):
-        head = git(self.repo, "rev-parse", "main")
-        code, out = run(self.repo, dry_run=True)
-        self.assertEqual(code, 0)
-        self.assertIn(self.dirty[:10], out)
-        self.assertEqual(git(self.repo, "rev-parse", "main"), head)
-
-    def test_extra_author_is_also_scrubbed(self):
-        run(self.repo, OTHER)
-        self.assertNotIn(CLAUDE, history(self.repo)[1][3])
-
-    def test_clean_repo_is_left_alone(self):
-        repo = new_repo(self)
-        head = commit(repo, "plain\n", ME, {"a": "1\n"}, 1_700_000_000)
-        code, out = run(repo)
-        self.assertEqual((code, git(repo, "rev-parse", "main")), (0, head))
-        self.assertIn("clean", out)
-
-    def test_same_history_gives_the_same_shas(self):
-        clone = self.repo.parent / "clone"
-        subprocess.run(["git", "clone", "-q", str(self.repo), str(clone)], check=True, env={**os.environ, **ENV})
-        git(clone, "config", "user.email", ME)
-        run(self.repo)
-        run(clone)
-        self.assertEqual(git(self.repo, "rev-parse", "main"), git(clone, "rev-parse", "main"))
-        self.assertNotEqual(git(clone, "rev-parse", "main"), git(clone, "rev-parse", "origin/main"))
-
-    def test_a_bad_rewrite_aborts_and_restores_every_ref(self):
-        from unittest import mock
-        before = git(self.repo, "for-each-ref", "--format=%(refname) %(objectname)")
-        real = scrub.rewrite_stream
-        with mock.patch.object(scrub, "rewrite_stream", lambda stream, emails: real(stream, emails | {OTHER})):
-            code, out = run(self.repo)
-        self.assertEqual(code, 1)
-        self.assertIn("ABORT", out)
-        self.assertEqual(git(self.repo, "for-each-ref", "--format=%(refname) %(objectname)"), before)
-
-    def test_printed_push_commands_are_shell_safe(self):
-        import shlex
-        git(self.repo, "branch", "x;touch$(pwned)", "main")
-        clone = self.repo.parent / "clone"
-        subprocess.run(["git", "clone", "-q", "--no-local", str(self.repo), str(clone)], check=True, env={**os.environ, **ENV})
-        git(clone, "config", "user.email", ME)
-        git(clone, "checkout", "-q", "-b", "x;touch$(pwned)", "--track", "origin/x;touch$(pwned)")
-        _code, out = run(clone)
-        cmd = next(ln for ln in out.splitlines() if "pwned" in ln).split(": ", 1)[1]
-        args = shlex.split(cmd)
-        self.assertEqual(cmd, shlex.join(args))
-        self.assertEqual(args[:2], ["git", "push"])
-        self.assertIn("x;touch$(pwned):x;touch$(pwned)", args)
-
-    def test_not_a_repo_exits_2(self):
-        code, out = run(tree(self))
-        self.assertEqual(code, 2)
-        self.assertIn("not a git repository", out)
-
-    def test_message_transform(self):
-        self.assertEqual(watermark.clean_message(f"x\n\n{CODEX}\nCo-authored-by: Ana <a@b.c>\n".encode()),
-                         b"x\n\nCo-authored-by: Ana <a@b.c>\n")
-        self.assertEqual(watermark.clean_message(b"x\n\nClaude-Session: abc\n"), b"x\n")
-        self.assertEqual(watermark.clean_message(b"plain\n"), b"plain\n")
-
-
-    def test_invisible_only_history_is_found_rewritten_and_verified(self):
-        repo = new_repo(self)
-        commit(repo, "one\n", ME, {"a.txt": "1\n"}, 1_700_000_000)
-        dirty = commit(repo, "two\u200b with\u00a0nbsp\u202e\n", ME, {"a.txt": "2\n"}, 1_700_000_100)
-        before = history(repo)
-        code, out = run(repo, dry_run=True)
-        self.assertIn(dirty[:10], out)
-        self.assertEqual(history(repo), before)
-        code, out = run(repo)
-        self.assertEqual(code, 0, out)
-        after = history(repo)
-        self.assertEqual([r[:3] for r in after], [r[:3] for r in before])
-        self.assertEqual(after[0][3], "two with nbsp")
-        self.assertEqual(git(repo, "cat-file", "commit", "main").encode().count(b"\xe2\x80"), 0)
-        code, out = run(repo)
-        self.assertIn("clean", out)
 
 
 class RewriteRange(unittest.TestCase):
@@ -324,6 +200,42 @@ class CleanMessage(unittest.TestCase):
 
     def test_not_utf8_still_loses_attribution(self):
         self.assertEqual(watermark.clean_message(b"caf\xe9\n\nClaude-Session: a\n"), b"caf\xe9\n")
+
+    def test_message_transform(self):
+        self.assertEqual(watermark.clean_message(f"x\n\n{CODEX}\nCo-authored-by: Ana <a@b.c>\n".encode()),
+                         b"x\n\nCo-authored-by: Ana <a@b.c>\n")
+        self.assertEqual(watermark.clean_message(b"x\n\nClaude-Session: abc\n"), b"x\n")
+        self.assertEqual(watermark.clean_message(b"plain\n"), b"plain\n")
+
+    def test_a_subject_or_body_that_mentions_ai_generated_is_kept(self):
+        for msg in ("AI-generated images are now rejected by the validator\n",
+                    "fix: x\n\nAI-generated images are now rejected.\n",
+                    "fix: x\n\nGenerated by Copilot, these stubs were rewritten by hand.\n\nMore text.\n"):
+            with self.subTest(msg=msg):
+                self.assertEqual(watermark.clean_message(msg.encode()), msg.encode())
+
+    def test_non_ai_bot_co_authors_and_trailers_are_kept(self):
+        for line in ("Co-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+                     "Co-authored-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>",
+                     "Signed-off-by: Ana <a@b.c>"):
+            with self.subTest(line=line):
+                msg = f"x\n\n{line}\n".encode()
+                self.assertEqual(watermark.clean_message(msg), msg)
+
+    def test_joiners_inside_emoji_and_words_are_kept(self):
+        zwj, zwnj = chr(0x200D), chr(0x200C)
+        family = chr(0x1F468) + zwj + chr(0x1F469) + zwj + chr(0x1F467)
+        persian = chr(0x645) + chr(0x6CC) + zwnj + chr(0x62E) + chr(0x648) + chr(0x627) + chr(0x647) + chr(0x645)
+        msg = f"docs: {family} {persian}\n".encode()
+        self.assertEqual(watermark.clean_message(msg), msg)
+        self.assertEqual(watermark.clean_message(f"a{zwj}b\n".encode()), b"ab\n")
+
+    def test_a_verbose_commit_template_keeps_its_diff(self):
+        msg = (f"fix\n\n{CODEX}\n# Please enter the commit message for your changes.\n#\n"
+               "# ------------------------ >8 ------------------------\n# Do not modify or remove the line above.\n"
+               f"diff --git a/x b/x\nCo-authored-by: Codex <noreply@openai.com>\n")
+        self.assertEqual(watermark.clean_message(msg.encode()),
+                         msg.replace(f"fix\n\n{CODEX}\n", "fix\n\n", 1).encode())
 
 
 if __name__ == "__main__":

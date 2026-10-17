@@ -5,7 +5,7 @@ import unittest
 from codejig import paths
 
 SKILLS = paths.CORE / "skills"
-EXPECTED = {"bug-hunt", "code-analysis", "codegen", "cross-review", "grilling", "hld-trace", "improve", "redacao", "regression-tests", "remove-ai-attribution", "skill-validate", "web-consensus"}
+EXPECTED = {"bug-hunt", "code-analysis", "codegen", "cross-review", "grilling", "hld-trace", "improve", "redacao", "regression-tests", "skill-validate", "web-consensus"}
 OPT_OUTS = {
     r"\bsemgrep\b": ("--metrics=off",),
     r"\bkiota\b": ("KIOTA_CLI_TELEMETRY_OPTOUT=1",),

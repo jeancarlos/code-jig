@@ -51,10 +51,6 @@ def build_parser() -> argparse.ArgumentParser:
     ev.add_argument("--json", action="store_true")
     ls = sub.add_parser("lint-skill")
     ls.add_argument("path", nargs="*")
-    sc = sub.add_parser("scrub")
-    sc.add_argument("path", nargs="?", default=".")
-    sc.add_argument("--author", action="append", default=[])
-    sc.add_argument("--dry-run", action="store_true")
     gh = sub.add_parser("git-hook")
     gh.add_argument("name")
     gh.add_argument("rest", nargs="*")
@@ -83,7 +79,6 @@ COMMAND_MODULES = {
     "hooks": "hooks",
     "humanize": "humanize",
     "lint-skill": "skilllint",
-    "scrub": "scrub",
     "git-hook": "gitgate",
     "skill-check": "skillcheck",
     "check-sources": "sources",

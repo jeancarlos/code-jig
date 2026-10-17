@@ -69,10 +69,10 @@ class PreCommit(unittest.TestCase):
 
     @unittest.skipIf(os.name == "nt", "? is not a valid Windows file name")
     def test_a_file_named_like_a_pathspec_keeps_its_own_content(self):
-        self.stage({"a?": f"glob{ZWSP}\n", "a!": "bang\n"})
+        self.stage({"a?.md": f"glob{ZWSP}\n", "a!.md": "bang\n"})
         in_repo(self.repo, gitgate.pre_commit, False)
-        self.assertEqual(git(self.repo, "show", ":a?"), "glob")
-        self.assertEqual(git(self.repo, "show", ":a!"), "bang")
+        self.assertEqual(git(self.repo, "show", ":a?.md"), "glob")
+        self.assertEqual(git(self.repo, "show", ":a!.md"), "bang")
 
     def test_a_rename_into_prose_is_refused_and_cleaned(self):
         commit(self.repo, "add\n", ME, {"notes.py": f"x{ZWSP}\n"}, 1_700_000_100)
@@ -102,6 +102,31 @@ class PreCommit(unittest.TestCase):
         git(self.repo, "config", "codejig.allowProse", "true")
         self.assertEqual(in_repo(self.repo, gitgate.pre_commit, True, env={"CLAUDECODE": "1"})[0], 0)
 
+    def test_invisible_chars_in_code_or_data_are_refused_for_agents_and_left_for_humans(self):
+        files = {"app.js": f'const s = "a{ZWSP}b";\n', "a.py": f'S = "{ZWSP}"\n', "d.json": f'{{"k": "{ZWSP}"}}\n'}
+        self.stage(files)
+        code, err = in_repo(self.repo, gitgate.pre_commit, False, env={"CODEX_THREAD_ID": "t"})
+        self.assertEqual(code, 1)
+        for name in ("app.js:1", "a.py:1", "d.json:1"):
+            self.assertIn(name, err)
+        code, err = in_repo(self.repo, gitgate.pre_commit, False)
+        self.assertEqual(code, 0)
+        self.assertIn("app.js:1", err)
+        for name, text in files.items():
+            self.assertEqual(git(self.repo, "show", f":{name}"), text.rstrip("\n"))
+            self.assertEqual((self.repo / name).read_text(encoding="utf-8"), text)
+
+    @unittest.skipIf(os.name == "nt", "symlinks")
+    def test_a_symlink_replaced_by_prose_is_seen(self):
+        (self.repo / "README.md").symlink_to("base.py")
+        commit(self.repo, "link\n", ME, {}, 1_700_000_100)
+        (self.repo / "README.md").unlink()
+        self.stage({"README.md": f"# x{ZWSP}\n"})
+        code, err = in_repo(self.repo, gitgate.pre_commit, True, env={"CODEX_THREAD_ID": "t"})
+        self.assertEqual(code, 1)
+        self.assertIn("README.md", err)
+        self.assertEqual(git(self.repo, "show", ":README.md"), "# x")
+
     def test_agent_instruction_files_and_specs_are_not_prose(self):
         self.stage({"AGENTS.md": "x\n", "skills/a/SKILL.md": "x\n", "docs/specs/s.md": "x\n", "requirements.txt": "x\n"})
         self.assertEqual(in_repo(self.repo, gitgate.pre_commit, True, env={"CODEX_THREAD_ID": "t"})[0], 0)
@@ -119,7 +144,8 @@ class PrePush(unittest.TestCase):
         code, err = in_repo(repo, gitgate.pre_push, [f"refs/heads/main {tip} refs/heads/main {base}"])
         self.assertEqual(code, 1)
         self.assertIn(tip[:10], err)
-        self.assertIn("code-jig scrub", err)
+        self.assertIn("not on any remote yet", err)
+        self.assertNotIn("scrub", err)
 
     def test_refuses_a_zero_width_space_only(self):
         repo = new_repo(self)
@@ -131,6 +157,18 @@ class PrePush(unittest.TestCase):
         repo = new_repo(self)
         tip = commit(repo, f"mine\n\n{CODEX}\n", ME, {"c": "1\n"}, 1_700_000_200)
         self.assertEqual(in_repo(repo, gitgate.pre_push, [f"refs/heads/main {tip} refs/heads/main {'1' * 40}"])[0], 1)
+
+    def test_merge_commit_messages_are_checked(self):
+        repo = new_repo(self)
+        base = commit(repo, "init\n", ME, {"a": "1\n"}, 1_700_000_000)
+        side = commit(repo, "side\n", ME, {"b": "1\n"}, 1_700_000_100)
+        env = {"GIT_AUTHOR_NAME": "me", "GIT_AUTHOR_EMAIL": ME, "GIT_COMMITTER_NAME": "me", "GIT_COMMITTER_EMAIL": ME}
+        merge = git(repo, "commit-tree", git(repo, "rev-parse", f"{side}^{{tree}}"), "-p", side, "-p", base, "-F", "-",
+                    stdin=f"Merge x\n\n{CODEX}\n", env=env)
+        git(repo, "update-ref", "HEAD", merge)
+        code, err = in_repo(repo, gitgate.pre_push, [f"refs/heads/main {merge} refs/heads/main {side}"])
+        self.assertEqual(code, 1)
+        self.assertIn(merge[:10], err)
 
     def test_deletions_and_new_branches(self):
         repo = new_repo(self)
@@ -247,7 +285,10 @@ class PushCleanup(unittest.TestCase):
         code, err = self.push(tip)
         self.assertEqual(code, 1)
         self.assertIn("push refused", err)
-        self.assertIn("code-jig scrub", err)
+        self.assertIn(f"{dirty[:10]} mine [locked: already on a remote]", err)
+        self.assertIn("never rewrites them", err)
+        self.assertNotIn("not on any remote yet", err)
+        self.assertNotIn("scrub", err)
         self.assertEqual(git(self.repo, "rev-parse", "main"), tip)
         self.assertEqual(git(self.repo, "rev-parse", "main~1"), dirty)
 
@@ -255,7 +296,7 @@ class PushCleanup(unittest.TestCase):
         code, err = self.push(tip, **kw)
         self.assertEqual(code, 1)
         self.assertIn("push refused", err)
-        self.assertIn("code-jig scrub", err)
+        self.assertIn("not on any remote yet", err)
         self.assertNotIn("cleaned", err)
         self.assertEqual(git(self.repo, "rev-parse", "main"), tip)
         return err
@@ -369,7 +410,7 @@ class PushCleanup(unittest.TestCase):
         tip = commit(self.repo, f"mine\n\n{CODEX}\n", ME, {"b": "1\n"}, 1_700_000_100)
         code, err = self.push(tip, cleanup=False)
         self.assertEqual(code, 1)
-        self.assertIn("code-jig scrub", err)
+        self.assertIn("codejig.pushCleanup true", err)
         git(self.repo, "config", "codejig.pushCleanup", "false")
         self.assertIn("push refused", self.push(tip)[1])
         self.assertEqual(git(self.repo, "rev-parse", "main"), tip)
@@ -430,6 +471,37 @@ class Shims(unittest.TestCase):
 class Cli(unittest.TestCase):
     def test_unknown_hook_is_a_no_op(self):
         self.assertEqual(gitgate.cli(types.SimpleNamespace(name="post-checkout", rest=[], prose=False, cleanup=False)), 0)
+
+    def hook(self, cwd, name, stdin=""):
+        args = types.SimpleNamespace(name=name, rest=[], prose=False, cleanup=False)
+        with mock.patch.object(sys, "stdin", io.StringIO(stdin)):
+            return in_repo(cwd, gitgate.cli, args)
+
+    def test_a_git_error_in_pre_push_refuses_the_push(self):
+        repo = new_repo(self)
+        base = commit(repo, "init\n", ME, {"a": "1\n"}, 1_700_000_000)
+        code, err = self.hook(repo, "pre-push", f"refs/heads/main {'1' * 40} refs/heads/main {base}\n")
+        self.assertEqual(code, 1)
+        self.assertIn("push refused", err)
+
+    def test_a_git_error_in_pre_commit_refuses_the_commit(self):
+        code, err = self.hook(tree(self), "pre-commit")
+        self.assertEqual(code, 1)
+        self.assertIn("refused", err)
+
+    def test_a_push_without_an_identity_is_refused(self):
+        repo = new_repo(self)
+        git(repo, "config", "--unset", "user.email")
+        tip = commit(repo, f"mine\n\n{CODEX}\n", ME, {"a": "1\n"}, 1_700_000_000)
+        code, err = self.hook(repo, "pre-push", f"refs/heads/main {tip} refs/heads/main {'0' * 40}\n")
+        self.assertEqual(code, 1)
+        self.assertIn("user.email", err)
+
+    def test_scrub_is_not_a_core_command(self):
+        from codejig.__main__ import COMMAND_MODULES, build_parser
+        self.assertNotIn("scrub", COMMAND_MODULES)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            build_parser().parse_args(["scrub"])
 
     def test_pre_push_shim_passes_the_cleanup_flag(self):
         self.assertIn("git-hook --cleanup pre-push", gitgate.shims(Path("lib"), "python", False, cleanup=True)["pre-push"])

@@ -137,6 +137,26 @@ class HumanizeLanguages(unittest.TestCase):
         self.assertEqual(result["dashes"], 1)
 
 
+class HumanizeOtherLanguages(unittest.TestCase):
+    def setUp(self):
+        self.root = tree(self)
+        self.enterContext(contextlib.chdir(self.root))
+
+    def test_comment_like_lines_outside_python_are_reported_not_edited(self):
+        dash = chr(0x2014)
+        for name, text in (("a.c", "/* Rest of the code */ int b = compute();\n"),
+                           ("b.c", "/* Here's the updated implementation:\nexplanatory text\n*/\nint a;\n"),
+                           ("c.js", "const msg = `\n// Let me know if delivery fails\n`;\n"),
+                           ("d.sh", "cat <<EOF\n# Your code here\nEOF\n"),
+                           ("e.ts", f"// a {dash} b\nlet x = 1;\n")):
+            with self.subTest(name=name):
+                path = write(self.root / name, text)
+                result = humanize_file(str(path), root=str(self.root))
+                self.assertEqual(path.read_text(encoding="utf-8"), text)
+                self.assertFalse(result.get("changed"))
+        self.assertTrue(humanize_file(str(self.root / "e.ts"), root=str(self.root)).get("left"))
+
+
 class HumanizeNoOp(unittest.TestCase):
     def setUp(self):
         self.root = tree(self)
