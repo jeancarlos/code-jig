@@ -265,6 +265,53 @@ def _ignore_installed(src: Path):
     return lambda d, names: [n for n in names if n == "__pycache__" or (n in (*NOT_INSTALLED, "evals") and Path(d) == src)]
 
 
+class Stranded(ValueError):
+    pass
+
+
+AT_FDCWD = -100
+RENAME_EXCHANGE = 2
+RENAME_SWAP = 2
+
+
+def _exchange(a: Path, b: Path) -> bool:
+    """Swap two paths in one step: renameat2 RENAME_EXCHANGE on Linux, renamex_np RENAME_SWAP on
+    macOS. False, with nothing changed, where there is no such call or it fails."""
+    if sys.platform not in ("linux", "darwin"):
+        return False
+    import ctypes
+
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+        if sys.platform == "linux":
+            done = libc.renameat2(AT_FDCWD, os.fsencode(a), AT_FDCWD, os.fsencode(b), RENAME_EXCHANGE)
+        else:
+            done = libc.renamex_np(os.fsencode(a), os.fsencode(b), RENAME_SWAP)
+    except (AttributeError, OSError):
+        return False
+    return done == 0
+
+
+def _swap(staged: Path, target: Path, old: Path) -> None:
+    """Put `staged` at `target` and what was there at `old`. With an exchange `target` never goes
+    missing; without one it is missing between two renames, and put back if the second fails."""
+    if _exchange(staged, target):
+        try:
+            shutil.move(staged, old)
+        except OSError as e:
+            if not _exchange(staged, target):
+                raise Stranded(f"{target} was updated, but the copy it replaced could not be moved to {old} ({e}); "
+                               f"it is in {staged}, move it yourself") from e
+            raise
+        return
+    target.replace(old)
+    try:
+        staged.replace(target)
+    except OSError:
+        old.replace(target)
+        raise
+
+
 def _install_skill(name: str, src: Path, dest: Path) -> list[str]:
     lines = []
     target = dest / name
@@ -273,24 +320,22 @@ def _install_skill(name: str, src: Path, dest: Path) -> list[str]:
         staged = tmp / name
         shutil.copytree(src, staged, ignore=_ignore_installed(src))
         (staged / SKILL_SIDECAR).write_text(tree_digest(staged) + "\n", encoding="utf-8", newline="\n")
-        old = None
-        if target.is_symlink() or target.exists():
-            if _own_skill(target):
-                old = tmp / "old"
-            else:
-                backups = dest.parent / "skills-backup"
-                backups.mkdir(parents=True, exist_ok=True)
-                old = _backup_name(backups / name)
-                lines.append(f"moved your previous {target} to {old}")
-            target.replace(old)
-        try:
+        if not (target.is_symlink() or target.exists()):
             staged.replace(target)
-        except OSError:
-            if old:
-                old.replace(target)
-            raise
-    finally:
+        elif _own_skill(target):
+            _swap(staged, target, tmp / "old")
+        else:
+            backups = dest.parent / "skills-backup"
+            backups.mkdir(parents=True, exist_ok=True)
+            old = _backup_name(backups / name)
+            _swap(staged, target, old)
+            lines.append(f"moved your previous {target} to {old}")
+    except Stranded:
+        raise
+    except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    shutil.rmtree(tmp, ignore_errors=True)
     lines.append(f"wrote {target}")
     return lines
 
