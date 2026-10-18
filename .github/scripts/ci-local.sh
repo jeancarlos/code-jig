@@ -9,5 +9,7 @@ python -m unittest discover -s tests
 echo "ci-local: coverage gate"
 python -m coverage run --branch --include='codejig/*' -m unittest discover -s tests -t . >/dev/null 2>&1 || true
 python -m coverage report --fail-under=93 >/dev/null
+python -m coverage json -q -o "${TMPDIR:-/tmp}/coverage.json"
+python .github/scripts/coverage_gate.py "${TMPDIR:-/tmp}/coverage.json"
 echo "ci-local: reuse"
 reuse lint -q
