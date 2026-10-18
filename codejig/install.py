@@ -113,8 +113,15 @@ def claude_code_watermark_hook(lib: Path, python: str) -> str:
 
 
 def _without_status(groups: list, status: str) -> list:
-    return [g for g in groups if not (isinstance(g, dict) and any(
-        isinstance(h, dict) and h.get("statusMessage") == status for h in g.get("hooks") or []))]
+    kept = []
+    for g in groups:
+        hooks = g.get("hooks") or []
+        rest = [h for h in hooks if not (isinstance(h, dict) and h.get("statusMessage") == status)]
+        if len(rest) == len(hooks):
+            kept.append(g)
+        elif rest:
+            kept.append({**g, "hooks": rest})
+    return kept
 
 
 def valid_hook_groups(groups) -> bool:

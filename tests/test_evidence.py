@@ -74,6 +74,13 @@ class ParseLog(unittest.TestCase):
         [commit] = parse_log(text)
         self.assertEqual(commit.hunks, {"q.sql": [(3, 1, 3, 1), (9, 0, 10, 1)]})
 
+    def test_parse_log_survives_a_diff_that_contains_the_record_separator(self):
+        sha = "e" * 40
+        text = (f"\x00\x01{sha}\x002026-03-01T10:00:00+00:00\x00blob\x00\x00\n"
+                "diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n@@ -1,0 +1,2 @@\n+a\x00\x01 oops\n+b\n")
+        [commit] = parse_log(text)
+        self.assertEqual((commit.sha, commit.hunks), (sha, {"x.py": [(1, 0, 1, 2)]}))
+
     def test_parse_log_empty(self):
         self.assertEqual(parse_log(""), [])
 
@@ -83,6 +90,14 @@ class Rework(unittest.TestCase):
         target = c("t", 0, hunks={"x.py": [(0, 0, 10, 5)]})
         later = c("l", 5, hunks={"x.py": [(12, 1, 12, 1)]})
         self.assertTrue(reworked(target, [later, target]))
+
+    def test_a_follow_up_in_the_same_second_counts_only_when_it_comes_after(self):
+        target = c("t", 0, hunks={"x.py": [(0, 0, 10, 5)]})
+        after = c("a", 0, hunks={"x.py": [(12, 1, 12, 1)]})
+        before = c("b", 0, hunks={"x.py": [(12, 1, 12, 1)]})
+        self.assertTrue(reworked(target, [after, target, before]))
+        self.assertFalse(reworked(target, [target, before]))
+        self.assertFalse(reworked(target, [after]))
 
     def test_other_lines_or_other_file_or_too_late(self):
         target = c("t", 0, hunks={"x.py": [(0, 0, 10, 5)]})

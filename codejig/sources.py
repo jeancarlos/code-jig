@@ -203,7 +203,7 @@ def fetch(url: str) -> tuple[str, str]:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "text/html,text/plain;q=0.9,*/*;q=0.5"})
     try:
         with (VIA_PROXY if proxied(url) else DIRECT).open(req, timeout=TIMEOUT) as r:
-            ctype = r.headers.get("Content-Type", "")
+            ctype = r.headers.get("Content-Type", "").lower()
             if not ctype.startswith(TEXT_TYPES):
                 return "unreadable", ctype or "unknown type"
             body = r.read(MAX_BYTES + 1)

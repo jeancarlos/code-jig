@@ -15,7 +15,6 @@ from codejig.scrub import (
 )
 from codejig.watermark import clean_message, has_watermark, is_binary, strip_file
 
-ZERO = "0" * 40
 AGENT_ENV = ("CODEX_THREAD_ID", "CLAUDECODE")
 DASHES = {"\u2014": "-", "\u2013": "-", "\u2015": "-"}
 PROSE = re.compile(r"(?i)(?:^|/)(?:readme|changelog|changes|history|contributing)(?:\.[^/]*)?$|\.(?:md|mdx|markdown|rst|adoc)$")
@@ -84,7 +83,7 @@ def _fix_staged(path: str, mode: str, sha: str) -> tuple[bool, list[int]]:
         blob = _git("hash-object", "-w", "--no-filters", "--stdin", stdin=new).decode().strip()
         _git("update-index", "--cacheinfo", f"{mode},{blob},{path}")
     work = Path(path)
-    if work.is_file() and not work.is_symlink():
+    if work.is_file() and not work.is_symlink() and os.path.realpath(work) == os.path.join(os.path.realpath("."), os.path.normpath(path)):
         fixed, _ = _fix(work.read_bytes(), path)
         if fixed is not None:
             work.write_bytes(fixed)
@@ -106,7 +105,7 @@ def _staged() -> list[tuple[str, str, str]]:
 
 def pre_commit(prose: bool) -> int:
     staged = _staged()
-    prose_files = [path for path, _, _ in staged if is_prose(path)]
+    prose_files = [path for path, _, _ in staged if is_prose(path) and not VENDORED.search(path)]
     fixed, unsure = [], []
     for path, mode, sha in staged:
         if not VENDORED.search(path):
@@ -135,8 +134,12 @@ def pre_commit(prose: bool) -> int:
     return code
 
 
+def _null_sha(sha: str) -> bool:
+    return not sha.strip("0")
+
+
 def _known(remote: str) -> bool:
-    return remote != ZERO and subprocess.run(["git", "cat-file", "-e", f"{remote}^{{commit}}"], capture_output=True, check=False).returncode == 0
+    return not _null_sha(remote) and subprocess.run(["git", "cat-file", "-e", f"{remote}^{{commit}}"], capture_output=True, check=False).returncode == 0
 
 
 def _outgoing(local: str, remote: str) -> list[str]:
@@ -216,7 +219,7 @@ def _push_ref(ref: str) -> str:
 def _collect_problems(lines: list[str], emails: set[str]) -> tuple[list[str], dict]:
     problems, branches = [], {}
     for parts in (line.split() for line in lines):
-        if len(parts) != 4 or parts[1] == ZERO:
+        if len(parts) != 4 or _null_sha(parts[1]):
             continue
         if not emails:
             raise RuntimeError("no identity to check: set git config user.email (or codejig.email)")

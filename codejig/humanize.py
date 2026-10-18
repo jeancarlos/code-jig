@@ -1,3 +1,4 @@
+import ast
 import io
 import os
 import re
@@ -6,6 +7,7 @@ import tokenize
 from pathlib import Path
 
 from codejig.atomicwrite import atomic_write, resolve_inside
+from codejig.clike import LANGS, comment_spans
 
 DASHES = str.maketrans({"—": "-", "–": "-", "―": "-"})
 CURLY_QUOTES = str.maketrans({
@@ -27,10 +29,21 @@ LLM_BOILERPLATE = [
     "... existing code ...",
     "... your code ...",
     "Your code here",
+    "Of course!",
+    "You're absolutely right",
+    "Would you like",
+    "Is there anything else",
 ]
 
+NARRATION = r"(?:removed|deleted|new|added|updated|changed|fixed)[.!:]?\s*$|(?:ai|agent|assistant):"
+CITATION = re.compile(
+    r":?contentReference\[oaicite:\d+\]\{index=\d+\}|\boai_citation:\d+|\[cite:\s*[\d,\s]+\]"
+    r"|(?<=[?&])utm_source=(?:chatgpt\.com|openai|copilot\.com)&?|[?&]utm_source=(?:chatgpt\.com|openai|copilot\.com)\b"
+)
+COUNT_KEYS = ("dashes", "quotes", "ellipsis", "emoji", "boilerplate", "citations")
+
 BOILERPLATE_PATTERN = re.compile(
-    r"(?:certainly[!.,]?\s*$|(?:" + "|".join(re.escape(p) for p in LLM_BOILERPLATE) + r")(?![\w']))",
+    r"(?:certainly[!.,]?\s*$|" + NARRATION + r"|(?:" + "|".join(re.escape(p) for p in LLM_BOILERPLATE) + r")(?![\w']))",
     re.IGNORECASE,
 )
 
@@ -111,28 +124,114 @@ def python_comment_lines(text: str) -> set[int] | None:
     }
 
 
-def humanize_text(text: str, markers, comment_lines: set[int] | None = None) -> tuple[str, dict]:
-    counts = {"dashes": 0, "quotes": 0, "ellipsis": 0, "emoji": 0, "boilerplate": 0}
+def python_docstring_lines(text: str) -> dict[int, bool] | None:
+    """0-based line number of every docstring line, mapped to True when the line sits between
+    the opening and closing delimiter lines, so deleting it cannot touch a delimiter."""
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return None
+    docs = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        first = node.body[0] if node.body else None
+        if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+            start, end = first.lineno - 1, first.end_lineno - 1
+            docs.update({n: start < n < end for n in range(start, end + 1)})
+    return docs
+
+
+def humanize_text(text: str, markers, comment_lines: set[int] | None = None,
+                  docs: dict[int, bool] | None = None, doc_quotes: bool = True) -> tuple[str, dict]:
+    counts = dict.fromkeys(COUNT_KEYS, 0)
+    docs = docs or {}
     kept = []
     for number, line in enumerate(text.split("\n")):
+        in_doc = number in docs
         is_comment = number in comment_lines if comment_lines is not None else is_comment_line(line, markers)
-        if not is_comment:
+        if not (is_comment or in_doc):
             kept.append(line)
             continue
-        if is_boilerplate_line(line, markers):
+        boilerplate = BOILERPLATE_PATTERN.match(line.strip()) if in_doc and docs[number] else is_comment and is_boilerplate_line(line, markers)
+        if boilerplate:
             counts["boilerplate"] += 1
             continue
-        counts["dashes"] += sum(line.count(d) for d in "—–―")
-        counts["quotes"] += sum(1 for c in line if c in "‘’“”")
-        counts["ellipsis"] += line.count(ELLIPSIS)
-        counts["emoji"] += len(EMOJI_PATTERN.findall(line))
-        line = EMOJI_PATTERN.sub("", line.translate(DASHES).translate(CURLY_QUOTES).replace(ELLIPSIS, "..."))
-        kept.append(line)
+        kept.append(_scrub(line, counts, doc_quotes or not in_doc))
     return "\n".join(kept), counts
 
 
+def _scrub(line: str, counts: dict, fix_quotes: bool = True) -> str:
+    line, found = CITATION.subn("", line)
+    counts["citations"] += found
+    counts["dashes"] += sum(line.count(d) for d in "—–―")
+    counts["quotes"] += sum(1 for c in line if c in "‘’“”") if fix_quotes else 0
+    counts["ellipsis"] += line.count(ELLIPSIS)
+    counts["emoji"] += len(EMOJI_PATTERN.findall(line))
+    line = line.translate(DASHES).replace(ELLIPSIS, "...")
+    return EMOJI_PATTERN.sub("", line.translate(CURLY_QUOTES) if fix_quotes else line)
+
+
+def _bare(comment: str) -> str:
+    return re.sub(r"^(?:/\*+!?|//[/!]?|\*+)\s*|\s*\*/$", "", comment.strip()).strip()
+
+
+def _span_edits(text: str, start: int, end: int, counts: dict) -> list[tuple[int, int, str]]:
+    line_start = text.rfind("\n", 0, start) + 1
+    line_end = text.find("\n", end)
+    line_end = len(text) if line_end < 0 else line_end + 1
+    alone = not text[line_start:start].strip() and not text[end:line_end].strip()
+    pieces = text[start:end].split("\n")
+    edits, offset = [], start
+    for n, piece in enumerate(pieces):
+        interior = 0 < n < len(pieces) - 1
+        if (interior or (len(pieces) == 1 and alone)) and BOILERPLATE_PATTERN.match(_bare(piece)):
+            counts["boilerplate"] += 1
+            cut = (line_start, line_end) if len(pieces) == 1 else (offset, offset + len(piece) + 1)
+            edits.append((*cut, ""))
+        else:
+            edits.append((offset, offset + len(piece), _scrub(piece, counts)))
+        offset += len(piece) + 1
+    return edits
+
+
+def clike_text(text: str, lang: str) -> tuple[str, dict]:
+    counts = dict.fromkeys(COUNT_KEYS, 0)
+    edits = [e for start, end in comment_spans(text, lang) for e in _span_edits(text, start, end, counts)]
+    out, pos = [], 0
+    for a, b, new in sorted(edits):
+        out += [text[pos:a], new]
+        pos = b
+    return "".join(out) + text[pos:], counts
+
+
+def _python_pass(text: str, markers, comment_lines: set[int]) -> tuple[str, dict]:
+    docs = python_docstring_lines(text)
+    new_text, counts = humanize_text(text, markers, comment_lines, docs)
+    if new_text != text and docs:
+        try:
+            ast.parse(new_text)
+        except SyntaxError:
+            new_text, counts = humanize_text(text, markers, comment_lines, docs, doc_quotes=False)
+            try:
+                ast.parse(new_text)
+            except SyntaxError:
+                return humanize_text(text, markers, comment_lines)
+    return new_text, counts
+
+
+def _edited(text: str, suffix: str, markers) -> tuple[str, dict, bool] | None:
+    lang = LANGS.get(suffix)
+    if lang:
+        return (*clike_text(text, lang), True)
+    if suffix == ".py":
+        comment_lines = python_comment_lines(text)
+        return None if comment_lines is None else (*_python_pass(text, markers, comment_lines), True)
+    return (*humanize_text(text, markers), False)
+
+
 def humanize_file(path: str, root: str | None = None, write: bool = True) -> dict:
-    result = {"file": path, "dashes": 0, "quotes": 0, "ellipsis": 0, "emoji": 0, "boilerplate": 0}
+    result = {"file": path, **dict.fromkeys(COUNT_KEYS, 0)}
     markers = COMMENT_MARKERS.get(get_file_extension(path))
     target = resolve_inside(path, root)
     if markers is None or target is None:
@@ -142,14 +241,12 @@ def humanize_file(path: str, root: str | None = None, write: bool = True) -> dic
         if b"\0" in original[:8192]:
             return result
         text = original.decode("utf-8")
-        comment_lines = None
-        if target.suffix.lower() == ".py":
-            comment_lines = python_comment_lines(text)
-            if comment_lines is None:
-                return result
-        new_text, counts = humanize_text(text, markers, comment_lines)
+        edited = _edited(text, target.suffix.lower(), markers)
+        if edited is None:
+            return result
+        new_text, counts, editable = edited
         result.update(counts)
-        if new_text != text and comment_lines is None:
+        if new_text != text and not editable:
             result["left"] = True
         elif new_text != text:
             result["changed"] = True
@@ -176,6 +273,8 @@ def report_result(result: dict) -> str | None:
         parts.append(f"{result['ellipsis']} ellipsis")
     if result.get("emoji"):
         parts.append(f"{result['emoji']} emoji")
+    if result.get("citations"):
+        parts.append(f"{result['citations']} citations")
 
     msg = f"humanize: {result['file']}: fixed {', '.join(parts)}"
     if result.get("left"):
@@ -199,6 +298,9 @@ def _files(root: Path):
 
 
 def cli(args) -> int:
+    if getattr(args, "rewrite", False):
+        from codejig import rewrite
+        return rewrite.run(args)
     changed = 0
     for path_str in args.path or []:
         start = Path(path_str).resolve()

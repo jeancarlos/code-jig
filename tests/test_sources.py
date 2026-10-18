@@ -19,6 +19,7 @@ PAGES = {
              ("<html><head><script>var hidden = 'not text';</script><style>p{}</style></head>"
               "<body><p>The default limit is <b>32&nbsp;KiB</b> and Codex \u201cstops adding\u201d files.</p></body></html>")),
     "/plain": (200, "text/plain", "line one\nline   two"),
+    "/upper": (200, "TEXT/HTML; Charset=UTF-8", "<p>mixed case type</p>"),
     "/pep": (200, "text/html", "<dl><dt>Python-Version</dt><dd>: 3.11</dd></dl><p>The <code>tomllib</code> module parses TOML.</p>"),
     "/blocked": (403, "text/html", "no"),
     "/gone": (404, "text/html", "missing"),
@@ -173,6 +174,9 @@ class Sources(unittest.TestCase):
     def verdicts(self, rows: list[dict]) -> list[str]:
         claims = sources.load([self.evidence(rows)])
         return [c.verdict for c in sources.check(claims)]
+
+    def test_a_mixed_case_content_type_is_still_text(self):
+        self.assertEqual(self.verdicts([{"claim": "a", "url": f"{self.base}/upper", "quote": "mixed case"}]), ["ok"])
 
     def test_quote_found_through_markup_entities_and_curly_quotes(self):
         rows = [{"claim": "c", "url": f"{self.base}/doc", "quote": 'default limit is 32 KiB and Codex "stops adding" files'}]

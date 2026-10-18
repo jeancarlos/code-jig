@@ -123,6 +123,12 @@ class Parsers(unittest.TestCase):
         self.assertEqual(listed, ["a.py", "b.cs", "c.ts", "d.tsx", "e.js"])
         self.assertEqual(args[-2:], ["-f", str(self.tmp / "files.txt")])
 
+    def test_source_files_skip_generated_dirs_in_a_git_repo(self):
+        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
+        for name in ("a.py", "coverage/lcov-report/p.js", "pkg/htmlcov/q.py", "pkg/coverage.py"):
+            write(self.root / name, "x\n")
+        self.assertEqual(analyze.source_files(self.root), ["a.py", "pkg/coverage.py"])
+
     def test_lizard_empty_and_garbage(self):
         self.assertEqual(analyze.parse_lizard("", self.root, self.tmp), [])
         self.assertEqual(analyze.parse_lizard("not,a,lizard,row\n", self.root, self.tmp), [])

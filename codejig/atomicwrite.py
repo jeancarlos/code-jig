@@ -180,6 +180,7 @@ def _write_at(target: Inside, data: bytes, mode: int | None) -> None:
             st = os.stat(target.name, dir_fd=dfd, follow_symlinks=False)
             target._check(st)
             _refuse_hard_link(target, st)
+            target._unchanged(target._read_at(dfd))
             os.rename(tmp, target.name, src_dir_fd=dfd, dst_dir_fd=dfd)
         except BaseException:
             with contextlib.suppress(OSError):

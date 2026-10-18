@@ -48,6 +48,22 @@ class Inside(unittest.TestCase):
             atomic_write(target, original.upper())
         self.assertEqual(path.read_bytes(), b"other\n")
 
+    def test_an_edit_in_place_during_the_write_is_kept(self):
+        path = write(self.root / "x.txt", "first\n")
+        target = resolve_inside(str(path), self.root)
+        original = target.read_bytes()
+        real_fsync = os.fsync
+
+        def edit_then_sync(fd):
+            with open(path, "r+b") as f:
+                f.write(b"other\n")
+            real_fsync(fd)
+
+        with mock.patch.object(atomicwrite.os, "fsync", edit_then_sync), self.assertRaises(atomicwrite.Changed):
+            atomic_write(target, original.upper())
+        self.assertEqual(path.read_bytes(), b"other\n")
+        self.assertEqual([p.name for p in path.parent.iterdir()], ["x.txt"])
+
     def test_a_file_replaced_after_the_check_is_kept(self):
         path = write(self.root / "x.txt", "first\n")
         target = resolve_inside(str(path), self.root)

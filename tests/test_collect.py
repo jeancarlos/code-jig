@@ -122,6 +122,23 @@ class Scan(unittest.TestCase):
         collect.scan(con, home)
         self.assertEqual(con.execute("SELECT kind FROM threads WHERE id='main-3'").fetchone(), ("main",))
 
+    def test_a_rewritten_rollout_replaces_the_rows_it_produced_before(self):
+        home = home_with(self.root / "w", [])
+        f = home / "sessions" / "rollout-w.jsonl"
+        text = (FIX / "main.jsonl").read_text(encoding="utf-8")
+        write(f, text)
+        con = collect.connect(home / "usage.sqlite3")
+        self.addCleanup(con.close)
+        collect.scan(con, home)
+        write(f, text.replace("m-a", "m-z"))
+        collect.scan(con, home)
+        models = dict(con.execute("SELECT key, model FROM turn_usage WHERE thread_id='main-1'"))
+        self.assertEqual(models, {"r1": "m-z", "r2": "m-z", "r3": "m-b"})
+        write(f, text.replace("main-1", "main-2"))
+        collect.scan(con, home)
+        self.assertEqual(totals(con, "main-1"), (None, None, None))
+        self.assertEqual(totals(con, "main-2"), (6000, 4300, 160))
+
     def test_an_offset_without_a_mark_is_still_trusted(self):
         home = home_with(self.root / "o", [])
         f = home / "sessions" / "rollout-o.jsonl"

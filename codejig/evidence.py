@@ -29,7 +29,7 @@ LEFT JOIN (
 WHERE t.kind = 'main' AND t.started >= ?
 GROUP BY t.id
 """
-RECORD = "\x00\x01"
+RECORD = re.compile(r"\x00\x01(?=[0-9a-f]+\x00)")
 LOG_FORMAT = "--format=%x00%x01%H%x00%aI%x00%s%x00%b%x00"
 
 
@@ -83,7 +83,7 @@ def _hunks(diff: str) -> dict[str, list[tuple[int, int, int, int]]]:
 
 def parse_log(text: str) -> list[Commit]:
     commits = []
-    for chunk in text.split(RECORD)[1:]:
+    for chunk in RECORD.split(text)[1:]:
         sha, when, subject, body, diff = chunk.split("\x00", 4)
         commits.append(Commit(sha, datetime.fromisoformat(when), subject, body, _hunks(diff)))
     return commits
@@ -107,7 +107,10 @@ def reworked(target: Commit, every: list[Commit], days: int = REWORK_DAYS) -> bo
     end = target.when + timedelta(days=days)
     names = (f'Revert "{target.subject}"', f"fixup! {target.subject}", f"squash! {target.subject}")
     lines = {path: {x for _, _, n, d in hunks for x in range(n, n + d)} for path, hunks in target.hunks.items()}
-    for later in sorted((c for c in every if target.when < c.when <= end), key=lambda c: c.when):
+    own = next((i for i, c in enumerate(every) if c.sha == target.sha), -1)
+    ranked = sorted(((c, i) for i, c in enumerate(every) if target.when <= c.when <= end and (c.when > target.when or 0 <= i < own)),
+                    key=lambda p: (p[0].when, -p[1]))
+    for later, _ in ranked:
         if later.subject in names or target.sha in later.body or _touches(lines, later):
             return True
         _follow(lines, later)
