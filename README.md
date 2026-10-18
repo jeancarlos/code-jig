@@ -4,7 +4,7 @@
 [![security](https://github.com/jeancarlos/code-jig/actions/workflows/security.yml/badge.svg)](https://github.com/jeancarlos/code-jig/actions/workflows/security.yml)
 [![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jeancarlos/code-jig/badges/coverage.json)](https://github.com/jeancarlos/code-jig/actions/workflows/ci.yml)
 [![release](https://img.shields.io/github/v/release/jeancarlos/code-jig)](https://github.com/jeancarlos/code-jig/releases/latest)
-[![license](https://img.shields.io/github/license/jeancarlos/code-jig)](LICENSE)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/jeancarlos/code-jig/badge)](https://scorecard.dev/viewer/?uri=github.com/jeancarlos/code-jig)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 ![platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
