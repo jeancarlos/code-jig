@@ -8,6 +8,7 @@ Answers for <https://www.bestpractices.dev> (passing level). Project URL: <https
 | floss_license, floss_license_osi, license_location | Met | Apache-2.0, LICENSE, LICENSES/Apache-2.0.txt |
 | documentation_basics, documentation_interface | Met | README.md, docs/ |
 | sites_https, delivery_mitm | Met | PyPI and github.com only, TLS; pip checks the PyPI sha256, and the wheel is signed and attested |
+| sites_password_security | N/A | the project's sites store no user passwords |
 | discussion, english | Met | GitHub issues and pull requests, English |
 | maintained | Met | commits every week |
 | repo_public, repo_track, repo_interim, repo_distributed | Met | public git repository on GitHub |
