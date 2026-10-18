@@ -2,6 +2,7 @@ name: fuzz
 on:
   workflow_call:
   pull_request:
+    branches: [develop]
     paths: [codejig/**, fuzz/**, .clusterfuzzlite/**]
   schedule:
     - cron: "41 4 * * 3"
