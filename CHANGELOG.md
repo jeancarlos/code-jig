@@ -4,9 +4,14 @@ What changed in each release, written for the people who install code-jig. Versi
 
 ## Unreleased
 
+## 0.12.1 - 2026-10-18
+
 - `code-jig humanize` cleans Python docstrings and the comments of JavaScript, TypeScript, Java, C, C++, C#, Go, Rust and CSS, and strips model citation leftovers and chatbot openers.
 - `code-jig humanize --rewrite` sends machine-sounding comment text to your gateway and writes the reply back. It refuses unsafe replies, never sends the key over plain http off this machine, and reports how many flagged blocks it refused.
 - Ten audit findings fixed, each with a regression test.
+- Every source file carries its copyright and licence in an SPDX header, and a test keeps it that way.
+- Pull requests need a `Signed-off-by` line (DCO), and CI fails when statement coverage drops under 90 percent or branch coverage under 80 percent.
+- Governance, roadmap, code of conduct, architecture and security documents are now in the repository.
 
 ## 0.12.0 - 2026-10-17
 
