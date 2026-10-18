@@ -27,5 +27,6 @@ Answers for <https://www.bestpractices.dev> (passing level). Project URL: <https
 | vulnerabilities_fixed_60_days, vulnerabilities_critical_fixed | Met | none known open; osv-scanner in CI |
 | no_leaked_credentials | Met | gitleaks over full history in CI |
 | static_analysis, static_analysis_fixed, static_analysis_often | Met | CodeQL, ruff, zizmor on every push |
+| static_analysis_common_vulnerabilities | Met | CodeQL runs its default query suite for Python and GitHub Actions, which includes the security queries for injection, path traversal and unsafe deserialization (security.yml) |
 | dynamic_analysis, dynamic_analysis_enable_assertions | Met | ClusterFuzzLite with atheris, .github/workflows/fuzz.yml |
 | dynamic_analysis_unsafe, dynamic_analysis_fixed | N/A | memory-safe language |
