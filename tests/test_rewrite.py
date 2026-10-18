@@ -62,12 +62,22 @@ class Apply(unittest.TestCase):
     def test_unsafe_lines_are_refused_one_block_at_a_time(self):
         zero = chr(0x200B)
         for line in ("it */ ends the comment", 'has """ inside', "two\nlines", f"hidden{zero}char",
-                     "Co-authored-by: Codex <x@y.z>", "This function again", "a" * 400, "dash " + chr(0x2014) + " back"):
+                     "Co-authored-by: Codex <x@y.z>", "This function again", "a" * 400, "dash " + chr(0x2014) + " back",
+                     "a\rb", "a\x0bb", "a\x0cb", "a" + chr(0x85) + "b", "a" + chr(0x2028) + "b", "tab\there", "ends with \\", "tri ??/"):
             with self.subTest(line=line):
                 out, n = rewrite.rewrite_text(PY, "a.py", reply([["fine text"], [line, "ok"]]))
                 self.assertEqual(n, 1)
                 self.assertIn("fine text", out)
                 self.assertIn("Helper function to compute x", out)
+
+    def test_a_reply_that_changes_the_code_around_a_comment_is_dropped_even_if_the_line_checks_pass(self):
+        text = "/**\n * This method returns the id.\n */\nfunction f() {}\n"
+        with mock.patch.object(rewrite, "SAFE", lambda old, new: True):
+            out, n = rewrite.rewrite_text(text, "a.ts", reply([["", "ok */ run(); /* x", ""]]))
+        self.assertEqual((out, n), (text, 0))
+        py = 'def f():\n    """This function goes."""\n    return 1\n'
+        with mock.patch.object(rewrite, "SAFE", lambda old, new: True):
+            self.assertEqual(rewrite.rewrite_text(py, "a.py", reply([['go""" ; import os #']])), (py, 0))
 
     def test_a_python_result_that_does_not_parse_is_dropped(self):
         with mock.patch.object(rewrite, "SAFE", lambda old, new: True):
@@ -171,6 +181,47 @@ class Gateway(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(rewrite.run(self.args()), 0)
         self.assertEqual(Gateway.seen, [])
+
+    def test_plain_http_is_only_allowed_to_this_machine(self):
+        for url in ("http://example.com/v1", "http://192.168.1.5:20128/v1", "ftp://x/v1"):
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                rewrite.gateway(url, "m", "p", "k")
+        for url in ("http://127.0.0.1:1/v1", "http://localhost/v1", "http://[::1]:5/v1", "https://example.com/v1"):
+            with self.subTest(url=url):
+                rewrite.gateway(url, "m", "p", "k")
+
+    def test_a_redirect_is_never_followed_so_the_key_stays_put(self):
+        class Elsewhere(http.server.BaseHTTPRequestHandler):
+            got = []
+
+            def do_GET(self):
+                Elsewhere.got.append(self.headers.get("Authorization"))
+                self.send_response(200)
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        other = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Elsewhere)
+        threading.Thread(target=other.serve_forever, daemon=True).start()
+        self.addCleanup(other.shutdown)
+
+        class Bounce(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.1:{other.server_address[1]}/steal")
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        bounce = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Bounce)
+        threading.Thread(target=bounce.serve_forever, daemon=True).start()
+        self.addCleanup(bounce.shutdown)
+        ask = rewrite.gateway(f"http://127.0.0.1:{bounce.server_address[1]}/v1", "m", "p", "secret-key")
+        with self.assertRaises(OSError):
+            ask([["x"]])
+        self.assertEqual(Elsewhere.got, [])
 
     def test_only_http_gateways_are_accepted(self):
         path = write(self.root / "a.py", PY)

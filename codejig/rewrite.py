@@ -20,6 +20,7 @@ from codejig.humanize import (
 )
 from codejig.watermark import ATTRIBUTION, INVISIBLE_CHARS
 
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
 DEFAULT_URL = "http://localhost:20128/v1"
 DEFAULT_MODEL = "ag/gemini-3.8-flash-high"
 PERSONA = (
@@ -94,7 +95,9 @@ def flagged(text: str, path: str) -> list[list[tuple[int, str, tuple[str, str]]]
 def SAFE(old: str, new: str) -> bool:
     if not old:
         return not new
-    if not new or "\n" in new or '"""' in new or "'''" in new or "*/" in new or STRICT_TELL.search(new):
+    if not new.isprintable() or new.endswith("\\") or "??/" in new or '"""' in new or "'''" in new or "*/" in new:
+        return False
+    if STRICT_TELL.search(new):
         return False
     if any(c in new for c in INVISIBLE_CHARS) or ATTRIBUTION.search(new.encode()) or BOILERPLATE_PATTERN.match(new):
         return False
@@ -117,12 +120,25 @@ def _apply(lines: list[str], block, answer) -> int:
     return 1
 
 
-def _parses(text: str) -> bool:
-    try:
-        ast.parse(text)
-    except SyntaxError:
-        return False
-    return True
+def _skeleton(text: str, path: str) -> str | None:
+    suffix = Path(path).suffix.lower()
+    if suffix == ".py":
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            return None
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and ast.get_docstring(node, clean=False) is not None:
+                node.body[0].value.value = ""
+        return ast.dump(tree)
+    lang = LANGS.get(suffix)
+    if not lang:
+        return None
+    out, pos = [], 0
+    for start, end in comment_spans(text, lang):
+        out.append(text[pos:start])
+        pos = end
+    return "".join(out) + text[pos:]
 
 
 def rewrite_text(text: str, path: str, ask) -> tuple[str, int]:
@@ -135,14 +151,21 @@ def rewrite_text(text: str, path: str, ask) -> tuple[str, int]:
     lines = text.split("\n")
     done = sum(_apply(lines, block, answer) for block, answer in zip(blocks, answers, strict=True))
     new_text = "\n".join(lines)
-    if done and Path(path).suffix.lower() == ".py" and not _parses(new_text):
+    if done and (_skeleton(new_text, path) is None or _skeleton(new_text, path) != _skeleton(text, path)):
         return text, 0
     return (new_text, done) if done else (text, 0)
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
 def gateway(url: str, model: str, persona: str, key: str | None):
-    if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
-        raise ValueError(f"gateway URL must be http or https: {url}")
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != "https" and not (parts.scheme == "http" and parts.hostname in LOOPBACK):
+        raise ValueError(f"gateway URL must be https, or http to this machine: {url}")
+
     def ask(blocks):
         body = json.dumps({
             "model": model, "temperature": 0.7, "stream": False,
@@ -151,7 +174,7 @@ def gateway(url: str, model: str, persona: str, key: str | None):
         }).encode("utf-8")
         headers = {"Content-Type": "application/json", **({"Authorization": f"Bearer {key}"} if key else {})}
         req = urllib.request.Request(f"{url.rstrip('/')}/chat/completions", data=body, headers=headers)
-        with urllib.request.urlopen(req, timeout=120) as r:
+        with urllib.request.build_opener(_NoRedirect).open(req, timeout=120) as r:
             content = json.load(r)["choices"][0]["message"]["content"]
         content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content.strip())
         return json.loads(content)["blocks"]
