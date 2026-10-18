@@ -95,6 +95,10 @@ class PreCommit(unittest.TestCase):
         self.assertIn("docs/guide.rst", err)
         self.assertNotIn("app.py", err)
 
+    def test_vendored_prose_is_not_refused_for_agents(self):
+        self.stage({"node_modules/dep/README.md": "# dep\n", "vendor/x/CHANGELOG.md": "- a\n"})
+        self.assertEqual(in_repo(self.repo, gitgate.pre_commit, True, env={"CODEX_THREAD_ID": "t"})[0], 0)
+
     def test_prose_allowed_for_humans_exempt_files_and_opted_in_repos(self):
         self.stage({"README.md": "# Hi\n"})
         self.assertEqual(in_repo(self.repo, gitgate.pre_commit, True)[0], 0)
@@ -115,6 +119,19 @@ class PreCommit(unittest.TestCase):
         for name, text in files.items():
             self.assertEqual(git(self.repo, "show", f":{name}"), text.rstrip("\n"))
             self.assertEqual((self.repo / name).read_text(encoding="utf-8"), text)
+
+    @unittest.skipIf(os.name == "nt", "symlinks")
+    def test_the_worktree_fix_never_writes_through_a_linked_folder(self):
+        self.stage({"sub/a.py": f"x = 1{ZWSP}\n"})
+        outside = tree(self)
+        victim = write(outside / "a.py", f"mine{ZWSP}\n")
+        (self.repo / "sub" / "a.py").unlink()
+        (self.repo / "sub").rmdir()
+        (self.repo / "sub").symlink_to(outside, target_is_directory=True)
+        code, _ = in_repo(self.repo, gitgate.pre_commit, False)
+        self.assertEqual(code, 0)
+        self.assertEqual(git(self.repo, "show", ":sub/a.py"), "x = 1")
+        self.assertEqual(victim.read_text(encoding="utf-8"), f"mine{ZWSP}\n")
 
     @unittest.skipIf(os.name == "nt", "symlinks")
     def test_a_symlink_replaced_by_prose_is_seen(self):
@@ -176,6 +193,12 @@ class PrePush(unittest.TestCase):
         zero = "0" * 40
         self.assertEqual(in_repo(repo, gitgate.pre_push, [f"(delete) {zero} refs/heads/x {tip}"])[0], 0)
         self.assertEqual(in_repo(repo, gitgate.pre_push, [f"refs/heads/main {tip} refs/heads/main {zero}"])[0], 1)
+
+    def test_a_sha256_deletion_is_not_read_as_a_commit_push(self):
+        repo = new_repo(self)
+        tip = commit(repo, f"mine\n\n{CODEX}\n", ME, {"c": "1\n"}, 1_700_000_200)
+        self.assertEqual(in_repo(repo, gitgate.pre_push, [f"(delete) {'0' * 64} refs/heads/x {tip}"])[0], 0)
+        self.assertFalse(gitgate._known("0" * 64))
 
 
 class PrePushTests(unittest.TestCase):

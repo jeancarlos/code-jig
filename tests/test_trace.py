@@ -54,7 +54,7 @@ class TestPaths(unittest.TestCase):
     def test_matches(self):
         for path in ("tests/test_a.py", "pkg/test_b.py", "pkg/b_test.py", "src/__tests__/x.ts", "src/x.test.ts",
                      "src/x.spec.tsx", "web/x.test.mjs", "Api.Tests/LoginTests.cs", "test/Foo.cs", "Svc/FooTest.cs",
-                     "specs/login.js"):
+                     "specs/login.js", "pkg/foo_test.go"):
             with self.subTest(path=path):
                 self.assertTrue(trace.TEST_PATH.search(path))
 

@@ -44,6 +44,15 @@ class Hooks(unittest.TestCase):
         self.assertIn({"hooks": [{"type": "command", "command": "notify-send done"}]}, data["hooks"]["Stop"])
         self.assertEqual(data["hooks"]["PreToolUse"], USER["hooks"]["PreToolUse"])
 
+    def test_a_user_hook_sharing_our_group_survives(self):
+        mine = {"type": "command", "command": "notify-send done"}
+        ours_entry = {"type": "command", "command": "old", "statusMessage": HOOK_STATUS}
+        write(self.path, json.dumps({"hooks": {"Stop": [{"matcher": "m", "hooks": [mine, ours_entry]}]}}))
+        data = json.loads(merged_hooks(self.path, "p", "w"))
+        self.assertIn({"matcher": "m", "hooks": [mine]}, data["hooks"]["Stop"])
+        self.assertEqual(len(ours(data)), 1)
+        self.assertEqual(ours(data)[0]["hooks"][0]["command"], "p")
+
     def test_malformed_names_file(self):
         write(self.path, "{not json")
         with self.assertRaisesRegex(ValueError, "hooks.json"):

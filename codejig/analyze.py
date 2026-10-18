@@ -19,7 +19,7 @@ TOOL_ENV = {"SEMGREP_SEND_METRICS": "off", "SEMGREP_ENABLE_VERSION_CHECK": "0", 
             "DOTNET_NOLOGO": "1", "KIOTA_CLI_TELEMETRY_OPTOUT": "1", "PYTHONUTF8": "1"}
 COGNITIVE, CYCLOMATIC, NLOC, PARAMS = 15, 15, 100, 7
 CODE_SUFFIXES = {".py", ".cs", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".vue", ".java", ".kt", ".go", ".rs", ".swift", ".php", ".rb", ".scala", ".lua", ".c", ".cc", ".cpp", ".h", ".hpp", ".m"}
-SKIP_DIRS = {".git", "node_modules", "bin", "obj", ".venv", "venv", "dist", "build", "__pycache__"}
+SKIP_DIRS = {".git", "node_modules", "bin", "obj", ".venv", "venv", "dist", "build", "__pycache__", "coverage", "htmlcov", ".nyc_output"}
 ESLINT_COMPLEXITY = {"complexity", "max-depth", "max-lines-per-function", "max-params", "max-nested-callbacks",
                      "sonarjs/cognitive-complexity", "sonarjs/cyclomatic-complexity", "sonarjs/nested-control-flow"}
 ESLINT_SECURITY = {f"sonarjs/{r}" for r in (
@@ -123,7 +123,7 @@ def source_files(root: Path) -> list[str]:
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             names += [Path(dirpath, f).relative_to(root).as_posix() for f in filenames]
-    return sorted(n for n in names if (root / n).is_file())
+    return sorted(n for n in names if SKIP_DIRS.isdisjoint(n.split("/")[:-1]) and (root / n).is_file())
 
 
 def changed(root: Path, base: str) -> set[str]:
