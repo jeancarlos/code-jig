@@ -5,6 +5,7 @@ import json
 import threading
 import unittest
 from types import SimpleNamespace
+from typing import ClassVar
 from unittest import mock
 
 from codejig import rewrite
@@ -50,7 +51,7 @@ class Apply(unittest.TestCase):
 
     def test_jsdoc_keeps_stars_and_delimiters(self):
         text = "/**\n * This method returns the id.\n */\nfunction f() {}\n"
-        out, n, _ = rewrite.rewrite_text(text, "a.ts", reply([["", "returns the id", ""]]))
+        out, _, _ = rewrite.rewrite_text(text, "a.ts", reply([["", "returns the id", ""]]))
         self.assertEqual(out, "/**\n * returns the id\n */\nfunction f() {}\n")
 
     def test_a_reply_with_the_wrong_shape_changes_nothing(self):
@@ -130,7 +131,7 @@ class Settings(unittest.TestCase):
 
 
 class Gateway(unittest.TestCase):
-    seen = []
+    seen: ClassVar[list] = []
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_POST(self):
@@ -163,7 +164,7 @@ class Gateway(unittest.TestCase):
         self.enterContext(contextlib.chdir(self.root))
 
     def args(self, **kw):
-        base = dict(path=[str(self.root)], rewrite=True, check=False, yes=True, model="m-test", persona=None, url=self.url)
+        base = {"path": [str(self.root)], "rewrite": True, "check": False, "yes": True, "model": "m-test", "persona": None, "url": self.url}
         return SimpleNamespace(**{**base, **kw})
 
     def test_only_comment_text_is_sent_and_the_file_is_rewritten(self):
@@ -219,7 +220,7 @@ class Gateway(unittest.TestCase):
 
     def test_a_redirect_is_never_followed_so_the_key_stays_put(self):
         class Elsewhere(http.server.BaseHTTPRequestHandler):
-            got = []
+            got: ClassVar[list] = []
 
             def do_GET(self):
                 Elsewhere.got.append(self.headers.get("Authorization"))

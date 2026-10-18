@@ -173,7 +173,7 @@ class HumanizeDocstrings(unittest.TestCase):
     def test_a_quote_rewrite_that_would_break_the_docstring_is_skipped(self):
         dash, ldq, rdq = chr(0x2014), chr(0x201C), chr(0x201D)
         text = f'def f():\n    """Say {dash} {ldq}hi{rdq}"""\n'
-        result, out = self.run_on(text)
+        _, out = self.run_on(text)
         ast.parse(out)
         self.assertIn(f"{ldq}hi{rdq}", out)
         self.assertIn("Say - ", out)
@@ -203,7 +203,7 @@ class HumanizeOtherLanguages(unittest.TestCase):
         for name, marker in (("a.rs", "///"), ("b.rs", "//!"), ("c.go", "//"), ("d.cs", "///"), ("e.java", "//")):
             with self.subTest(name=name):
                 text = f"{marker} Does {d} work.\nint x;\n"
-                result, out = self.run_on(name, text)
+                _, out = self.run_on(name, text)
                 self.assertEqual(out, text.replace(d, "-"))
 
     def test_a_marker_or_dash_inside_a_string_is_left_alone(self):
@@ -224,12 +224,12 @@ class HumanizeOtherLanguages(unittest.TestCase):
     def test_rust_lifetimes_do_not_swallow_the_rest_of_the_file(self):
         d = self.D
         text = f"fn f<'a>(x: &'a str) -> &'a str {{ x }} // keep {d} this\n"
-        result, out = self.run_on("a.rs", text)
+        _, out = self.run_on("a.rs", text)
         self.assertEqual(out, text.replace(d, "-"))
 
     def test_css_only_has_block_comments(self):
         d = self.D
-        result, out = self.run_on("a.css", f"a {{ background: url(//x.test/{d}.png); }} /* {d} */\n")
+        _, out = self.run_on("a.css", f"a {{ background: url(//x.test/{d}.png); }} /* {d} */\n")
         self.assertEqual(out, f"a {{ background: url(//x.test/{d}.png); }} /* - */\n")
 
     def test_boilerplate_lines_inside_a_block_are_deleted_but_not_the_delimiters(self):
@@ -240,7 +240,7 @@ class HumanizeOtherLanguages(unittest.TestCase):
 
     def test_a_comment_with_code_on_the_same_line_is_never_deleted(self):
         text = "/* Rest of the code */ int b = compute();\n"
-        result, out = self.run_on("a.c", text)
+        _, out = self.run_on("a.c", text)
         self.assertEqual(out, text)
 
     def test_line_comment_boilerplate_is_deleted(self):
@@ -250,7 +250,7 @@ class HumanizeOtherLanguages(unittest.TestCase):
     def test_rust_block_comments_nest(self):
         d = self.D
         text = f"/* a {d} /* b {d} */ c {d} */ fn f() {{}}\n"
-        result, out = self.run_on("a.rs", text)
+        _, out = self.run_on("a.rs", text)
         self.assertEqual(out, text.replace(d, "-"))
 
     def test_hash_languages_are_still_reported_not_edited(self):
@@ -279,7 +279,7 @@ class HumanizeTells(unittest.TestCase):
 
     def test_a_citation_marker_in_code_or_a_string_is_left_alone(self):
         text = 'x = "[cite: 1]"\n'
-        result, out = self.run_on("a.py", text)
+        _, out = self.run_on("a.py", text)
         self.assertEqual(out, text)
 
     def test_bare_edit_narration_and_assistant_labels_are_deleted(self):
