@@ -13,7 +13,7 @@ TEST_PATH = re.compile(
     r"(^|/)(tests?|__tests__|specs?)/"
     r"|\.(test|spec)\.[cm]?[jt]sx?$"
     r"|(^|/)test_[^/]*\.py$"
-    r"|_test\.py$"
+    r"|_test\.(?:py|go)$"
     r"|Tests?\.cs$"
     r"|(^|/)[^/]*\.Tests?/"
 )

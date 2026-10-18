@@ -95,6 +95,10 @@ class PreCommit(unittest.TestCase):
         self.assertIn("docs/guide.rst", err)
         self.assertNotIn("app.py", err)
 
+    def test_vendored_prose_is_not_refused_for_agents(self):
+        self.stage({"node_modules/dep/README.md": "# dep\n", "vendor/x/CHANGELOG.md": "- a\n"})
+        self.assertEqual(in_repo(self.repo, gitgate.pre_commit, True, env={"CODEX_THREAD_ID": "t"})[0], 0)
+
     def test_prose_allowed_for_humans_exempt_files_and_opted_in_repos(self):
         self.stage({"README.md": "# Hi\n"})
         self.assertEqual(in_repo(self.repo, gitgate.pre_commit, True)[0], 0)

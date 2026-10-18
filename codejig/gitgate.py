@@ -105,7 +105,7 @@ def _staged() -> list[tuple[str, str, str]]:
 
 def pre_commit(prose: bool) -> int:
     staged = _staged()
-    prose_files = [path for path, _, _ in staged if is_prose(path)]
+    prose_files = [path for path, _, _ in staged if is_prose(path) and not VENDORED.search(path)]
     fixed, unsure = [], []
     for path, mode, sha in staged:
         if not VENDORED.search(path):

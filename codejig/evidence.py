@@ -29,7 +29,7 @@ LEFT JOIN (
 WHERE t.kind = 'main' AND t.started >= ?
 GROUP BY t.id
 """
-RECORD = "\x00\x01"
+RECORD = re.compile(r"\x00\x01(?=[0-9a-f]+\x00)")
 LOG_FORMAT = "--format=%x00%x01%H%x00%aI%x00%s%x00%b%x00"
 
 
@@ -83,7 +83,7 @@ def _hunks(diff: str) -> dict[str, list[tuple[int, int, int, int]]]:
 
 def parse_log(text: str) -> list[Commit]:
     commits = []
-    for chunk in text.split(RECORD)[1:]:
+    for chunk in RECORD.split(text)[1:]:
         sha, when, subject, body, diff = chunk.split("\x00", 4)
         commits.append(Commit(sha, datetime.fromisoformat(when), subject, body, _hunks(diff)))
     return commits
