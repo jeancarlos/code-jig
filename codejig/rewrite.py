@@ -144,19 +144,19 @@ def _skeleton(text: str, path: str) -> str | None:
     return "".join(out) + text[pos:]
 
 
-def rewrite_text(text: str, path: str, ask) -> tuple[str, int]:
+def rewrite_text(text: str, path: str, ask) -> tuple[str, int, int]:
     blocks = flagged(text, path)
     if not blocks:
-        return text, 0
+        return text, 0, 0
     answers = ask([[t for _, t, _ in b] for b in blocks])
     if not isinstance(answers, list) or len(answers) != len(blocks):
-        return text, 0
+        return text, 0, len(blocks)
     lines = text.split("\n")
     done = sum(_apply(lines, block, answer) for block, answer in zip(blocks, answers, strict=True))
     new_text = "\n".join(lines)
     if done and (_skeleton(new_text, path) is None or _skeleton(new_text, path) != _skeleton(text, path)):
-        return text, 0
-    return (new_text, done) if done else (text, 0)
+        return text, 0, len(blocks)
+    return (new_text, done, len(blocks) - done) if done else (text, 0, len(blocks))
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -232,14 +232,14 @@ def _send(work: list[tuple], ask) -> int:
     failed = 0
     for f, target, text, _ in work:
         try:
-            new_text, done = rewrite_text(text, str(f), ask)
+            new_text, done, refused = rewrite_text(text, str(f), ask)
         except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError) as e:
             print(f"rewrite: {f}: {e}", file=sys.stderr)
             failed = 1
             continue
         if done:
             atomic_write(target, new_text.encode("utf-8"))
-        print(f"rewrite: {f}: {done} of the flagged blocks rewritten", file=sys.stderr)
+        print(f"rewrite: {f}: {done} of the flagged blocks rewritten, {refused} refused", file=sys.stderr)
     return failed
 
 

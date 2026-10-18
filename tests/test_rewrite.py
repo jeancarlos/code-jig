@@ -43,21 +43,21 @@ class Blocks(unittest.TestCase):
 
 class Apply(unittest.TestCase):
     def test_new_text_goes_back_between_the_original_markers(self):
-        out, n = rewrite.rewrite_text(PY, "a.py", reply([["gets the token"], ["compute x", "load it"]]))
+        out, n, _ = rewrite.rewrite_text(PY, "a.py", reply([["gets the token"], ["compute x", "load it"]]))
         self.assertEqual(n, 2)
         self.assertEqual(out, PY.replace("This function returns the token value.", "gets the token")
                          .replace("Helper function to compute x", "compute x").replace("Step 1: load", "load it"))
 
     def test_jsdoc_keeps_stars_and_delimiters(self):
         text = "/**\n * This method returns the id.\n */\nfunction f() {}\n"
-        out, n = rewrite.rewrite_text(text, "a.ts", reply([["", "returns the id", ""]]))
+        out, n, _ = rewrite.rewrite_text(text, "a.ts", reply([["", "returns the id", ""]]))
         self.assertEqual(out, "/**\n * returns the id\n */\nfunction f() {}\n")
 
     def test_a_reply_with_the_wrong_shape_changes_nothing(self):
         for bad in ([["one"]], [["a", "b"], ["c", "d", "e"]], "x", None):
             with self.subTest(bad=bad):
-                out, n = rewrite.rewrite_text(PY, "a.py", reply(bad))
-                self.assertEqual((out, n), (PY, 0))
+                out, n, refused = rewrite.rewrite_text(PY, "a.py", reply(bad))
+                self.assertEqual((out, n, refused), (PY, 0, 2))
 
     def test_unsafe_lines_are_refused_one_block_at_a_time(self):
         zero = chr(0x200B)
@@ -65,19 +65,19 @@ class Apply(unittest.TestCase):
                      "Co-authored-by: Codex <x@y.z>", "This function again", "a" * 400, "dash " + chr(0x2014) + " back",
                      "a\rb", "a\x0bb", "a\x0cb", "a" + chr(0x85) + "b", "a" + chr(0x2028) + "b", "tab\there", "ends with \\", "tri ??/", "open /* here", "java \\u000a escape", "a\\nb", "coding: utf-7", "vim: set fileencoding=utf-7"):
             with self.subTest(line=line):
-                out, n = rewrite.rewrite_text(PY, "a.py", reply([["fine text"], [line, "ok"]]))
-                self.assertEqual(n, 1)
+                out, n, refused = rewrite.rewrite_text(PY, "a.py", reply([["fine text"], [line, "ok"]]))
+                self.assertEqual((n, refused), (1, 1))
                 self.assertIn("fine text", out)
                 self.assertIn("Helper function to compute x", out)
 
     def test_a_reply_that_changes_the_code_around_a_comment_is_dropped_even_if_the_line_checks_pass(self):
         text = "/**\n * This method returns the id.\n */\nfunction f() {}\n"
         with mock.patch.object(rewrite, "SAFE", lambda old, new: True):
-            out, n = rewrite.rewrite_text(text, "a.ts", reply([["", "ok */ run(); /* x", ""]]))
-        self.assertEqual((out, n), (text, 0))
+            out, n, refused = rewrite.rewrite_text(text, "a.ts", reply([["", "ok */ run(); /* x", ""]]))
+        self.assertEqual((out, n, refused), (text, 0, 1))
         py = 'def f():\n    """This function goes."""\n    return 1\n'
         with mock.patch.object(rewrite, "SAFE", lambda old, new: True):
-            self.assertEqual(rewrite.rewrite_text(py, "a.py", reply([['go""" ; import os #']])), (py, 0))
+            self.assertEqual(rewrite.rewrite_text(py, "a.py", reply([['go""" ; import os #']])), (py, 0, 1))
 
     def test_the_exact_bytes_are_parsed_and_a_source_encoding_line_is_never_flagged(self):
         py = "# coding: latin-1\n# Step 1: go\nx = 1\n"
@@ -88,7 +88,7 @@ class Apply(unittest.TestCase):
         text = "/**\n * This function uses /* nested */ text.\n */\nfn f() {}\n"
         self.assertEqual(len(rewrite.flagged(text, "a.rs")), 1)
         with mock.patch.object(rewrite, "SAFE", lambda old, new: True):
-            self.assertEqual(rewrite.rewrite_text(text, "a.rs", reply([["", "ok /* open", ""]])), (text, 0))
+            self.assertEqual(rewrite.rewrite_text(text, "a.rs", reply([["", "ok /* open", ""]])), (text, 0, 1))
 
     def test_js_files_with_a_regex_literal_are_not_rewritten(self):
         with_regex = '/** This method strips quotes. */\nconst q = /"/g;\n'
@@ -101,8 +101,8 @@ class Apply(unittest.TestCase):
 
     def test_a_python_result_that_does_not_parse_is_dropped(self):
         with mock.patch.object(rewrite, "SAFE", lambda old, new: True):
-            out, n = rewrite.rewrite_text(PY, "a.py", reply([['x"""y'], ["ok", "ok"]]))
-            self.assertEqual((out, n), (PY, 0))
+            out, n, refused = rewrite.rewrite_text(PY, "a.py", reply([['x"""y'], ["ok", "ok"]]))
+            self.assertEqual((out, n, refused), (PY, 0, 2))
 
 
 class Settings(unittest.TestCase):
@@ -178,6 +178,13 @@ class Gateway(unittest.TestCase):
         self.assertIn("This function returns the token value.", wire)
         self.assertIn(rewrite.PERSONA[:40], body["messages"][0]["content"])
         self.assertIn('"""gets the token value."""', path.read_text(encoding="utf-8"))
+
+    def test_the_summary_line_counts_refused_blocks(self):
+        write(self.root / "a.py", PY)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rewrite.run(self.args())
+        self.assertIn("a.py: 1 of the flagged blocks rewritten, 1 refused", err.getvalue())
 
     def test_without_yes_a_non_interactive_run_sends_nothing(self):
         write(self.root / "a.py", PY)
