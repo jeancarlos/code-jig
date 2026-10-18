@@ -4,12 +4,16 @@
 
 - Bugs and enhancement requests: open an issue at <https://github.com/jeancarlos/code-jig/issues>. Vulnerabilities go through [SECURITY.md](SECURITY.md), never a public issue.
 - Changes: branch `feature/*`, `fix/*` or `chore/*` off `develop`, open a pull request into `develop`. `develop` is merged into `main` and a tag `vX.Y.Z` publishes the release; main takes no direct pushes, `promote` merges develop into main after ci passes.
-- Releases: the `chore: vX.Y.Z` bump changes only `VERSION` in `codejig/__init__.py` and `core_version` in `overlay-examples/*/overlay.toml` (a test keeps them equal). Tag `vX.Y.Z` on `main`: `release.yml` builds the wheel once, signs and attests it, creates the GitHub release and, after the `pypi` environment approval, uploads that same wheel to PyPI. A `vX.Y.Z-rcN` tag (with `VERSION = "X.Y.Z-rcN"`) makes a GitHub pre-release with the wheel and never reaches PyPI.
+- Releases: the `chore: vX.Y.Z` bump renames the `Unreleased` section of `CHANGELOG.md` to `X.Y.Z - date` and changes only `VERSION` in `codejig/__init__.py` and `core_version` in `overlay-examples/*/overlay.toml` (a test keeps them equal). Tag `vX.Y.Z` on `main`: `release.yml` builds the wheel once, signs and attests it, creates the GitHub release with that CHANGELOG section as its notes (the job fails without one) and, after the `pypi` environment approval, uploads that same wheel to PyPI. A `vX.Y.Z-rcN` tag (with `VERSION = "X.Y.Z-rcN"`) makes a GitHub pre-release with the wheel and never reaches PyPI.
 - Development: `pip install -e .` in a venv runs the checkout as the core. `python3 .github/scripts/build_wheel.py` (after `pip install --require-hashes -r ci/build.txt`) builds the release wheel from `HEAD` into `dist/`.
 - Every code change ships with a test that fails without it. CI runs the unit tests on Linux and Windows, Python 3.11 and 3.13, plus real-tool checks, CodeQL, gitleaks, osv-scanner, zizmor, REUSE and fuzzing.
 - Contributions are accepted under the Apache-2.0 license, and every file is covered by `REUSE.toml`.
 - Secure design: the core is configuration and stdlib Python, runs no network calls except the documented source check and refuses non-public addresses there. It is installed only as a wheel from PyPI or the GitHub release, which CI builds once, signs and attests. Common errors to avoid: shell injection (subprocess lists, never user text in a shell), path traversal, unchecked archive members, secrets in files.
 - No code comments, except the one SPDX license header per source file that REUSE or OpenSSF gold asks for.
+
+## What makes a contribution acceptable
+
+A change is accepted when it keeps the project's scope (configuration and the Python standard library, no new dependencies), passes CI (`python -m unittest discover -s tests`, ruff, CodeQL, gitleaks, osv-scanner, zizmor and REUSE), ships with a test that fails without it, and follows the coding standard below: Python 3.11+, explicit utf-8, `pathlib` paths that work on Windows and Linux, no code comments except the SPDX header, and the lint rules in `ruff.toml`. A bug fix adds a regression test. The maintainer reviews every pull request against this list and gives a written reason when a change is declined.
 
 ## Rules
 
