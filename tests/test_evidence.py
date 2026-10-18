@@ -84,6 +84,14 @@ class Rework(unittest.TestCase):
         later = c("l", 5, hunks={"x.py": [(12, 1, 12, 1)]})
         self.assertTrue(reworked(target, [later, target]))
 
+    def test_a_follow_up_in_the_same_second_counts_only_when_it_comes_after(self):
+        target = c("t", 0, hunks={"x.py": [(0, 0, 10, 5)]})
+        after = c("a", 0, hunks={"x.py": [(12, 1, 12, 1)]})
+        before = c("b", 0, hunks={"x.py": [(12, 1, 12, 1)]})
+        self.assertTrue(reworked(target, [after, target, before]))
+        self.assertFalse(reworked(target, [target, before]))
+        self.assertFalse(reworked(target, [after]))
+
     def test_other_lines_or_other_file_or_too_late(self):
         target = c("t", 0, hunks={"x.py": [(0, 0, 10, 5)]})
         self.assertFalse(reworked(target, [c("a", 5, hunks={"x.py": [(20, 2, 20, 2)]})]))

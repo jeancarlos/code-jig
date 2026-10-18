@@ -263,6 +263,17 @@ def _mark(f, offset: int) -> str:
     return hashlib.sha256(f.read(offset - start)).hexdigest()
 
 
+THREAD_TABLES = ("usage", "calls", "call_results", "skill_reads", "compactions", "guardian")
+
+
+def _forget(con: sqlite3.Connection, path: Path, thread: str | None) -> None:
+    con.execute("DELETE FROM quarantine WHERE path=?", (str(path),))
+    if thread:
+        for table in THREAD_TABLES:
+            con.execute(f"DELETE FROM {table} WHERE thread_id=?", (thread,))
+        con.execute("DELETE FROM threads WHERE id=?", (thread,))
+
+
 def _scan_file(con: sqlite3.Connection, path: Path) -> tuple[int, int]:
     size = path.stat().st_size
     row = con.execute("SELECT offset, thread_id, model, turn_id, line, last_total FROM files WHERE path=?", (str(path),)).fetchone()
@@ -270,6 +281,7 @@ def _scan_file(con: sqlite3.Connection, path: Path) -> tuple[int, int]:
     mark = con.execute("SELECT offset, mark FROM file_marks WHERE path=?", (str(path),)).fetchone()
     with open(path, "rb") as f:
         if size < offset or (mark and (mark[0] > size or _mark(f, mark[0]) != mark[1])):
+            _forget(con, path, state[0])
             offset, state = 0, [None, None, None, 0, -1]
         if size == offset:
             return 0, 0

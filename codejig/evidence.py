@@ -107,7 +107,10 @@ def reworked(target: Commit, every: list[Commit], days: int = REWORK_DAYS) -> bo
     end = target.when + timedelta(days=days)
     names = (f'Revert "{target.subject}"', f"fixup! {target.subject}", f"squash! {target.subject}")
     lines = {path: {x for _, _, n, d in hunks for x in range(n, n + d)} for path, hunks in target.hunks.items()}
-    for later in sorted((c for c in every if target.when < c.when <= end), key=lambda c: c.when):
+    own = next((i for i, c in enumerate(every) if c.sha == target.sha), -1)
+    ranked = sorted(((c, i) for i, c in enumerate(every) if target.when <= c.when <= end and (c.when > target.when or 0 <= i < own)),
+                    key=lambda p: (p[0].when, -p[1]))
+    for later, _ in ranked:
         if later.subject in names or target.sha in later.body or _touches(lines, later):
             return True
         _follow(lines, later)
