@@ -15,7 +15,7 @@ from tests.util import tree, write
 
 
 def git(repo, *args):
-    subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", *args],
+    subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", "-c", "tag.gpgsign=false", *args],
                    check=True, capture_output=True)
 
 
