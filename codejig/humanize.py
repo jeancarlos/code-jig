@@ -29,10 +29,21 @@ LLM_BOILERPLATE = [
     "... existing code ...",
     "... your code ...",
     "Your code here",
+    "Of course!",
+    "You're absolutely right",
+    "Would you like",
+    "Is there anything else",
 ]
 
+NARRATION = r"(?:removed|deleted|new|added|updated|changed|fixed)[.!:]?\s*$|(?:ai|agent|assistant):"
+CITATION = re.compile(
+    r":?contentReference\[oaicite:\d+\]\{index=\d+\}|\boai_citation:\d+|\[cite:\s*[\d,\s]+\]"
+    r"|(?<=[?&])utm_source=(?:chatgpt\.com|openai|copilot\.com)&?|[?&]utm_source=(?:chatgpt\.com|openai|copilot\.com)\b"
+)
+COUNT_KEYS = ("dashes", "quotes", "ellipsis", "emoji", "boilerplate", "citations")
+
 BOILERPLATE_PATTERN = re.compile(
-    r"(?:certainly[!.,]?\s*$|(?:" + "|".join(re.escape(p) for p in LLM_BOILERPLATE) + r")(?![\w']))",
+    r"(?:certainly[!.,]?\s*$|" + NARRATION + r"|(?:" + "|".join(re.escape(p) for p in LLM_BOILERPLATE) + r")(?![\w']))",
     re.IGNORECASE,
 )
 
@@ -133,7 +144,7 @@ def python_docstring_lines(text: str) -> dict[int, bool] | None:
 
 def humanize_text(text: str, markers, comment_lines: set[int] | None = None,
                   docs: dict[int, bool] | None = None, doc_quotes: bool = True) -> tuple[str, dict]:
-    counts = {"dashes": 0, "quotes": 0, "ellipsis": 0, "emoji": 0, "boilerplate": 0}
+    counts = dict.fromkeys(COUNT_KEYS, 0)
     docs = docs or {}
     kept = []
     for number, line in enumerate(text.split("\n")):
@@ -151,6 +162,8 @@ def humanize_text(text: str, markers, comment_lines: set[int] | None = None,
 
 
 def _scrub(line: str, counts: dict, fix_quotes: bool = True) -> str:
+    line, found = CITATION.subn("", line)
+    counts["citations"] += found
     counts["dashes"] += sum(line.count(d) for d in "—–―")
     counts["quotes"] += sum(1 for c in line if c in "‘’“”") if fix_quotes else 0
     counts["ellipsis"] += line.count(ELLIPSIS)
@@ -164,7 +177,7 @@ def _bare(comment: str) -> str:
 
 
 def clike_text(text: str, lang: str) -> tuple[str, dict]:
-    counts = {"dashes": 0, "quotes": 0, "ellipsis": 0, "emoji": 0, "boilerplate": 0}
+    counts = dict.fromkeys(COUNT_KEYS, 0)
     edits = []
     for start, end in comment_spans(text, lang):
         line_start = text.rfind("\n", 0, start) + 1
@@ -205,7 +218,7 @@ def _python_pass(text: str, markers, comment_lines: set[int]) -> tuple[str, dict
 
 
 def humanize_file(path: str, root: str | None = None, write: bool = True) -> dict:
-    result = {"file": path, "dashes": 0, "quotes": 0, "ellipsis": 0, "emoji": 0, "boilerplate": 0}
+    result = {"file": path, **dict.fromkeys(COUNT_KEYS, 0)}
     markers = COMMENT_MARKERS.get(get_file_extension(path))
     target = resolve_inside(path, root)
     if markers is None or target is None:
@@ -255,6 +268,8 @@ def report_result(result: dict) -> str | None:
         parts.append(f"{result['ellipsis']} ellipsis")
     if result.get("emoji"):
         parts.append(f"{result['emoji']} emoji")
+    if result.get("citations"):
+        parts.append(f"{result['citations']} citations")
 
     msg = f"humanize: {result['file']}: fixed {', '.join(parts)}"
     if result.get("left"):

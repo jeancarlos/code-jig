@@ -254,6 +254,46 @@ class HumanizeOtherLanguages(unittest.TestCase):
         self.assertTrue(result.get("left"))
 
 
+class HumanizeTells(unittest.TestCase):
+    def setUp(self):
+        self.root = tree(self)
+        self.enterContext(contextlib.chdir(self.root))
+
+    def run_on(self, name, text):
+        path = write(self.root / name, text)
+        result = humanize_file(str(path), root=str(self.root))
+        return result, path.read_text(encoding="utf-8")
+
+    def test_citation_leftovers_are_stripped_from_comments_and_docstrings(self):
+        text = ('# Uses retries:contentReference[oaicite:3]{index=3} always [cite: 1, 2]\n'
+                'def f():\n    """See https://example.com/a?utm_source=chatgpt.com for more oai_citation:1."""\n')
+        result, out = self.run_on("a.py", text)
+        self.assertEqual(result["citations"], 4)
+        self.assertEqual(out, '# Uses retries always \ndef f():\n    """See https://example.com/a for more ."""\n')
+
+    def test_a_citation_marker_in_code_or_a_string_is_left_alone(self):
+        text = 'x = "[cite: 1]"\n'
+        result, out = self.run_on("a.py", text)
+        self.assertEqual(out, text)
+
+    def test_bare_edit_narration_and_assistant_labels_are_deleted(self):
+        text = "# removed\n# New\n# Updated:\n# AI: generated this helper\n# Updated to use a lock for thread safety\nx = 1\n"
+        result, out = self.run_on("a.py", text)
+        self.assertEqual(result["boilerplate"], 4)
+        self.assertEqual(out, "# Updated to use a lock for thread safety\nx = 1\n")
+
+    def test_more_chatbot_openers_are_deleted(self):
+        text = "// Of course! here it is\n// You're absolutely right\n// Of course the cache is cold at boot\nrun();\n"
+        result, out = self.run_on("a.js", text)
+        self.assertEqual(result["boilerplate"], 2)
+        self.assertEqual(out, "// Of course the cache is cold at boot\nrun();\n")
+
+    def test_citations_are_reported_in_the_hook_message(self):
+        from codejig.humanize import report_result
+        msg = report_result({"file": "a.py", "changed": True, "citations": 2})
+        self.assertIn("2 citations", msg)
+
+
 class HumanizeNoOp(unittest.TestCase):
     def setUp(self):
         self.root = tree(self)
