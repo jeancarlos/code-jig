@@ -112,13 +112,11 @@ def comment_spans(text: str, lang: str) -> list[tuple[int, int]]:
     return [(start, end) for kind, start, end in _tokens(text, lang) if kind == "c"]
 
 
-REGEX_START = re.compile(r"(?:^|[(,=:\[!&|?{};+\-*%<>~^]|\b(?:return|typeof|case|in|of|void|delete|throw))\s*/(?![/*])")
-
-
 def has_regex_literal(text: str, lang: str) -> bool:
-    """True when a `/` in the code could open a regex literal, which this walker does not understand."""
+    """True when any `/` is left in the code once comments and strings are masked. A division
+    and a regex literal cannot be told apart without a real parser, so both count."""
     code, pos = [], 0
     for kind, start, end in _tokens(text, lang):
         code += [text[pos:start], '""' if kind == "s" else " "]
         pos = end
-    return bool(REGEX_START.search("".join(code) + text[pos:]))
+    return "/" in "".join(code) + text[pos:]

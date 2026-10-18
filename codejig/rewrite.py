@@ -96,7 +96,7 @@ def flagged(text: str, path: str) -> list[list[tuple[int, str, tuple[str, str]]]
 def SAFE(old: str, new: str) -> bool:
     if not old:
         return not new
-    if not new.isprintable() or new.endswith("\\") or "??/" in new or '"""' in new or "'''" in new or "*/" in new or "/*" in new:
+    if not new.isprintable() or "\\" in new or "??/" in new or '"""' in new or "'''" in new or "*/" in new or "/*" in new:
         return False
     if CODING.search(new):
         return False

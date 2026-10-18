@@ -63,7 +63,7 @@ class Apply(unittest.TestCase):
         zero = chr(0x200B)
         for line in ("it */ ends the comment", 'has """ inside', "two\nlines", f"hidden{zero}char",
                      "Co-authored-by: Codex <x@y.z>", "This function again", "a" * 400, "dash " + chr(0x2014) + " back",
-                     "a\rb", "a\x0bb", "a\x0cb", "a" + chr(0x85) + "b", "a" + chr(0x2028) + "b", "tab\there", "ends with \\", "tri ??/", "open /* here", "coding: utf-7", "vim: set fileencoding=utf-7"):
+                     "a\rb", "a\x0bb", "a\x0cb", "a" + chr(0x85) + "b", "a" + chr(0x2028) + "b", "tab\there", "ends with \\", "tri ??/", "open /* here", "java \\u000a escape", "a\\nb", "coding: utf-7", "vim: set fileencoding=utf-7"):
             with self.subTest(line=line):
                 out, n = rewrite.rewrite_text(PY, "a.py", reply([["fine text"], [line, "ok"]]))
                 self.assertEqual(n, 1)
@@ -93,8 +93,11 @@ class Apply(unittest.TestCase):
     def test_js_files_with_a_regex_literal_are_not_rewritten(self):
         with_regex = '/** This method strips quotes. */\nconst q = /"/g;\n'
         division = '/** This method halves it. */\nconst h = total / 2;\n'
-        self.assertEqual(rewrite.flagged(with_regex, "a.js"), [])
-        self.assertEqual(len(rewrite.flagged(division, "a.js")), 1)
+        yielded = '/** This method halves it. */\nfunction* g() { yield /"/; }\n'
+        plain = '/** This method halves it. */\nconst h = total;\n'
+        for text in (with_regex, division, yielded):
+            self.assertEqual(rewrite.flagged(text, "a.js"), [])
+        self.assertEqual(len(rewrite.flagged(plain, "a.js")), 1)
 
     def test_a_python_result_that_does_not_parse_is_dropped(self):
         with mock.patch.object(rewrite, "SAFE", lambda old, new: True):
