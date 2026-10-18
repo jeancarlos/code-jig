@@ -34,7 +34,7 @@ jobs:
             gh pr create --base main --head develop --title "release: develop to main" --body "Opened by promote after ci passed on $HEAD_SHA."
             n=$(gh pr list --base main --head develop --state open --json number --jq '.[0].number')
           fi
-          gh pr merge "$n" --auto --merge --match-head-commit "$HEAD_SHA"
+          gh pr merge "$n" --auto --merge --match-head-commit "$HEAD_SHA" || gh pr merge "$n" --merge --match-head-commit "$HEAD_SHA"
           echo "pr=$n" >> "$GITHUB_OUTPUT"
   main-ci:
     needs: promote

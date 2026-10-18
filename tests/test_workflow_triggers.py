@@ -18,6 +18,14 @@ class WorkflowTriggers(unittest.TestCase):
                     head, r"pull_request:\n    branches: \[develop\]", path.name
                 )
 
+    def test_promote_merges_a_clean_release_pull_request_directly(self):
+        promote = (WORKFLOWS / "promote.yml").read_text(encoding="utf-8")
+        self.assertIn(
+            'gh pr merge "$n" --auto --merge --match-head-commit "$HEAD_SHA" '
+            '|| gh pr merge "$n" --merge --match-head-commit "$HEAD_SHA"',
+            promote,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
