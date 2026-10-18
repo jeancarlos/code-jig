@@ -41,27 +41,35 @@ def _rust_raw(text: str, i: int) -> int | None:
     return _after(text, i, '"' + "#" * (i - k))
 
 
+def _verbatim(text: str, i: int) -> int:
+    j = i + 1
+    while True:
+        j = text.find('"', j)
+        if j < 0:
+            return len(text)
+        if text[j + 1 : j + 2] != '"':
+            return j + 1
+        j += 2
+
+
+def _rust_string(text: str, i: int) -> int:
+    if text[i] == '"':
+        raw = _rust_raw(text, i)
+        return raw if raw is not None else _quoted(text, i, True)
+    m = RUST_CHAR.match(text, i)
+    return m.end() if m else i + 1
+
+
 def _string_end(text: str, i: int, lang: str) -> int:
     ch = text[i]
     if lang in ("c", "cs") and text.startswith('"""', i):
         return _after(text, i, '"""', 3)
     if lang == "cs" and ch == '"' and text[i - 1 : i] == "@":
-        j = i + 1
-        while True:
-            j = text.find('"', j)
-            if j < 0:
-                return len(text)
-            if text[j + 1 : j + 2] != '"':
-                return j + 1
-            j += 2
+        return _verbatim(text, i)
     if lang == "go" and ch == "`":
         return _after(text, i, "`")
     if lang == "rs":
-        if ch == '"':
-            raw = _rust_raw(text, i)
-            return raw if raw is not None else _quoted(text, i, True)
-        m = RUST_CHAR.match(text, i)
-        return m.end() if m else i + 1
+        return _rust_string(text, i)
     return _quoted(text, i, multiline=lang == "js" and ch == "`")
 
 

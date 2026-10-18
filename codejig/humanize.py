@@ -176,25 +176,28 @@ def _bare(comment: str) -> str:
     return re.sub(r"^(?:/\*+!?|//[/!]?|\*+)\s*|\s*\*/$", "", comment.strip()).strip()
 
 
+def _span_edits(text: str, start: int, end: int, counts: dict) -> list[tuple[int, int, str]]:
+    line_start = text.rfind("\n", 0, start) + 1
+    line_end = text.find("\n", end)
+    line_end = len(text) if line_end < 0 else line_end + 1
+    alone = not text[line_start:start].strip() and not text[end:line_end].strip()
+    pieces = text[start:end].split("\n")
+    edits, offset = [], start
+    for n, piece in enumerate(pieces):
+        interior = 0 < n < len(pieces) - 1
+        if (interior or (len(pieces) == 1 and alone)) and BOILERPLATE_PATTERN.match(_bare(piece)):
+            counts["boilerplate"] += 1
+            cut = (line_start, line_end) if len(pieces) == 1 else (offset, offset + len(piece) + 1)
+            edits.append((*cut, ""))
+        else:
+            edits.append((offset, offset + len(piece), _scrub(piece, counts)))
+        offset += len(piece) + 1
+    return edits
+
+
 def clike_text(text: str, lang: str) -> tuple[str, dict]:
     counts = dict.fromkeys(COUNT_KEYS, 0)
-    edits = []
-    for start, end in comment_spans(text, lang):
-        line_start = text.rfind("\n", 0, start) + 1
-        line_end = text.find("\n", end)
-        line_end = len(text) if line_end < 0 else line_end + 1
-        alone = not text[line_start:start].strip() and not text[end:line_end].strip()
-        pieces = text[start:end].split("\n")
-        offset = start
-        for n, piece in enumerate(pieces):
-            interior = 0 < n < len(pieces) - 1
-            if (interior or (len(pieces) == 1 and alone)) and BOILERPLATE_PATTERN.match(_bare(piece)):
-                counts["boilerplate"] += 1
-                cut = (line_start, line_end) if len(pieces) == 1 else (offset, offset + len(piece) + 1)
-                edits.append((*cut, ""))
-            else:
-                edits.append((offset, offset + len(piece), _scrub(piece, counts)))
-            offset += len(piece) + 1
+    edits = [e for start, end in comment_spans(text, lang) for e in _span_edits(text, start, end, counts)]
     out, pos = [], 0
     for a, b, new in sorted(edits):
         out += [text[pos:a], new]
@@ -217,6 +220,16 @@ def _python_pass(text: str, markers, comment_lines: set[int]) -> tuple[str, dict
     return new_text, counts
 
 
+def _edited(text: str, suffix: str, markers) -> tuple[str, dict, bool] | None:
+    lang = LANGS.get(suffix)
+    if lang:
+        return (*clike_text(text, lang), True)
+    if suffix == ".py":
+        comment_lines = python_comment_lines(text)
+        return None if comment_lines is None else (*_python_pass(text, markers, comment_lines), True)
+    return (*humanize_text(text, markers), False)
+
+
 def humanize_file(path: str, root: str | None = None, write: bool = True) -> dict:
     result = {"file": path, **dict.fromkeys(COUNT_KEYS, 0)}
     markers = COMMENT_MARKERS.get(get_file_extension(path))
@@ -228,20 +241,12 @@ def humanize_file(path: str, root: str | None = None, write: bool = True) -> dic
         if b"\0" in original[:8192]:
             return result
         text = original.decode("utf-8")
-        comment_lines = None
-        lang = LANGS.get(target.suffix.lower())
-        if target.suffix.lower() == ".py":
-            comment_lines = python_comment_lines(text)
-            if comment_lines is None:
-                return result
-        if lang:
-            new_text, counts = clike_text(text, lang)
-        elif comment_lines is not None:
-            new_text, counts = _python_pass(text, markers, comment_lines)
-        else:
-            new_text, counts = humanize_text(text, markers, comment_lines)
+        edited = _edited(text, target.suffix.lower(), markers)
+        if edited is None:
+            return result
+        new_text, counts, editable = edited
         result.update(counts)
-        if new_text != text and comment_lines is None and not lang:
+        if new_text != text and not editable:
             result["left"] = True
         elif new_text != text:
             result["changed"] = True
@@ -293,6 +298,9 @@ def _files(root: Path):
 
 
 def cli(args) -> int:
+    if getattr(args, "rewrite", False):
+        from codejig import rewrite
+        return rewrite.run(args)
     changed = 0
     for path_str in args.path or []:
         start = Path(path_str).resolve()
