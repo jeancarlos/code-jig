@@ -63,7 +63,7 @@ class Apply(unittest.TestCase):
         zero = chr(0x200B)
         for line in ("it */ ends the comment", 'has """ inside', "two\nlines", f"hidden{zero}char",
                      "Co-authored-by: Codex <x@y.z>", "This function again", "a" * 400, "dash " + chr(0x2014) + " back",
-                     "a\rb", "a\x0bb", "a\x0cb", "a" + chr(0x85) + "b", "a" + chr(0x2028) + "b", "tab\there", "ends with \\", "tri ??/"):
+                     "a\rb", "a\x0bb", "a\x0cb", "a" + chr(0x85) + "b", "a" + chr(0x2028) + "b", "tab\there", "ends with \\", "tri ??/", "open /* here", "coding: utf-7", "vim: set fileencoding=utf-7"):
             with self.subTest(line=line):
                 out, n = rewrite.rewrite_text(PY, "a.py", reply([["fine text"], [line, "ok"]]))
                 self.assertEqual(n, 1)
@@ -78,6 +78,23 @@ class Apply(unittest.TestCase):
         py = 'def f():\n    """This function goes."""\n    return 1\n'
         with mock.patch.object(rewrite, "SAFE", lambda old, new: True):
             self.assertEqual(rewrite.rewrite_text(py, "a.py", reply([['go""" ; import os #']])), (py, 0))
+
+    def test_the_exact_bytes_are_parsed_and_a_source_encoding_line_is_never_flagged(self):
+        py = "# coding: latin-1\n# Step 1: go\nx = 1\n"
+        self.assertEqual(rewrite.flagged(py, "a.py"), [])
+        self.assertEqual(rewrite.flagged("#!/usr/bin/env python\n# fileencoding=utf-8 helper function\nx = 1\n", "a.py"), [])
+
+    def test_rust_block_comments_nest(self):
+        text = "/**\n * This function uses /* nested */ text.\n */\nfn f() {}\n"
+        self.assertEqual(len(rewrite.flagged(text, "a.rs")), 1)
+        with mock.patch.object(rewrite, "SAFE", lambda old, new: True):
+            self.assertEqual(rewrite.rewrite_text(text, "a.rs", reply([["", "ok /* open", ""]])), (text, 0))
+
+    def test_js_files_with_a_regex_literal_are_not_rewritten(self):
+        with_regex = '/** This method strips quotes. */\nconst q = /"/g;\n'
+        division = '/** This method halves it. */\nconst h = total / 2;\n'
+        self.assertEqual(rewrite.flagged(with_regex, "a.js"), [])
+        self.assertEqual(len(rewrite.flagged(division, "a.js")), 1)
 
     def test_a_python_result_that_does_not_parse_is_dropped(self):
         with mock.patch.object(rewrite, "SAFE", lambda old, new: True):

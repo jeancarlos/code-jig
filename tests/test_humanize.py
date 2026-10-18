@@ -247,6 +247,12 @@ class HumanizeOtherLanguages(unittest.TestCase):
         result, out = self.run_on("a.js", "// Let me know if delivery fails\nrun();\n")
         self.assertEqual((result["boilerplate"], out), (1, "run();\n"))
 
+    def test_rust_block_comments_nest(self):
+        d = self.D
+        text = f"/* a {d} /* b {d} */ c {d} */ fn f() {{}}\n"
+        result, out = self.run_on("a.rs", text)
+        self.assertEqual(out, text.replace(d, "-"))
+
     def test_hash_languages_are_still_reported_not_edited(self):
         text = f"cat <<EOF\n# a {self.D} b\nEOF\n"
         result, out = self.run_on("d.sh", text)

@@ -9,7 +9,7 @@ import urllib.request
 from pathlib import Path
 
 from codejig.atomicwrite import atomic_write, resolve_inside
-from codejig.clike import LANGS, comment_spans
+from codejig.clike import LANGS, comment_spans, has_regex_literal
 from codejig.humanize import (
     BOILERPLATE_PATTERN,
     CITATION,
@@ -37,6 +37,7 @@ _STRICT = (r"^(?:this (?:function|method|class|module|helper)\b|helper (?:functi
 STRICT_TELL = re.compile(_STRICT, re.IGNORECASE)
 TELL = re.compile(_STRICT + r"|^(?:initialize|define|import|return)s? the \w+$", re.IGNORECASE)
 LINE = re.compile(r"^(\s*(?:/\*\*?!?|\*+(?!/)|//[/!]?|#+|[rRuUbB]*(?:\"\"\"|'''))?[ \t]?)(.*?)([ \t]*(?:\*/|\"\"\"|'''))?$")
+CODING = re.compile(r"coding\s*[:=]", re.IGNORECASE)
 PRAGMA = re.compile(r"^(?:type:|noqa|pragma|fmt:|pylint|isort|mypy|ruff|eslint|prettier|@ts-|istanbul|c8|biome|spdx|-\*-)", re.IGNORECASE)
 MAX_GROWTH = 1.5
 
@@ -76,7 +77,7 @@ def _line_groups(text: str, path: str) -> list[list[int]]:
         comments, docs = python_comment_lines(text), python_docstring_lines(text)
         return [] if comments is None or docs is None else _groups(comments) + _groups(docs)
     lang = LANGS.get(suffix)
-    return _clike_groups(text, lang) if lang else []
+    return _clike_groups(text, lang) if lang and not (lang == "js" and has_regex_literal(text, lang)) else []
 
 
 def flagged(text: str, path: str) -> list[list[tuple[int, str, tuple[str, str]]]]:
@@ -87,7 +88,7 @@ def flagged(text: str, path: str) -> list[list[tuple[int, str, tuple[str, str]]]
         for n in group:
             m = LINE.match(lines[n])
             block.append((n, m.group(2), (m.group(1), m.group(3) or "")))
-        if any(TELL.search(t) for _, t, _ in block) and not any(PRAGMA.match(t) for _, t, _ in block):
+        if any(TELL.search(t) for _, t, _ in block) and not any(PRAGMA.match(t) or CODING.search(t) for _, t, _ in block):
             found.append(block)
     return found
 
@@ -95,7 +96,9 @@ def flagged(text: str, path: str) -> list[list[tuple[int, str, tuple[str, str]]]
 def SAFE(old: str, new: str) -> bool:
     if not old:
         return not new
-    if not new.isprintable() or new.endswith("\\") or "??/" in new or '"""' in new or "'''" in new or "*/" in new:
+    if not new.isprintable() or new.endswith("\\") or "??/" in new or '"""' in new or "'''" in new or "*/" in new or "/*" in new:
+        return False
+    if CODING.search(new):
         return False
     if STRICT_TELL.search(new):
         return False
@@ -124,7 +127,7 @@ def _skeleton(text: str, path: str) -> str | None:
     suffix = Path(path).suffix.lower()
     if suffix == ".py":
         try:
-            tree = ast.parse(text)
+            tree = ast.parse(text.encode("utf-8"))
         except SyntaxError:
             return None
         for node in ast.walk(tree):

@@ -73,24 +73,52 @@ def _string_end(text: str, i: int, lang: str) -> int:
     return _quoted(text, i, multiline=lang == "js" and ch == "`")
 
 
-def comment_spans(text: str, lang: str) -> list[tuple[int, int]]:
-    """(start, end) of every comment, found by walking the file so a comment marker inside
-    a string literal is never taken for one. Regex literals are not understood."""
-    spans, i, n = [], 0, len(text)
+def _block_end(text: str, i: int, lang: str) -> int:
+    if lang != "rs":
+        return _after(text, i, "*/", 2)
+    depth, j = 1, i + 2
+    while j < len(text) and depth:
+        two = text[j : j + 2]
+        depth += (two == "/*") - (two == "*/")
+        j += 2 if two in ("/*", "*/") else 1
+    return j
+
+
+def _tokens(text: str, lang: str):
+    i, n = 0, len(text)
     quotes = QUOTES[lang]
     while i < n:
         two = text[i : i + 2]
         if two == "//" and lang != "css":
             end = text.find("\n", i)
             end = n if end < 0 else end
-            spans.append((i, end))
+            yield "c", i, end
             i = end
         elif two == "/*":
-            end = _after(text, i, "*/", 2)
-            spans.append((i, end))
+            end = _block_end(text, i, lang)
+            yield "c", i, end
             i = end
         elif text[i] in quotes:
-            i = _string_end(text, i, lang)
+            end = _string_end(text, i, lang)
+            yield "s", i, end
+            i = end
         else:
             i += 1
-    return spans
+
+
+def comment_spans(text: str, lang: str) -> list[tuple[int, int]]:
+    """(start, end) of every comment, found by walking the file so a comment marker inside
+    a string literal is never taken for one."""
+    return [(start, end) for kind, start, end in _tokens(text, lang) if kind == "c"]
+
+
+REGEX_START = re.compile(r"(?:^|[(,=:\[!&|?{};+\-*%<>~^]|\b(?:return|typeof|case|in|of|void|delete|throw))\s*/(?![/*])")
+
+
+def has_regex_literal(text: str, lang: str) -> bool:
+    """True when a `/` in the code could open a regex literal, which this walker does not understand."""
+    code, pos = [], 0
+    for kind, start, end in _tokens(text, lang):
+        code += [text[pos:start], '""' if kind == "s" else " "]
+        pos = end
+    return bool(REGEX_START.search("".join(code) + text[pos:]))
