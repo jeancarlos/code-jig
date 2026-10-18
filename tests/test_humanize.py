@@ -88,6 +88,13 @@ class HumanizeEmoji(unittest.TestCase):
         text = path.read_text(encoding="utf-8")
         self.assertNotIn("🚀", text)
 
+    def test_text_symbols_in_a_comment_are_kept_and_emoji_presentation_is_removed(self):
+        path = self.root / "test.py"
+        write(path, "# \u2713 verified \u26a0 careful \u2605 star\n# \u26a0\ufe0f warn \u2705 done\ncode = 1\n")
+        result = humanize_file(str(path), root=str(self.root))
+        self.assertEqual(result["emoji"], 2)
+        self.assertEqual(path.read_text(encoding="utf-8"), "# \u2713 verified \u26a0 careful \u2605 star\n#  warn  done\ncode = 1\n")
+
     def test_emoji_not_removed_from_code(self):
         path = self.root / "test.py"
         write(path, "icon = '🚀'  # Launch\ncode = 1\n")

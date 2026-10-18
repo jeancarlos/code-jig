@@ -58,7 +58,7 @@ COMMENT_MARKERS = {
 }
 
 EMOJI_PATTERN = re.compile(
-    r"[\U0001F300-\U0001F9FF]|[☀-➿]|[\U0001F600-\U0001F64F]|[\U0001F900-\U0001F9FF]",
+    r"[\U0001F300-\U0001F9FF]|[☀-➿]\uFE0F|[✅✨❌❎❓❔❕❗➕➖➗➰➿]",
     flags=re.UNICODE
 )
 
