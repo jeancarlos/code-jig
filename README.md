@@ -96,6 +96,9 @@ To change the core itself, `pip install -e .` in a venv runs the checkout direct
 | [Upgrade and rollback](docs/runbooks/upgrade-and-rollback.md) | Updates, rollbacks, uninstalling |
 | [Personalizing](docs/personalizing.md) | Overlay slots, pinning, the clean-room rule |
 | [Decisions](docs/adr/) | Why each design choice was made, and what was rejected |
+| [Architecture](docs/architecture.md) | Components, data flow, trust boundaries, release path |
+| [Security requirements](docs/security.md) | What you can and cannot expect |
+| [Assurance case](docs/assurance-case.md) | Threat model and why the security claims hold |
 | [Contributing](CONTRIBUTING.md) | Code rules and tests |
 | [Editing the deck](docs/deck/README.md) | The presentation and its data files |
 
