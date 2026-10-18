@@ -13,7 +13,7 @@ Answers for <https://www.bestpractices.dev> (passing level). Project URL: <https
 | maintained | Met | commits every week |
 | repo_public, repo_track, repo_interim, repo_distributed | Met | public git repository on GitHub |
 | version_unique, version_semver, version_tags | Met | tags vX.Y.Z, VERSION |
-| release_notes | Met | GitHub release notes, generated per tag |
+| release_notes | Met | https://github.com/jeancarlos/code-jig/releases: each release's notes are its section of CHANGELOG.md (written for users, with the upgrade steps), published by release.yml through .github/scripts/release_notes.py; the job fails without a section and never uses the git log |
 | release_notes_vulns | N/A | no publicly known vulnerability fixed in a release so far |
 | report_process, report_tracker, report_responses, enhancement_responses, report_archive | Met | GitHub issues, CONTRIBUTING.md |
 | vulnerability_report_process, vulnerability_report_private, vulnerability_report_response | Met | SECURITY.md, GitHub private vulnerability reporting, 7 day acknowledgement |

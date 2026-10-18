@@ -44,7 +44,7 @@
   "version_tags_status": "Met",
   "version_tags_justification": "tags vX.Y.Z, VERSION - https://github.com/jeancarlos/code-jig/tags",
   "release_notes_status": "Met",
-  "release_notes_justification": "GitHub release notes, generated per tag - https://github.com/jeancarlos/code-jig/releases",
+  "release_notes_justification": "https://github.com/jeancarlos/code-jig/releases: each release's notes are its section of CHANGELOG.md (written for users, with the upgrade steps), published by release.yml through .github/scripts/release_notes.py; the job fails without a section and never uses the git log",
   "release_notes_vulns_status": "N/A",
   "release_notes_vulns_justification": "no publicly known vulnerability fixed in a release so far",
   "report_process_status": "Met",
