@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Jean Souza
+# SPDX-License-Identifier: Apache-2.0
 import unittest
 
 from codejig.doctor import DEFAULT_DOC_MAX, chain_files, check_chain
