@@ -1,5 +1,6 @@
 name: fuzz
 on:
+  workflow_call:
   pull_request:
     paths: [codejig/**, fuzz/**, .clusterfuzzlite/**]
   schedule:

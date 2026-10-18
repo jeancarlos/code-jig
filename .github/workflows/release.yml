@@ -7,8 +7,10 @@ permissions:
 jobs:
   ci:
     uses: ./.github/workflows/ci.yml
+  fuzz:
+    uses: ./.github/workflows/fuzz.yml
   publish:
-    needs: ci
+    needs: [ci, fuzz]
     runs-on: ubuntu-latest
     permissions:
       contents: write
