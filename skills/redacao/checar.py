@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Jean Souza
+# SPDX-License-Identifier: Apache-2.0
 import json
 import os
 import re
