@@ -96,6 +96,14 @@ class Wheel(unittest.TestCase):
                 zf.extractall(Path(d) / "site")
             self.assertEqual(check_core(Path(d) / "site" / "codejig" / "_core", Overlay(Path(d), TAG, False))[1][0], "ok")
 
+    def test_two_builds_of_the_same_commit_are_bit_for_bit_identical(self):
+        with tempfile.TemporaryDirectory() as d:
+            first, second = Path(d) / "a", Path(d) / "b"
+            build_wheel.build(TAG, first)
+            build_wheel.build(TAG, second)
+            [one], [two] = first.glob("*.whl"), second.glob("*.whl")
+            self.assertEqual(one.read_bytes(), two.read_bytes())
+
 
 class Tags(unittest.TestCase):
     def test_release_candidates_are_tags_and_other_suffixes_are_not(self):
