@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Jean Souza
+# SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
 import codecs

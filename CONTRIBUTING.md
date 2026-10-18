@@ -8,12 +8,21 @@
 - Development: `pip install -e .` in a venv runs the checkout as the core. `python3 .github/scripts/build_wheel.py` (after `pip install --require-hashes -r ci/build.txt`) builds the release wheel from `HEAD` into `dist/`.
 - Every code change ships with a test that fails without it. CI runs the unit tests on Linux and Windows, Python 3.11 and 3.13, plus real-tool checks, CodeQL, gitleaks, osv-scanner, zizmor, REUSE and fuzzing.
 - Contributions are accepted under the Apache-2.0 license, and every file is covered by `REUSE.toml`.
+- Sign-off (Developer Certificate of Origin): every commit in a pull request carries a `Signed-off-by: Your Name <you@example.org>` line, added by `git commit -s`. It states that you wrote the change or have the right to submit it under the Apache-2.0 license, as set out in the [Developer Certificate of Origin 1.1](https://developercertificate.org/). The `dco` workflow ([.github/workflows/dco.yml](.github/workflows/dco.yml)) fails a pull request with an unsigned commit; sign existing commits with `git rebase --signoff`. Bot commits (Dependabot, github-actions) are exempt.
 - Secure design: the core is configuration and stdlib Python, runs no network calls except the documented source check and refuses non-public addresses there. It is installed only as a wheel from PyPI or the GitHub release, which CI builds once, signs and attests. Common errors to avoid: shell injection (subprocess lists, never user text in a shell), path traversal, unchecked archive members, secrets in files.
 - No code comments, except the one SPDX license header per source file that REUSE or OpenSSF gold asks for.
 
 ## What makes a contribution acceptable
 
 A change is accepted when it keeps the project's scope (configuration and the Python standard library, no new dependencies), passes CI (`python -m unittest discover -s tests`, ruff, CodeQL, gitleaks, osv-scanner, zizmor and REUSE), ships with a test that fails without it, and follows the coding standard below: Python 3.11+, explicit utf-8, `pathlib` paths that work on Windows and Linux, no code comments except the SPDX header, and the lint rules in `ruff.toml`. A bug fix adds a regression test. The maintainer reviews every pull request against this list and gives a written reason when a change is declined.
+
+## Code review
+
+Every pull request into `develop` is reviewed before it is merged, and the `protect develop` ruleset requires the pull request, passing checks and resolved review threads ([settings](https://github.com/jeancarlos/code-jig/rules)). The reviewer, who is the maintainer unless a co-maintainer exists, checks that: the change is in scope and a worthwhile one; a test fails without it; no dependency was added; paths, subprocess calls and archive members follow the secure-design paragraph above; there are no code comments and no private data; skills carry a current `.skill-check` stamp; and CI is green. A change that is declined gets a written reason in the pull request. Reviews can ask for changes, and the author pushes them to the same branch. The maintainer's own pull requests are checked by the same CI and the same list, but today there is no second human reviewer, so the OpenSSF two-person review criterion is not met.
+
+## Good first issues
+
+Small tasks for new contributors carry the [good first issue](https://github.com/jeancarlos/code-jig/labels/good%20first%20issue) label; larger ones that need help carry [help wanted](https://github.com/jeancarlos/code-jig/labels/help%20wanted). The deferred review findings listed in the [roadmap](ROADMAP.md) are each a bullet-sized fix with a test.
 
 ## Rules
 

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Jean Souza
+# SPDX-License-Identifier: Apache-2.0
 import unittest
 
 from codejig.install import is_generated, prune_rules, rule_files, run, stamp
