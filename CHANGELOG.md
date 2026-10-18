@@ -4,6 +4,11 @@ What changed in each release, written for the people who install code-jig. Versi
 
 ## Unreleased
 
+## 0.12.2 - 2026-10-18
+
+- Every Python file, including the skill scripts and eval fixtures, carries its copyright and licence in an SPDX header, and the six touched skills are re-stamped.
+- Release tags are now signed with an SSH key; the key is registered on the maintainer account, so GitHub shows the tag as Verified.
+
 ## 0.12.1 - 2026-10-18
 
 - `code-jig humanize` cleans Python docstrings and the comments of JavaScript, TypeScript, Java, C, C++, C#, Go, Rust and CSS, and strips model citation leftovers and chatbot openers.
