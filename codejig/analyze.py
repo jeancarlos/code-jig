@@ -515,9 +515,12 @@ def _gitleaks_dir_args(exe: str, root: Path, tmp: Path) -> list[str]:
 
 SCANNERS = ("gitleaks", "gitleaks-history", "osv-scanner", "semgrep")
 
+_RUFF_TEST_ASSERTS = tuple(a for g in ("tests/**", "test/**", "**/tests/**", "**/test_*.py", "**/*_test.py", "**/conftest.py")
+                          for a in ("--extend-per-file-ignores", f"{g}:S101"))
+
 TOOLS = [
     Tool("lizard", "any", _lizard_args, parse_lizard, hint="pip install lizard", recover=_lizard_recover),
-    Tool("ruff", "python", lambda exe, root, tmp: [exe, "check", "--output-format", "json", "--no-cache", "--exit-zero", "--extend-select", "S,B", "--ignore", "S101", "."],
+    Tool("ruff", "python", lambda exe, root, tmp: [exe, "check", "--output-format", "json", "--no-cache", "--exit-zero", "--extend-select", "S,B", *_RUFF_TEST_ASSERTS, "."],
          parse_ruff, hint="pip install ruff"),
     Tool("vulture", "python", _vulture_args,
          parse_vulture, hint="pip install vulture", ok=(0, 3)),

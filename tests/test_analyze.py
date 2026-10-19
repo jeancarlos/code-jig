@@ -756,6 +756,17 @@ class RealTools(unittest.TestCase):
         self.assertEqual(report.errors, [])
         self.assertEqual([f.path for f in report.findings], ["vendor/lib.py"])
 
+    @unittest.skipUnless(shutil.which("ruff"), "ruff not installed")
+    def test_real_ruff_flags_assert_outside_tests_only(self):
+        root = tree(self)
+        write(root / "pyproject.toml", "")
+        for rel in ("app/core.py", "tests/test_core.py", "pkg/test_x.py", "pkg/tests/helper.py", "conftest.py", "pkg/y_test.py"):
+            write(root / rel, "def f(x):\n    assert x\n")
+        tools = [t for t in analyze.TOOLS if t.name == "ruff"]
+        report = analyze.run_tools(tools, root, {"python"})
+        self.assertEqual(report.errors, [])
+        self.assertEqual([(f.rule, f.path) for f in report.findings], [("S101", "app/core.py")])
+
     @unittest.skipUnless(shutil.which("osv-scanner"), "osv-scanner not installed")
     def test_real_osv_scanner(self):
         root = tree(self)

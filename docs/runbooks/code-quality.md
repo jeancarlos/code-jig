@@ -33,7 +33,7 @@ Exit 0: clean. Exit 1: findings or a tool error. Exit 2: no project found, a bad
 | Tool | Runs when | Category mapping |
 |---|---|---|
 | lizard | always, on source files that git tracks or would track (ignored files are skipped) | `complexity` above cognitive 15 (Sonar's default for S3776), cyclomatic 15, 100 lines of code or 7 parameters (code-jig's limits); `duplication` for repeated blocks |
-| ruff | Python | `S` followed by digits (the bandit rules) security, `C90*`/`PLR09*` complexity, the rest bug; the repo's ruff config applies, plus `S` and `B`, except `S101` (a test's `assert` is not a vulnerability) |
+| ruff | Python | `S` followed by digits (the bandit rules) security, `C90*`/`PLR09*` complexity, the rest bug; the repo's ruff config applies, plus `S` and `B`, except `S101` inside test files (`tests/`, `test_*.py`, `*_test.py`, `conftest.py`), where `assert` is the idiom; an `assert` in application code is still reported, because `python -O` strips it |
 | vulture | Python | `unused`: unused imports, variables and arguments, unreachable code and impossible conditions (80% confidence or more). With a `[tool.vulture]` section in `pyproject.toml`, vulture runs with the project's own `paths`, `exclude` and `min_confidence`; set `min_confidence = 60` there to include unused functions and classes |
 | mypy | Python with a mypy config | type |
 | eslint | Node with an eslint config | `sonarjs/*` complexity and security rules mapped, `security/*` security, the rest bug |
