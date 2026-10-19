@@ -5,7 +5,7 @@ description: Use when the user asks to analyse code quality, find bugs, code sme
 
 # Code analysis
 
-`code-jig analyze` runs the local analyzers for every stack it finds (.NET, Node, Python) and prints one summary grouped the way Sonar groups issues. It never downloads a tool and never sends code anywhere.
+`code-jig analyze` runs the local analyzers for every stack it finds (.NET, Node, Python, Rust, Java, Go) and prints one summary grouped the way Sonar groups issues. It never downloads a tool and never sends code anywhere.
 
 ## Run it
 
@@ -32,6 +32,9 @@ Exit 0 means clean, 1 means findings or a tool error, 2 means no project, a bad 
 | knip | Node | Unused files, exports, types and dependencies; dependencies used but not listed, and imports that do not resolve |
 | tsc | Node, with `tsconfig.json` | Type errors |
 | dotnet build | .NET | Compiler and analyzer warnings, SonarAnalyzer and Roslynator included when the project references them, and NuGet audit warnings (NU1901-NU1904) for vulnerable packages; restore asks nuget.org for advisories, sending package names |
+| clippy | Rust, with `cargo` | `cargo clippy` lints: complexity lints as complexity, `unused*` and `dead_code` as unused, compiler errors as type, the rest bug |
+| pmd | Java | PMD 7 quickstart ruleset: Security rules as security, complexity and unused-code rules grouped as such, the rest bug |
+| go-vet | Go | `go vet` diagnostics, all as bug |
 | semgrep | all, with `.semgrep.yml` or `.semgrep/` | Your own local rules only, run with `--metrics=off` |
 | gitleaks | all | Secrets in the working tree, uncommitted files included, and in the git history; the secret itself is never printed |
 | osv-scanner | all | Known vulnerabilities in lockfiles, with `--offline`: the first run downloads the vulnerability database, no project data leaves |
