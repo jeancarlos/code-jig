@@ -490,6 +490,19 @@ class Run(unittest.TestCase):
         report = analyze.run_tools([t], self.root, {"python"}, path=str(self.bindir))
         self.assertEqual([f.path for f in report.findings], ["src/a.py", "targets/a.py"])
 
+    def test_gitleaks_config_allows_only_the_ignored_paths(self):
+        config = analyze._gitleaks_config(["node_modules/", ".env", "a.b/"])
+        self.assertIn("useDefault = true", config)
+        self.assertIn(r"(^|/)(node_modules/|\.env$|a\.b/)", config)
+
+    def test_ignored_paths_come_from_git_and_are_empty_outside_a_repo(self):
+        self.assertEqual(analyze._ignored_paths(self.root), [])
+        git(self.root, "init", "-q")
+        write(self.root / ".gitignore", "dist/\n")
+        write(self.root / "dist" / "a.js", "x")
+        self.assertEqual(analyze._ignored_paths(self.root), ["dist/"])
+        self.assertEqual(analyze._ignored_paths(self.root, limit=0), [])
+
     def test_dropped_findings_are_counted_and_shown(self):
         rows = [analyze.Finding("bug", "t", "r", path, 1, "m") for path in ("a.py", "vendor/b.py", "/abs/c.py")]
         fake_tool(self.bindir, "mypy", "")
@@ -725,6 +738,23 @@ class RealTools(unittest.TestCase):
         self.assertEqual(report.errors, [])
         self.assertEqual({(f.category, f.path) for f in report.findings}, {("secret", "settings.py"), ("secret", "local.py")})
         self.assertNotIn(key, json.dumps([f.message for f in report.findings]))
+
+    @unittest.skipUnless(shutil.which("gitleaks"), "gitleaks not installed")
+    def test_real_gitleaks_skips_git_ignored_folders_but_not_tracked_vendor(self):
+        root = tree(self)
+        key = "AKIA" + "Q7Z2X4J6L3N5P2R7"
+        write(root / "pyproject.toml", "")
+        write(root / ".gitignore", "node_modules/\ndist/\n")
+        write(root / "vendor" / "lib.py", f'KEY = "{key}"\n')
+        git(root, "init", "-q")
+        git(root, "add", ".")
+        git(root, "commit", "-q", "-m", "x")
+        write(root / "node_modules" / "dep.py", f'KEY = "{key}"\n')
+        write(root / "dist" / "bundle.py", f'KEY = "{key}"\n')
+        tools = [t for t in analyze.TOOLS if t.name == "gitleaks"]
+        report = analyze.run_tools(tools, root, {"python"})
+        self.assertEqual(report.errors, [])
+        self.assertEqual([f.path for f in report.findings], ["vendor/lib.py"])
 
     @unittest.skipUnless(shutil.which("osv-scanner"), "osv-scanner not installed")
     def test_real_osv_scanner(self):

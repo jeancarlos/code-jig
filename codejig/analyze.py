@@ -490,12 +490,34 @@ def _dotnet_target(root: Path) -> list[str]:
 
 
 _GITLEAKS = ("--no-banner", "--redact", "--exit-code", "0", "--report-format", "json", "--report-path")
+RE2_SPECIAL = re.compile(r"([.^$*+?()\[\]{}|\\])")
+
+
+def _ignored_paths(root: Path, limit: int = 500) -> list[str]:
+    r = _git(root, "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory")
+    names = [n for n in r.stdout.split("\0") if n] if r.returncode == 0 else []
+    return names if len(names) <= limit else []
+
+
+def _gitleaks_config(ignored: list[str]) -> str:
+    alternatives = "|".join(RE2_SPECIAL.sub(r"\\\1", n.rstrip("/")) + ("/" if n.endswith("/") else "$") for n in ignored)
+    return f"[extend]\nuseDefault = true\n\n[[allowlists]]\npaths = ['''(^|/)({alternatives})''']\n"
+
+
+def _gitleaks_dir_args(exe: str, root: Path, tmp: Path) -> list[str]:
+    args = [exe, "dir", *_GITLEAKS, str(tmp / "gitleaks.json")]
+    ignored = _ignored_paths(root)
+    if ignored:
+        (tmp / "gitleaks.toml").write_text(_gitleaks_config(ignored), encoding="utf-8")
+        args += ["--config", str(tmp / "gitleaks.toml")]
+    return [*args, "."]
+
 
 SCANNERS = ("gitleaks", "gitleaks-history", "osv-scanner", "semgrep")
 
 TOOLS = [
     Tool("lizard", "any", _lizard_args, parse_lizard, hint="pip install lizard", recover=_lizard_recover),
-    Tool("ruff", "python", lambda exe, root, tmp: [exe, "check", "--output-format", "json", "--no-cache", "--exit-zero", "--extend-select", "S,B", "."],
+    Tool("ruff", "python", lambda exe, root, tmp: [exe, "check", "--output-format", "json", "--no-cache", "--exit-zero", "--extend-select", "S,B", "--ignore", "S101", "."],
          parse_ruff, hint="pip install ruff"),
     Tool("vulture", "python", _vulture_args,
          parse_vulture, hint="pip install vulture", ok=(0, 3)),
@@ -517,7 +539,7 @@ TOOLS = [
     Tool("go-vet", "go", lambda exe, root, tmp: [exe, "-C", str(marker_dir(root, GO_MOD) or root), "vet", "-json", "./..."], parse_go_vet, hint="install Go", binary="go"),
     Tool("semgrep", "any", lambda exe, root, tmp: [exe, "scan", "--metrics=off", "--disable-version-check", "--config", str(_semgrep_rules(root)), "--json", "--quiet", "."],
          parse_semgrep, lambda root: _semgrep_rules(root) is not None, "pip install semgrep", reason="no local rules (.semgrep.yml or .semgrep/)"),
-    Tool("gitleaks", "any", lambda exe, root, tmp: [exe, "dir", *_GITLEAKS, str(tmp / "gitleaks.json"), "."],
+    Tool("gitleaks", "any", _gitleaks_dir_args,
          parse_gitleaks, hint="install gitleaks from its GitHub releases", binary="gitleaks"),
     Tool("gitleaks-history", "any", lambda exe, root, tmp: [exe, "git", *_GITLEAKS, str(tmp / "gitleaks.json"), "."],
          parse_gitleaks, lambda root: (root / ".git").exists(), "install gitleaks from its GitHub releases", reason="not a git repository", binary="gitleaks"),

@@ -33,7 +33,7 @@ Exit 0: clean. Exit 1: findings or a tool error. Exit 2: no project found, a bad
 | Tool | Runs when | Category mapping |
 |---|---|---|
 | lizard | always, on source files that git tracks or would track (ignored files are skipped) | `complexity` above cognitive 15 (Sonar's default for S3776), cyclomatic 15, 100 lines of code or 7 parameters (code-jig's limits); `duplication` for repeated blocks |
-| ruff | Python | `S` followed by digits (the bandit rules) security, `C90*`/`PLR09*` complexity, the rest bug; the repo's ruff config applies, plus `S` and `B` |
+| ruff | Python | `S` followed by digits (the bandit rules) security, `C90*`/`PLR09*` complexity, the rest bug; the repo's ruff config applies, plus `S` and `B`, except `S101` (a test's `assert` is not a vulnerability) |
 | vulture | Python | `unused`: unused imports, variables and arguments, unreachable code and impossible conditions (80% confidence or more). With a `[tool.vulture]` section in `pyproject.toml`, vulture runs with the project's own `paths`, `exclude` and `min_confidence`; set `min_confidence = 60` there to include unused functions and classes |
 | mypy | Python with a mypy config | type |
 | eslint | Node with an eslint config | `sonarjs/*` complexity and security rules mapped, `security/*` security, the rest bug |
@@ -44,7 +44,7 @@ Exit 0: clean. Exit 1: findings or a tool error. Exit 2: no project found, a bad
 | go vet | Go | `go vet` diagnostics, all as bug |
 | dotnet build | .NET with a solution or project at the root | `S3776` and other complexity rules, `CA3*`, `CA5*` and known Sonar security rules as security, `CS*` as type, NuGet audit warnings `NU1901`-`NU1904` as dependency (project-level warnings carry no line), the rest bug |
 | semgrep | `.semgrep.yml`, `.semgrep.yaml` or `.semgrep/` exists | security |
-| gitleaks | always on the working tree, uncommitted and untracked files included (ignored files skipped); again on the git history when `.git` exists | secret, never printing the secret; the message carries gitleaks' fingerprint |
+| gitleaks | always on the working tree, uncommitted and untracked files included (git-ignored files and folders skipped through a generated allowlist, which also keeps the scan fast); again on the git history when `.git` exists | secret, never printing the secret; the message carries gitleaks' fingerprint |
 | osv-scanner | always | dependency |
 
 `dotnet build` runs with `--no-incremental`, because an incremental build skips the compiler and with it every analyzer warning.
