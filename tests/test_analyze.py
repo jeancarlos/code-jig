@@ -79,6 +79,16 @@ class Detect(unittest.TestCase):
         write(self.root / "pkg" / "__init__.py", "")
         self.assertEqual(analyze.detect(self.root), {"python"})
 
+    def test_rust_java_go_by_marker(self):
+        write(self.root / "Cargo.toml", "")
+        write(self.root / "build.gradle.kts", "")
+        write(self.root / "go.mod", "")
+        self.assertEqual(analyze.detect(self.root), {"rust", "java", "go"})
+
+    def test_java_by_pom(self):
+        write(self.root / "pom.xml", "")
+        self.assertEqual(analyze.detect(self.root), {"java"})
+
     def test_dotnet_by_solution(self):
         write(self.root / "App.slnx", "")
         self.assertEqual(analyze.detect(self.root), {"dotnet"})
@@ -208,6 +218,46 @@ class Parsers(unittest.TestCase):
             ("bug", "NU1900", "Api/Api.csproj", 0), ("bug", "NETSDK1045", "Api/Api.csproj", 0)])
         self.assertIn("GHSA-5crp-9r3c-p9vr", found[0].message)
         self.assertNotIn("[", found[0].message.split("https")[0])
+
+    def test_clippy(self):
+        def msg(level, code, name, primary=True):
+            return json.dumps({"reason": "compiler-message", "message": {
+                "level": level, "message": f"{name} problem", "code": {"code": code} if code else None,
+                "spans": [{"file_name": "src/lib.rs", "line_start": 7, "is_primary": primary}]}})
+        out = "\n".join([
+            msg("warning", "clippy::cognitive_complexity", "big"), msg("warning", "unused_variables", "unused"),
+            msg("warning", "clippy::needless_return", "ret"), msg("error", "E0308", "types"), msg("warning", None, "plain"),
+            msg("warning", "clippy::skipped", "secondary", primary=False),
+            json.dumps({"reason": "compiler-artifact"}), json.dumps({"reason": "compiler-message", "message": {"level": "note", "spans": []}}),
+            ""])
+        found = analyze.parse_clippy(out, self.root, self.tmp)
+        self.assertEqual([(f.category, f.rule, f.path, f.line) for f in found], [
+            ("complexity", "clippy::cognitive_complexity", "src/lib.rs", 7), ("unused", "unused_variables", "src/lib.rs", 7),
+            ("bug", "clippy::needless_return", "src/lib.rs", 7), ("type", "E0308", "src/lib.rs", 7), ("bug", "warning", "src/lib.rs", 7)])
+
+    def test_go_vet(self):
+        one = {"example.com/m": {"printf": [{"posn": str(self.root / "main.go") + ":5:2", "message": "wrong type"}]}}
+        two = {"example.com/n": {"unusedresult": [{"posn": "b.go:9:1", "message": "result unused"}], "empty": None}}
+        out = json.dumps(one, indent="\t") + "\n" + json.dumps(two, indent="\t") + "\n"
+        found = analyze.parse_go_vet(out, self.root, self.tmp)
+        self.assertEqual([(f.category, f.rule, f.path, f.line) for f in found], [
+            ("bug", "printf", "main.go", 5), ("bug", "unusedresult", "b.go", 9)])
+        self.assertEqual(analyze.parse_go_vet("", self.root, self.tmp), [])
+
+    def test_pmd(self):
+        def v(rule, ruleset, line):
+            return {"rule": rule, "ruleset": ruleset, "beginline": line, "description": f"{rule} here"}
+        out = json.dumps({"files": [{"filename": str(self.root / "src" / "A.java"), "violations": [
+            v("CyclomaticComplexity", "Design", 3), v("UnusedLocalVariable", "Best Practices", 4),
+            v("HardCodedCryptoKey", "Security", 5), v("EmptyCatchBlock", "Error Prone", 6)]}, {"filename": "B.java"}]})
+        found = analyze.parse_pmd(out, self.root, self.tmp)
+        self.assertEqual([(f.category, f.rule, f.path, f.line) for f in found], [
+            ("complexity", "CyclomaticComplexity", "src/A.java", 3), ("unused", "UnusedLocalVariable", "src/A.java", 4),
+            ("security", "HardCodedCryptoKey", "src/A.java", 5), ("bug", "EmptyCatchBlock", "src/A.java", 6)])
+
+    def test_pmd_rejects_non_object(self):
+        with self.assertRaises(ValueError):
+            analyze.parse_pmd("[]", self.root, self.tmp)
 
     def test_vulture(self):
         out = textwrap.dedent("""\

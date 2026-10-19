@@ -16,7 +16,7 @@ code-jig analyze --top 30 --json    # more findings, machine-readable
 code-jig analyze --timeout 1200     # per tool, in seconds (default 600)
 ```
 
-It finds the stacks from marker files at the given path (`*.sln` or `*.slnx` there, or `*.csproj` there or one folder down, for .NET; `package.json` for Node; `pyproject.toml`, `setup.py`, `setup.cfg`, `requirements*.txt`, or `.py` files there or one folder down, for Python), runs every applicable tool that is installed, and prints:
+It finds the stacks from marker files at the given path (`*.sln` or `*.slnx` there, or `*.csproj` there or one folder down, for .NET; `package.json` for Node; `pyproject.toml`, `setup.py`, `setup.cfg`, `requirements*.txt`, or `.py` files there or one folder down, for Python; `Cargo.toml` for Rust; `pom.xml`, `build.gradle*` or `settings.gradle*` for Java; `go.mod` for Go), runs every applicable tool that is installed, and prints:
 
 ```
 analyze: python
@@ -39,6 +39,9 @@ Exit 0: clean. Exit 1: findings or a tool error. Exit 2: no project found, a bad
 | eslint | Node with an eslint config | `sonarjs/*` complexity and security rules mapped, `security/*` security, the rest bug |
 | knip | Node | `unused` files, exports, types and dependencies; `bug` for dependencies used but not listed and imports that do not resolve |
 | tsc | Node with `tsconfig.json` | type |
+| cargo clippy | Rust | Clippy and rustc lints: complexity lints as complexity, `unused*` and `dead_code` as unused, compiler errors as type, the rest bug |
+| pmd | Java | PMD 7 quickstart ruleset; Security rules as security, complexity and unused-code rules grouped as such, the rest bug |
+| go vet | Go | `go vet` diagnostics, all as bug |
 | dotnet build | .NET with a solution or project at the root | `S3776` and other complexity rules, `CA3*`, `CA5*` and known Sonar security rules as security, `CS*` as type, NuGet audit warnings `NU1901`-`NU1904` as dependency (project-level warnings carry no line), the rest bug |
 | semgrep | `.semgrep.yml`, `.semgrep.yaml` or `.semgrep/` exists | security |
 | gitleaks | always on the working tree, uncommitted and untracked files included (ignored files skipped); again on the git history when `.git` exists | secret, never printing the secret; the message carries gitleaks' fingerprint |
@@ -132,7 +135,7 @@ CI pins the versions it tests against: lizard 1.24.1, ruff 0.17.0, vulture 2.16,
 
 | Symptom | Cause |
 |---|---|
-| `code-jig: no .NET, Node or Python project found` | No marker file at the path given; point it at the project folder |
+| `code-jig: no .NET, Node, Python, Rust, Java or Go project found` | No marker file at the path given; point it at the project folder |
 | `error: <tool>: exit N: ...` | The tool ran and failed without findings; the message is its own first line of output |
 | `error: <tool>: unreadable output` | The tool's output format changed; report it with the tool's version |
 | `error: <tool>: timed out after 600s` | Raise `--timeout`, or analyze a subfolder. The tool and every process it started are killed. |

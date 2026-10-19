@@ -16,7 +16,7 @@ TEST_PATH = re.compile(
     r"|\.(test|spec)\.[cm]?[jt]sx?$"
     r"|(^|/)test_[^/]*\.py$"
     r"|_test\.(?:py|go)$"
-    r"|Tests?\.cs$"
+    r"|Tests?\.(?:cs|java)$"
     r"|(^|/)[^/]*\.Tests?/"
 )
 ID_CHARS = r"[A-Za-z0-9_]+(?:[.-][A-Za-z0-9_]+)*"

@@ -21,7 +21,7 @@ TOOL_ENV = {"SEMGREP_SEND_METRICS": "off", "SEMGREP_ENABLE_VERSION_CHECK": "0", 
             "DOTNET_NOLOGO": "1", "KIOTA_CLI_TELEMETRY_OPTOUT": "1", "PYTHONUTF8": "1"}
 COGNITIVE, CYCLOMATIC, NLOC, PARAMS = 15, 15, 100, 7
 CODE_SUFFIXES = {".py", ".cs", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".vue", ".java", ".kt", ".go", ".rs", ".swift", ".php", ".rb", ".scala", ".lua", ".c", ".cc", ".cpp", ".h", ".hpp", ".m"}
-SKIP_DIRS = {".git", "node_modules", "bin", "obj", ".venv", "venv", "dist", "build", "__pycache__", "coverage", "htmlcov", ".nyc_output"}
+SKIP_DIRS = {".git", "node_modules", "bin", "obj", ".venv", "venv", "dist", "build", "__pycache__", "coverage", "htmlcov", ".nyc_output", "target"}
 ESLINT_COMPLEXITY = {"complexity", "max-depth", "max-lines-per-function", "max-params", "max-nested-callbacks",
                      "sonarjs/cognitive-complexity", "sonarjs/cyclomatic-complexity", "sonarjs/nested-control-flow"}
 ESLINT_SECURITY = {f"sonarjs/{r}" for r in (
@@ -39,6 +39,12 @@ KNIP_UNUSED = ("files", "dependencies", "devDependencies", "optionalPeerDependen
 KNIP_BROKEN = ("unlisted", "unresolved", "binaries", "cycles")
 MYPY = re.compile(r"^(.+?):(\d+)(?::\d+)*: error: (.*?)(?:  \[([\w-]+)\])?$")
 DUP_LOC = re.compile(r"^(.+):(\d+) ~ (\d+)$")
+GO_POSN = re.compile(r"^(.+):(\d+):\d+$")
+CLIPPY_COMPLEXITY = {"clippy::cognitive_complexity", "clippy::too_many_arguments", "clippy::too_many_lines", "clippy::type_complexity",
+                     "clippy::excessive_nesting"}
+PMD_COMPLEXITY = {"CyclomaticComplexity", "CognitiveComplexity", "NPathComplexity", "ExcessiveParameterList", "ExcessiveMethodLength",
+                  "NcssCount", "GodClass", "TooManyFields", "TooManyMethods", "AvoidDeeplyNestedIfStmts"}
+PMD_UNUSED = {"UnusedPrivateField", "UnusedLocalVariable", "UnusedPrivateMethod", "UnusedFormalParameter", "UnusedAssignment"}
 
 
 @dataclass(frozen=True)
@@ -88,6 +94,12 @@ def detect(root: Path) -> set[str]:
     markers = ("pyproject.toml", "setup.py", "setup.cfg")
     if any((root / m).is_file() for m in markers) or any(root.glob("requirements*.txt")) or any(root.glob("*.py")) or any(root.glob("*/*.py")):
         stacks.add("python")
+    if (root / "Cargo.toml").is_file():
+        stacks.add("rust")
+    if any((root / m).is_file() for m in ("pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts")):
+        stacks.add("java")
+    if (root / "go.mod").is_file():
+        stacks.add("go")
     return stacks
 
 
@@ -264,6 +276,59 @@ def parse_dotnet(out: str, root: Path, tmp: Path) -> list[Finding]:
     return list(seen.values())
 
 
+def _clippy_category(code: str, level: str) -> str:
+    if code in CLIPPY_COMPLEXITY:
+        return "complexity"
+    if code.startswith("unused") or code == "dead_code":
+        return "unused"
+    if level == "error" and not code.startswith("clippy::"):
+        return "type"
+    return "bug"
+
+
+def parse_clippy(out: str, root: Path, tmp: Path) -> list[Finding]:
+    found = []
+    for line in out.splitlines():
+        if not line.startswith("{"):
+            continue
+        data = json.loads(line)
+        msg = data.get("message") if data.get("reason") == "compiler-message" else None
+        span = next((s for s in (msg or {}).get("spans") or [] if s.get("is_primary")), None)
+        if span is None or msg.get("level") not in ("warning", "error"):
+            continue
+        code = (msg.get("code") or {}).get("code") or ""
+        found.append(Finding(_clippy_category(code, msg["level"]), "clippy", code or msg["level"], rel(span["file_name"], root),
+                             int(span["line_start"]), msg["message"]))
+    return found
+
+
+def parse_go_vet(out: str, root: Path, tmp: Path) -> list[Finding]:
+    found, decoder, pos = [], json.JSONDecoder(), 0
+    while pos < len(out) and out[pos:].strip():
+        pos += len(out[pos:]) - len(out[pos:].lstrip())
+        package, pos = decoder.raw_decode(out, pos)
+        for analyzers in package.values():
+            for rule, items in analyzers.items():
+                for item in items if isinstance(items, list) else []:
+                    path, line = GO_POSN.match(item["posn"]).groups()
+                    found.append(Finding("bug", "go-vet", rule, rel(path, root), int(line), item["message"]))
+    return found
+
+
+def _pmd_category(violation: dict) -> str:
+    rule = violation["rule"]
+    if rule in PMD_COMPLEXITY:
+        return "complexity"
+    if rule in PMD_UNUSED:
+        return "unused"
+    return "security" if violation.get("ruleset") == "Security" else "bug"
+
+
+def parse_pmd(out: str, root: Path, tmp: Path) -> list[Finding]:
+    return [Finding(_pmd_category(v), "pmd", v["rule"], rel(f["filename"], root), int(v["beginline"]), v["description"])
+            for f in _json(out, dict).get("files") or [] for v in f.get("violations") or []]
+
+
 def parse_vulture(out: str, root: Path, tmp: Path) -> list[Finding]:
     found = []
     for m in map(VULTURE.match, out.splitlines()):
@@ -375,6 +440,11 @@ TOOLS = [
          lambda root: (root / "tsconfig.json").is_file(), "npm install -D typescript", reason="no tsconfig.json", findings_exit=(1, 2)),
     Tool("dotnet", "dotnet", lambda exe, root, tmp: [exe, "build", "--nologo", "--no-incremental", "-clp:NoSummary", *_dotnet_target(root)],
          parse_dotnet, lambda root: bool(_dotnet_target(root)), "install the .NET SDK", reason="no solution or project at the root", findings_exit=(1,)),
+    Tool("clippy", "rust", lambda exe, root, tmp: [exe, "clippy", "--all-targets", "--message-format", "json", "--quiet"], parse_clippy,
+         hint="rustup component add clippy", binary="cargo", findings_exit=(101,)),
+    Tool("pmd", "java", lambda exe, root, tmp: [exe, "check", "-d", ".", "-R", "rulesets/java/quickstart.xml", "-f", "json", "--no-cache", "--no-progress"],
+         parse_pmd, hint="install PMD 7 from its GitHub releases", findings_exit=(4,)),
+    Tool("go-vet", "go", lambda exe, root, tmp: [exe, "vet", "-json", "./..."], parse_go_vet, hint="install Go", binary="go"),
     Tool("semgrep", "any", lambda exe, root, tmp: [exe, "scan", "--metrics=off", "--disable-version-check", "--config", str(_semgrep_rules(root)), "--json", "--quiet", "."],
          parse_semgrep, lambda root: _semgrep_rules(root) is not None, "pip install semgrep", reason="no local rules (.semgrep.yml or .semgrep/)"),
     Tool("gitleaks", "any", lambda exe, root, tmp: [exe, "dir", *_GITLEAKS, str(tmp / "gitleaks.json"), "."],
@@ -498,7 +568,7 @@ def cli(args) -> int:
     root = Path(args.path).resolve()
     stacks = detect(root)
     if not stacks:
-        print(f"code-jig: no .NET, Node or Python project found in {root}", file=sys.stderr)
+        print(f"code-jig: no .NET, Node, Python, Rust, Java or Go project found in {root}", file=sys.stderr)
         return 2
     try:
         keep = changed(root, args.base) if args.base else None
