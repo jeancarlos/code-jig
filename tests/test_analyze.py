@@ -89,6 +89,21 @@ class Detect(unittest.TestCase):
         write(self.root / "pom.xml", "")
         self.assertEqual(analyze.detect(self.root), {"java"})
 
+    def test_nested_projects_are_found_one_folder_down(self):
+        write(self.root / "src-tauri" / "Cargo.toml", "")
+        write(self.root / "backend" / "go.mod", "")
+        write(self.root / "target" / "debug" / "pom.xml", "")
+        self.assertEqual(analyze.detect(self.root), {"rust", "go"})
+
+    def test_rust_and_go_tools_run_in_the_nested_project(self):
+        write(self.root / "src-tauri" / "Cargo.toml", "")
+        write(self.root / "backend" / "go.mod", "")
+        by = {t.name: t for t in analyze.TOOLS}
+        clippy = by["clippy"].argv("cargo", self.root, self.root)
+        self.assertEqual(clippy[clippy.index("--manifest-path") + 1], str(self.root / "src-tauri" / "Cargo.toml"))
+        vet = by["go-vet"].argv("go", self.root, self.root)
+        self.assertEqual(vet[:3], ["go", "-C", str(self.root / "backend")])
+
     def test_dotnet_by_solution(self):
         write(self.root / "App.slnx", "")
         self.assertEqual(analyze.detect(self.root), {"dotnet"})
@@ -466,6 +481,39 @@ class Run(unittest.TestCase):
         self.assertIn("timed out", report.errors[0][1])
         time.sleep(6)
         self.assertFalse(marker.exists())
+
+    def test_findings_outside_the_repo_or_in_build_dirs_are_dropped(self):
+        rows = [analyze.Finding("bug", "t", "r", path, 1, "m") for path in
+                ("src/a.py", "/home/u/.cargo/registry/x.rs", "src-tauri/target/debug/x.rmeta", "vendor/lib/a.go", "targets/a.py")]
+        fake_tool(self.bindir, "mypy", "")
+        t = analyze.Tool("mypy", "any", lambda exe, root, tmp: [exe], lambda out, root, tmp: rows, ok=(0,))
+        report = analyze.run_tools([t], self.root, {"python"}, path=str(self.bindir))
+        self.assertEqual([f.path for f in report.findings], ["src/a.py", "targets/a.py"])
+
+    def test_lizard_crash_leaves_out_only_the_files_that_crash(self):
+        write(self.root / "ok1.py", "x = 1\n")
+        write(self.root / "ok2.py", "x = 2\n")
+        write(self.root / "bad.go", "x\n")
+        body = textwrap.dedent(f'''\
+            import sys
+            files = open(sys.argv[sys.argv.index("-f") + 1]).read().split()
+            if "bad.go" in files:
+                sys.stderr.write("Traceback (most recent call last):\\nAttributeError: boom\\n")
+                sys.exit(1)
+            print("9,8,51,1,9,\\"f@2-10@ok1.py\\",\\"ok1.py\\",\\"f\\",\\"f( x )\\",2,10,200")
+        ''')
+        fake_tool(self.bindir, "lizard", body=body)
+        t = analyze.TOOLS[0]
+        self.assertEqual(t.name, "lizard")
+        with mock.patch.object(analyze, "source_files", return_value=["ok1.py", "ok2.py", "bad.go"]):
+            report = analyze.run_tools([t], self.root, {"python"}, path=str(self.bindir))
+        self.assertEqual([(n, "bad.go" in why) for n, why in report.errors], [("lizard", True)])
+        self.assertEqual([f.rule for f in report.findings], ["cognitive-complexity"])
+
+    def test_error_reason_skips_progress_lines(self):
+        err = "go: downloading github.com/x/y v1.0.0\n# pkg\nvet: ./a.go:3:1: undefined: z\n"
+        self.assertEqual(analyze._first(err), "vet: ./a.go:3:1: undefined: z")
+        self.assertEqual(analyze._first("# only noise\n"), "")
 
     def test_lineless_findings_with_different_messages_are_kept(self):
         proj = "Api/Api.csproj"

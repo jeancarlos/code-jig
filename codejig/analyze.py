@@ -11,6 +11,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
@@ -21,7 +22,7 @@ TOOL_ENV = {"SEMGREP_SEND_METRICS": "off", "SEMGREP_ENABLE_VERSION_CHECK": "0", 
             "DOTNET_NOLOGO": "1", "KIOTA_CLI_TELEMETRY_OPTOUT": "1", "PYTHONUTF8": "1"}
 COGNITIVE, CYCLOMATIC, NLOC, PARAMS = 15, 15, 100, 7
 CODE_SUFFIXES = {".py", ".cs", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".vue", ".java", ".kt", ".go", ".rs", ".swift", ".php", ".rb", ".scala", ".lua", ".c", ".cc", ".cpp", ".h", ".hpp", ".m"}
-SKIP_DIRS = {".git", "node_modules", "bin", "obj", ".venv", "venv", "dist", "build", "__pycache__", "coverage", "htmlcov", ".nyc_output", "target"}
+SKIP_DIRS = {".git", "node_modules", "bin", "obj", ".venv", "venv", "dist", "build", "__pycache__", "coverage", "htmlcov", ".nyc_output", "target", "vendor"}
 ESLINT_COMPLEXITY = {"complexity", "max-depth", "max-lines-per-function", "max-params", "max-nested-callbacks",
                      "sonarjs/cognitive-complexity", "sonarjs/cyclomatic-complexity", "sonarjs/nested-control-flow"}
 ESLINT_SECURITY = {f"sonarjs/{r}" for r in (
@@ -69,6 +70,7 @@ class Tool:
     reason: str = ""
     binary: str = ""
     findings_exit: tuple[int, ...] = ()
+    recover: Callable[[str, Path, dict, int], tuple[list[Finding], str | None]] | None = None
 
 
 class Partial(ValueError):
@@ -85,6 +87,17 @@ class Report:
     ran: list[str] = field(default_factory=list)
 
 
+CLIPPY_WARN = ("-W", "clippy::correctness", "-W", "clippy::suspicious", "-W", "clippy::cognitive_complexity", "-W", "clippy::too_many_arguments",
+               "-W", "clippy::too_many_lines")
+CARGO, GO_MOD = ("Cargo.toml",), ("go.mod",)
+JAVA_MARKERS = ("pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts")
+
+
+def marker_dir(root: Path, names: tuple[str, ...]) -> Path | None:
+    subdirs = sorted(p for p in root.iterdir() if p.is_dir() and p.name not in SKIP_DIRS and not p.name.startswith("."))
+    return next((base for base in (root, *subdirs) if any((base / n).is_file() for n in names)), None)
+
+
 def detect(root: Path) -> set[str]:
     stacks = set()
     if any(root.glob("*.sln")) or any(root.glob("*.slnx")) or any(root.glob("*.csproj")) or any(root.glob("*/*.csproj")):
@@ -94,12 +107,9 @@ def detect(root: Path) -> set[str]:
     markers = ("pyproject.toml", "setup.py", "setup.cfg")
     if any((root / m).is_file() for m in markers) or any(root.glob("requirements*.txt")) or any(root.glob("*.py")) or any(root.glob("*/*.py")):
         stacks.add("python")
-    if (root / "Cargo.toml").is_file():
-        stacks.add("rust")
-    if any((root / m).is_file() for m in ("pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts")):
-        stacks.add("java")
-    if (root / "go.mod").is_file():
-        stacks.add("go")
+    for stack, names in (("rust", CARGO), ("java", JAVA_MARKERS), ("go", GO_MOD)):
+        if marker_dir(root, names):
+            stacks.add(stack)
     return stacks
 
 
@@ -159,11 +169,63 @@ def _json(out: str, kind: type):
     return data
 
 
+def _lizard_files(root: Path) -> list[str]:
+    return [n for n in source_files(root) if Path(n).suffix.lower() in CODE_SUFFIXES]
+
+
+def _lizard_argv(exe: str, listing: Path, *extensions: str) -> list[str]:
+    return [exe, *extensions, "--csv", "-f", str(listing)]
+
+
 def _lizard_args(exe: str, root: Path, tmp: Path) -> list[str]:
     listing = tmp / "files.txt"
-    code = [n for n in source_files(root) if Path(n).suffix.lower() in CODE_SUFFIXES]
-    listing.write_text("\n".join(code) + "\n", encoding="utf-8")
-    return [exe, "-Ecognitive", "-Eduplicate", "--csv", "-f", str(listing)]
+    listing.write_text("\n".join(_lizard_files(root)) + "\n", encoding="utf-8")
+    return _lizard_argv(exe, listing, "-Ecognitive", "-Eduplicate")
+
+
+def _lizard_crashes(exe: str, root: Path, env: dict, files: list[str], timeout: int) -> bool:
+    with tempfile.TemporaryDirectory() as d:
+        listing = Path(d) / "files.txt"
+        listing.write_text("\n".join(files) + "\n", encoding="utf-8")
+        try:
+            code, _, err = _execute(_lizard_argv(exe, listing), root, env, timeout)
+        except (subprocess.TimeoutExpired, OSError):
+            return False
+    return code != 0 and "Traceback" in err
+
+
+def _split(files: list[str], ways: int) -> list[list[str]]:
+    size = -(-len(files) // ways)
+    return [files[i:i + size] for i in range(0, len(files), size)]
+
+
+def _lizard_bad_files(exe: str, root: Path, env: dict, files: list[str], timeout: int, ways: int = 8) -> list[str]:
+    bad, pending = [], _split(files, ways)
+    while pending:
+        with ThreadPoolExecutor(ways) as pool:
+            crashed = list(pool.map(lambda chunk: _lizard_crashes(exe, root, env, chunk, timeout), pending))
+        hits = [chunk for chunk, hit in zip(pending, crashed) if hit]
+        bad += [chunk[0] for chunk in hits if len(chunk) == 1]
+        pending = [part for chunk in hits if len(chunk) > 1 for part in _split(chunk, ways)]
+    return sorted(bad)
+
+
+def _lizard_recover(exe: str, root: Path, env: dict, timeout: int) -> tuple[list[Finding], str | None]:
+    files = _lizard_files(root)
+    bad = _lizard_bad_files(exe, root, env, files, timeout)
+    if not bad:
+        return [], "crashed, and no single file reproduces it"
+    left = set(bad)
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        listing = tmp / "files.txt"
+        listing.write_text("\n".join(f for f in files if f not in left) + "\n", encoding="utf-8")
+        try:
+            code, out, err = _execute(_lizard_argv(exe, listing, "-Ecognitive", "-Eduplicate"), root, env, timeout)
+            found = parse_lizard(out, root, tmp)
+        except (subprocess.TimeoutExpired, OSError, ValueError, IndexError) as e:
+            return [], f"left out {len(bad)} files it crashes on, then failed: {e}"
+    return found, f"crashes on {len(bad)} files, left out: {', '.join(bad[:3])}{' ...' if len(bad) > 3 else ''}"
 
 
 def _lizard_metrics(rows: list[str], root: Path) -> list[Finding]:
@@ -286,6 +348,10 @@ def _clippy_category(code: str, level: str) -> str:
     return "bug"
 
 
+def _cargo_manifest(root: Path) -> Path:
+    return (marker_dir(root, CARGO) or root) / "Cargo.toml"
+
+
 def parse_clippy(out: str, root: Path, tmp: Path) -> list[Finding]:
     found = []
     for line in out.splitlines():
@@ -297,7 +363,7 @@ def parse_clippy(out: str, root: Path, tmp: Path) -> list[Finding]:
         if span is None or msg.get("level") not in ("warning", "error"):
             continue
         code = (msg.get("code") or {}).get("code") or ""
-        found.append(Finding(_clippy_category(code, msg["level"]), "clippy", code or msg["level"], rel(span["file_name"], root),
+        found.append(Finding(_clippy_category(code, msg["level"]), "clippy", code or msg["level"], rel(str(_cargo_manifest(root).parent / span["file_name"]), root),
                              int(span["line_start"]), msg["message"]))
     return found
 
@@ -425,7 +491,7 @@ def _dotnet_target(root: Path) -> list[str]:
 _GITLEAKS = ("--no-banner", "--redact", "--exit-code", "0", "--report-format", "json", "--report-path")
 
 TOOLS = [
-    Tool("lizard", "any", _lizard_args, parse_lizard, hint="pip install lizard"),
+    Tool("lizard", "any", _lizard_args, parse_lizard, hint="pip install lizard", recover=_lizard_recover),
     Tool("ruff", "python", lambda exe, root, tmp: [exe, "check", "--output-format", "json", "--no-cache", "--exit-zero", "--extend-select", "S,B", "."],
          parse_ruff, hint="pip install ruff"),
     Tool("vulture", "python", _vulture_args,
@@ -440,11 +506,12 @@ TOOLS = [
          lambda root: (root / "tsconfig.json").is_file(), "npm install -D typescript", reason="no tsconfig.json", findings_exit=(1, 2)),
     Tool("dotnet", "dotnet", lambda exe, root, tmp: [exe, "build", "--nologo", "--no-incremental", "-clp:NoSummary", *_dotnet_target(root)],
          parse_dotnet, lambda root: bool(_dotnet_target(root)), "install the .NET SDK", reason="no solution or project at the root", findings_exit=(1,)),
-    Tool("clippy", "rust", lambda exe, root, tmp: [exe, "clippy", "--all-targets", "--message-format", "json", "--quiet"], parse_clippy,
+    Tool("clippy", "rust", lambda exe, root, tmp: [exe, "clippy", "--manifest-path", str(_cargo_manifest(root)), "--all-targets", "--message-format", "json", "--quiet", "--",
+                                 "-A", "clippy::all", *CLIPPY_WARN], parse_clippy,
          hint="rustup component add clippy", binary="cargo", findings_exit=(101,)),
     Tool("pmd", "java", lambda exe, root, tmp: [exe, "check", "-d", ".", "-R", "rulesets/java/quickstart.xml", "-f", "json", "--no-cache", "--no-progress"],
          parse_pmd, hint="install PMD 7 from its GitHub releases", findings_exit=(4,)),
-    Tool("go-vet", "go", lambda exe, root, tmp: [exe, "vet", "-json", "./..."], parse_go_vet, hint="install Go", binary="go"),
+    Tool("go-vet", "go", lambda exe, root, tmp: [exe, "-C", str(marker_dir(root, GO_MOD) or root), "vet", "-json", "./..."], parse_go_vet, hint="install Go", binary="go"),
     Tool("semgrep", "any", lambda exe, root, tmp: [exe, "scan", "--metrics=off", "--disable-version-check", "--config", str(_semgrep_rules(root)), "--json", "--quiet", "."],
          parse_semgrep, lambda root: _semgrep_rules(root) is not None, "pip install semgrep", reason="no local rules (.semgrep.yml or .semgrep/)"),
     Tool("gitleaks", "any", lambda exe, root, tmp: [exe, "dir", *_GITLEAKS, str(tmp / "gitleaks.json"), "."],
@@ -456,8 +523,11 @@ TOOLS = [
 ]
 
 
+PROGRESS = ("#", "go: downloading", "go: finding", "go: extracting")
+
+
 def _first(text: str) -> str:
-    return (text.strip().splitlines() or [""])[0][:300]
+    return next((ln for ln in text.strip().splitlines() if ln.strip() and not ln.startswith(PROGRESS)), "")[:300]
 
 
 def _kill_tree(proc: subprocess.Popen) -> None:
@@ -493,6 +563,8 @@ def _run_one(t: Tool, exe: str, root: Path, env: dict, timeout: int) -> tuple[li
         except OSError as e:
             return [], f"cannot run: {e}"
         error = None
+        if code not in t.ok and t.recover and "Traceback" in err:
+            return t.recover(exe, root, env, timeout)
         try:
             found = t.parse(out, root, tmp)
         except Partial as e:
@@ -504,8 +576,14 @@ def _run_one(t: Tool, exe: str, root: Path, env: dict, timeout: int) -> tuple[li
     return found, error
 
 
+def _own_code(path: str) -> bool:
+    return not Path(path).is_absolute() and SKIP_DIRS.isdisjoint(Path(path).parts[:-1])
+
+
 def _add_new(findings: list[Finding], seen: set, found: list[Finding]) -> None:
     for f in found:
+        if not _own_code(f.path):
+            continue
         key = (f.tool, f.rule, f.path, f.line, "" if f.line else f.message)
         if key not in seen:
             seen.add(key)

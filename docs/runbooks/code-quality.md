@@ -16,7 +16,7 @@ code-jig analyze --top 30 --json    # more findings, machine-readable
 code-jig analyze --timeout 1200     # per tool, in seconds (default 600)
 ```
 
-It finds the stacks from marker files at the given path (`*.sln` or `*.slnx` there, or `*.csproj` there or one folder down, for .NET; `package.json` for Node; `pyproject.toml`, `setup.py`, `setup.cfg`, `requirements*.txt`, or `.py` files there or one folder down, for Python; `Cargo.toml` for Rust; `pom.xml`, `build.gradle*` or `settings.gradle*` for Java; `go.mod` for Go), runs every applicable tool that is installed, and prints:
+It finds the stacks from marker files at the given path (`*.sln` or `*.slnx` there, or `*.csproj` there or one folder down, for .NET; `package.json` for Node; `pyproject.toml`, `setup.py`, `setup.cfg`, `requirements*.txt`, or `.py` files there or one folder down, for Python; `Cargo.toml` for Rust; `pom.xml`, `build.gradle*` or `settings.gradle*` for Java; `go.mod` for Go, each there or one folder down, so a Tauri app's `src-tauri/Cargo.toml` is found), runs every applicable tool that is installed, and prints:
 
 ```
 analyze: python
@@ -39,7 +39,7 @@ Exit 0: clean. Exit 1: findings or a tool error. Exit 2: no project found, a bad
 | eslint | Node with an eslint config | `sonarjs/*` complexity and security rules mapped, `security/*` security, the rest bug |
 | knip | Node | `unused` files, exports, types and dependencies; `bug` for dependencies used but not listed and imports that do not resolve |
 | tsc | Node with `tsconfig.json` | type |
-| cargo clippy | Rust | Clippy and rustc lints: complexity lints as complexity, `unused*` and `dead_code` as unused, compiler errors as type, the rest bug |
+| cargo clippy | Rust | Clippy's correctness and suspicious lints plus a few complexity lints (style lints are left out), and rustc warnings: complexity lints as complexity, `unused*` and `dead_code` as unused, compiler errors as type, the rest bug |
 | pmd | Java | PMD 7 quickstart ruleset; Security rules as security, complexity and unused-code rules grouped as such, the rest bug |
 | go vet | Go | `go vet` diagnostics, all as bug |
 | dotnet build | .NET with a solution or project at the root | `S3776` and other complexity rules, `CA3*`, `CA5*` and known Sonar security rules as security, `CS*` as type, NuGet audit warnings `NU1901`-`NU1904` as dependency (project-level warnings carry no line), the rest bug |
@@ -141,3 +141,5 @@ CI pins the versions it tests against: lizard 1.24.1, ruff 0.17.0, vulture 2.16,
 | `error: <tool>: timed out after 600s` | Raise `--timeout`, or analyze a subfolder. The tool and every process it started are killed. |
 | `code-jig: no analyzer ran` | Every tool was skipped; install at least one from the skipped list |
 | `dotnet` skipped with "no solution or project at the root" | Run it from the folder with the `.sln` or `.csproj` |
+
+Findings in `node_modules`, `vendor`, `target`, `build`, `bin`, `obj` and other generated folders, or outside the repository (dependency crates), are dropped. When lizard crashes on a file, `analyze` finds the files that crash it, leaves them out and lists them as an error.
