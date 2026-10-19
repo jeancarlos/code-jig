@@ -142,4 +142,4 @@ CI pins the versions it tests against: lizard 1.24.1, ruff 0.17.0, vulture 2.16,
 | `code-jig: no analyzer ran` | Every tool was skipped; install at least one from the skipped list |
 | `dotnet` skipped with "no solution or project at the root" | Run it from the folder with the `.sln` or `.csproj` |
 
-Findings in `node_modules`, `vendor`, `target`, `build`, `bin`, `obj` and other generated folders, or outside the repository (dependency crates), are dropped. When lizard crashes on a file, `analyze` finds the files that crash it, leaves them out and lists them as an error.
+Code-quality findings in `node_modules`, `vendor`, `target`, `build`, `bin`, `obj` and other generated folders, or outside the repository (dependency crates), are dropped. Secret and vulnerability scanners are never filtered by folder name: gitleaks and osv-scanner drop only git-ignored files, and gitleaks-history and semgrep drop nothing. Dropped findings are counted in a `not shown:` line and in the JSON `dropped` field. When lizard crashes on a file, `analyze` finds the files that crash it, leaves them out and lists them as an error.

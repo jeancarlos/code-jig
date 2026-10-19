@@ -490,6 +490,28 @@ class Run(unittest.TestCase):
         report = analyze.run_tools([t], self.root, {"python"}, path=str(self.bindir))
         self.assertEqual([f.path for f in report.findings], ["src/a.py", "targets/a.py"])
 
+    def test_dropped_findings_are_counted_and_shown(self):
+        rows = [analyze.Finding("bug", "t", "r", path, 1, "m") for path in ("a.py", "vendor/b.py", "/abs/c.py")]
+        fake_tool(self.bindir, "mypy", "")
+        t = analyze.Tool("mypy", "any", lambda exe, root, tmp: [exe], lambda out, root, tmp: rows, ok=(0,))
+        report = analyze.run_tools([t], self.root, {"python"}, path=str(self.bindir))
+        self.assertEqual(report.dropped, 2)
+        self.assertIn("not shown: 2 findings", "\n".join(analyze.render(report, {"python"})))
+
+    def test_secret_scanners_keep_tracked_files_in_build_dirs(self):
+        git(self.root, "init", "-q")
+        write(self.root / ".gitignore", "target/\n")
+        write(self.root / "vendor" / "k.env", "x")
+        write(self.root / "target" / "k.bin", "x")
+        git(self.root, "add", ".gitignore", "vendor/k.env")
+        rows = [analyze.Finding("secret", "gitleaks", "key", path, 1, "m") for path in ("vendor/k.env", "target/k.bin")]
+        hist = [analyze.Finding("secret", "gitleaks", "key", "target/old.bin", 1, "m")]
+        for name, found, want in (("gitleaks", rows, ["vendor/k.env"]), ("gitleaks-history", hist, ["target/old.bin"])):
+            fake_tool(self.bindir, name, "")
+            t = analyze.Tool(name, "any", lambda exe, root, tmp: [exe], lambda out, root, tmp, found=found: found, ok=(0,))
+            report = analyze.run_tools([t], self.root, {"python"}, path=str(self.bindir) + os.pathsep + os.path.dirname(shutil.which("git")))
+            self.assertEqual([f.path for f in report.findings], want, name)
+
     def test_lizard_crash_leaves_out_only_the_files_that_crash(self):
         write(self.root / "ok1.py", "x = 1\n")
         write(self.root / "ok2.py", "x = 2\n")

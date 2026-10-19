@@ -14,7 +14,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from collections import Counter
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 CATEGORIES = ("security", "secret", "dependency", "bug", "type", "unused", "complexity", "duplication")
@@ -85,6 +85,7 @@ class Report:
     skipped: list[tuple[str, str]]
     errors: list[tuple[str, str]]
     ran: list[str] = field(default_factory=list)
+    dropped: int = 0
 
 
 CLIPPY_WARN = ("-W", "clippy::correctness", "-W", "clippy::suspicious", "-W", "clippy::cognitive_complexity", "-W", "clippy::too_many_arguments",
@@ -490,6 +491,8 @@ def _dotnet_target(root: Path) -> list[str]:
 
 _GITLEAKS = ("--no-banner", "--redact", "--exit-code", "0", "--report-format", "json", "--report-path")
 
+SCANNERS = ("gitleaks", "gitleaks-history", "osv-scanner", "semgrep")
+
 TOOLS = [
     Tool("lizard", "any", _lizard_args, parse_lizard, hint="pip install lizard", recover=_lizard_recover),
     Tool("ruff", "python", lambda exe, root, tmp: [exe, "check", "--output-format", "json", "--no-cache", "--exit-zero", "--extend-select", "S,B", "."],
@@ -580,10 +583,14 @@ def _own_code(path: str) -> bool:
     return not Path(path).is_absolute() and SKIP_DIRS.isdisjoint(Path(path).parts[:-1])
 
 
+def _wanted(tool: str, f: Finding, root: Path) -> bool:
+    if tool in ("gitleaks", "osv-scanner"):
+        return _git(root, "check-ignore", "-q", "--", f.path).returncode != 0
+    return tool in SCANNERS or _own_code(f.path)
+
+
 def _add_new(findings: list[Finding], seen: set, found: list[Finding]) -> None:
     for f in found:
-        if not _own_code(f.path):
-            continue
         key = (f.tool, f.rule, f.path, f.line, "" if f.line else f.message)
         if key not in seen:
             seen.add(key)
@@ -608,7 +615,9 @@ def run_tools(tools: list[Tool], root: Path, stacks: set[str], path: str | None 
             continue
         found, error = _run_one(t, exe, root, env, timeout)
         report.ran.append(t.name)
-        _add_new(report.findings, seen, found)
+        kept = [f for f in found if _wanted(t.name, f, root)]
+        report = replace(report, dropped=report.dropped + len(found) - len(kept))
+        _add_new(report.findings, seen, kept)
         if error:
             report.errors.append((t.name, error))
     return report
@@ -631,6 +640,8 @@ def render(report: Report, stacks: set[str], top: int = 10) -> list[str]:
             out.append(f"  {printable(where)}  {printable(f.rule)}  {printable(f.message)[:200]}")
         if len(items) > top:
             out.append(f"  and {len(items) - top} more")
+    if report.dropped:
+        out.append(f"not shown: {report.dropped} findings in generated, vendored or external paths, or in git-ignored files")
     out += [f"skipped: {name} ({why})" for name, why in report.skipped]
     out += [f"error: {name}: {printable(why)}" for name, why in report.errors]
     return out
@@ -655,10 +666,10 @@ def cli(args) -> int:
         return 2
     report = run_tools(TOOLS, root, stacks, timeout=args.timeout)
     if keep is not None:
-        report = Report([f for f in report.findings if f.path in keep], report.skipped, report.errors, report.ran)
+        report = Report([f for f in report.findings if f.path in keep], report.skipped, report.errors, report.ran, report.dropped)
     if args.json:
         print(json.dumps({"stacks": sorted(stacks), "findings": [asdict(f) for f in report.findings],
-                          "skipped": report.skipped, "errors": report.errors}, ensure_ascii=False, indent=1))
+                          "skipped": report.skipped, "errors": report.errors, "dropped": report.dropped}, ensure_ascii=False, indent=1))
     else:
         for line in render(report, stacks, args.top):
             print(line)
