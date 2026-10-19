@@ -11,11 +11,11 @@ import signal
 import subprocess
 import sys
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
 from collections import Counter
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 CATEGORIES = ("security", "secret", "dependency", "bug", "type", "unused", "complexity", "duplication")
 TOOL_ENV = {"SEMGREP_SEND_METRICS": "off", "SEMGREP_ENABLE_VERSION_CHECK": "0", "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
@@ -222,7 +222,7 @@ def _lizard_recover(exe: str, root: Path, env: dict, timeout: int) -> tuple[list
         listing = tmp / "files.txt"
         listing.write_text("\n".join(f for f in files if f not in left) + "\n", encoding="utf-8")
         try:
-            code, out, err = _execute(_lizard_argv(exe, listing, "-Ecognitive", "-Eduplicate"), root, env, timeout)
+            _, out, _ = _execute(_lizard_argv(exe, listing, "-Ecognitive", "-Eduplicate"), root, env, timeout)
             found = parse_lizard(out, root, tmp)
         except (subprocess.TimeoutExpired, OSError, ValueError, IndexError) as e:
             return [], f"left out {len(bad)} files it crashes on, then failed: {e}"
@@ -580,7 +580,7 @@ def _run_one(t: Tool, exe: str, root: Path, env: dict, timeout: int) -> tuple[li
 
 
 def _own_code(path: str) -> bool:
-    return not Path(path).is_absolute() and SKIP_DIRS.isdisjoint(Path(path).parts[:-1])
+    return not (path.startswith("/") or PureWindowsPath(path).is_absolute()) and SKIP_DIRS.isdisjoint(Path(path).parts[:-1])
 
 
 def _wanted(tool: str, f: Finding, root: Path) -> bool:

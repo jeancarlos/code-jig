@@ -516,7 +516,7 @@ class Run(unittest.TestCase):
         write(self.root / "ok1.py", "x = 1\n")
         write(self.root / "ok2.py", "x = 2\n")
         write(self.root / "bad.go", "x\n")
-        body = textwrap.dedent(f'''\
+        body = textwrap.dedent('''\
             import sys
             files = open(sys.argv[sys.argv.index("-f") + 1]).read().split()
             if "bad.go" in files:
