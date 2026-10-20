@@ -719,6 +719,14 @@ RUST_LIB = textwrap.dedent('''\
         return 1;
     }
 
+    pub fn ex(o: Option<u32>) -> u32 {
+        o.expect("x")
+    }
+
+    pub fn unr() {
+        unreachable!()
+    }
+
     #[cfg(test)]
     mod tests {
         #[test]
@@ -726,6 +734,9 @@ RUST_LIB = textwrap.dedent('''\
             let v = vec![1];
             v.iter().max().unwrap();
             let _ = v[0];
+            let _ = 5u64 as u32;
+            let _ = (-1i32) as u32;
+            unreachable!();
             panic!("fine in tests");
         }
     }
@@ -755,15 +766,31 @@ class RustClippy(unittest.TestCase):
     def rules(self, report):
         return {(f.category, f.rule, f.path) for f in report.findings}
 
-    def test_tiers_and_test_code(self):
+    def lines(self, report, rule):
+        return sorted(f.line for f in report.findings if f.rule == rule)
+
+    def test_default_tier_and_test_code(self):
         report = clippy_findings(rust_crate(self))
         self.assertEqual(report.errors, [])
         got = self.rules(report)
-        for expected in (("bug", "clippy::unwrap_used", "src/lib.rs"), ("bug", "clippy::indexing_slicing", "src/lib.rs"),
-                         ("bug", "clippy::panic", "src/lib.rs"), ("bug", "clippy::cast_possible_truncation", "src/lib.rs"),
+        for expected in (("bug", "clippy::unwrap_used", "src/lib.rs"), ("bug", "clippy::panic", "src/lib.rs"),
                          ("bug", "clippy::needless_return", "src/lib.rs"), ("security", "clippy::undocumented_unsafe_blocks", "src/lib.rs")):
             self.assertIn(expected, got)
-        self.assertEqual({f.line for f in report.findings if f.rule in analyze.CLIPPY_PANIC}, {2, 6, 10})
+        rules = {f.rule for f in report.findings}
+        self.assertFalse(rules & {"clippy::indexing_slicing", "clippy::cast_possible_truncation", "clippy::cast_sign_loss", "clippy::expect_used",
+                                  "clippy::unreachable", "clippy::arithmetic_side_effects"})
+        self.assertEqual(self.lines(report, "clippy::unwrap_used"), [2])
+        self.assertFalse([f for f in report.findings if f.path.startswith("tests/")])
+
+    def test_strict_tier_adds_noisy_lints_but_not_from_test_code(self):
+        report = clippy_findings(rust_crate(self), strict=True)
+        src = RUST_LIB.splitlines()
+        first_test = next(n for n, ln in enumerate(src, 1) if ln.strip() == "#[cfg(test)]")
+        for rule in ("clippy::indexing_slicing", "clippy::cast_possible_truncation", "clippy::expect_used", "clippy::unreachable"):
+            lines = self.lines(report, rule)
+            self.assertTrue(lines, rule)
+            self.assertTrue(all(n < first_test for n in lines), (rule, lines))
+        self.assertEqual(self.lines(report, "clippy::cast_sign_loss"), [])
         self.assertFalse([f for f in report.findings if f.path.startswith("tests/")])
 
     def test_arithmetic_only_when_strict(self):
@@ -781,7 +808,6 @@ class RustClippy(unittest.TestCase):
         root = rust_crate(self, "[lints.clippy]\nunwrap_used = \"allow\"\n")
         rules = {f.rule for f in clippy_findings(root).findings}
         self.assertNotIn("clippy::unwrap_used", rules)
-        self.assertNotIn("clippy::indexing_slicing", rules)
 
     def test_project_clippy_toml_is_not_overridden(self):
         root = rust_crate(self)
@@ -794,25 +820,27 @@ class RustClippy(unittest.TestCase):
         self.assertNotIn("clippy::all", argv)
         self.assertIn("clippy::unwrap_used", argv)
         self.assertNotIn("clippy::arithmetic_side_effects", argv)
+        self.assertNotIn("clippy::indexing_slicing", argv)
+        self.assertIn("clippy::indexing_slicing", analyze.clippy_tool(True).argv("cargo", root, root))
         self.assertIn("clippy::arithmetic_side_effects", analyze.clippy_tool(True).argv("cargo", root, root))
 
 
 @unittest.skipUnless(shutil.which("cargo"), "cargo not installed")
 class RustBuildScope(unittest.TestCase):
-    GATED = '#[cfg(feature = "sim")]\npub fn gated(v: &[u32]) -> u32 {\n    v[0]\n}\n'
+    GATED = '#[cfg(feature = "sim")]\npub fn gated(v: &[u32]) -> u32 {\n    *v.first().unwrap()\n}\n'
 
     def test_all_features_reach_gated_code(self):
         root = rust_crate(self, "[features]\nsim = []\n", self.GATED)
         report = clippy_findings(root)
         self.assertEqual(report.errors, [])
-        self.assertIn(("clippy::indexing_slicing", 3), {(f.rule, f.line) for f in report.findings})
+        self.assertIn(("clippy::unwrap_used", 3), {(f.rule, f.line) for f in report.findings})
 
     def test_conflicting_features_fall_back_to_default(self):
-        lib = '#[cfg(all(feature = "a", feature = "b"))]\ncompile_error!("a and b conflict");\n\npub fn f(v: &[u32]) -> u32 {\n    v[0]\n}\n'
+        lib = '#[cfg(all(feature = "a", feature = "b"))]\ncompile_error!("a and b conflict");\n\npub fn f(v: &[u32]) -> u32 {\n    *v.first().unwrap()\n}\n'
         root = rust_crate(self, "[features]\na = []\nb = []\n", lib)
         report = clippy_findings(root)
         self.assertEqual([r for _, r in report.errors], [analyze.clippy_tool().fallback_note])
-        self.assertIn("clippy::indexing_slicing", {f.rule for f in report.findings})
+        self.assertIn("clippy::unwrap_used", {f.rule for f in report.findings})
         self.assertFalse([f for f in report.findings if f.category == "type"])
 
     def test_no_features_no_flag(self):
@@ -826,21 +854,59 @@ class RustBuildScope(unittest.TestCase):
         write(root / "Cargo.toml", '[workspace]\nresolver = "2"\nmembers = ["a", "b"]\n')
         for name in "ab":
             write(root / name / "Cargo.toml", f'[package]\nname = "m{name}"\nversion = "0.1.0"\nedition = "2021"\n')
-            write(root / name / "src" / "lib.rs", "pub fn f(v: &[u32]) -> u32 {\n    v[0]\n}\n")
+            write(root / name / "src" / "lib.rs", "pub fn f(v: &[u32]) -> u32 {\n    *v.first().unwrap()\n}\n")
         target = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, target, True)
         with mock.patch.dict(os.environ, {"CARGO_TARGET_DIR": str(target)}):
             report = clippy_findings(root)
         self.assertEqual(report.errors, [])
-        self.assertEqual(sorted(f.path for f in report.findings if f.rule == "clippy::indexing_slicing"), ["a/src/lib.rs", "b/src/lib.rs"])
+        self.assertEqual(sorted(f.path for f in report.findings if f.rule == "clippy::unwrap_used"), ["a/src/lib.rs", "b/src/lib.rs"])
 
-    def test_config_target_is_replaced_by_the_host(self):
+    def test_installed_config_target_is_kept(self):
         root = rust_crate(self)
-        write(root / ".cargo" / "config.toml", '[build]\ntarget = "armv7-unknown-linux-musleabihf"\n')
+        host = analyze._host_triple(root)
+        write(root / ".cargo" / "config.toml", f'[build]\ntarget = "{host}"\n')
         argv = analyze.clippy_tool().argv("cargo", root, Path())
-        host = analyze._host_triple()
-        self.assertEqual(argv[argv.index("--target") + 1], host)
-        self.assertEqual(clippy_findings(root).errors, [])
+        self.assertNotIn("--target", argv)
+        self.assertIsNone(analyze._clippy_note(root))
+
+    def test_uninstalled_config_target_falls_back_to_host_and_says_so(self):
+        root = rust_crate(self)
+        write(root / ".cargo" / "config.toml", '[build]\ntarget = "thumbv7em-none-eabi"\n')
+        with mock.patch.object(analyze, "_target_installed", return_value=False):
+            argv = analyze.clippy_tool().argv("cargo", root, Path())
+            note = analyze._clippy_note(root)
+        self.assertEqual(argv[argv.index("--target") + 1], analyze._host_triple(root))
+        self.assertIn("thumbv7em-none-eabi", note)
+        self.assertIn("rustup target add", note)
+
+    def test_fallback_does_not_rerun_an_identical_command(self):
+        root = rust_crate(self)
+        runs = []
+        real = analyze._execute
+
+        def counting(argv, *a, **kw):
+            runs.append(argv)
+            return real(argv, *a, **kw)
+        lib = root / "src" / "lib.rs"
+        lib.write_text("pub fn f() -> u32 { \"x\" }\n", encoding="utf-8")
+        with mock.patch.object(analyze, "_execute", counting):
+            report = clippy_findings(root)
+        self.assertEqual(len(runs), 1)
+        self.assertTrue([f for f in report.findings if f.category == "type"])
+
+    def test_note_reaches_the_report(self):
+        root = rust_crate(self)
+        write(root / ".cargo" / "config.toml", '[build]\ntarget = "thumbv7em-none-eabi"\n')
+        report = clippy_findings(root)
+        self.assertEqual([t for t, _ in report.errors], ["clippy"])
+        self.assertIn("thumbv7em-none-eabi", report.errors[0][1])
+        self.assertIn("clippy::unwrap_used", {f.rule for f in report.findings})
+
+    def test_installed_target_is_detected_in_the_sysroot(self):
+        root = rust_crate(self)
+        self.assertTrue(analyze._target_installed(analyze._host_triple(root), root))
+        self.assertFalse(analyze._target_installed("nope-unknown-none", root))
 
     def test_metadata_target_wins(self):
         root = rust_crate(self, '[package.metadata.code-jig]\ntarget = "x86_64-unknown-linux-gnu"\n')
@@ -901,6 +967,12 @@ class RustSupplyChain(unittest.TestCase):
         self.assertIn("deny.toml", dict(report.skipped)["cargo-deny"])
         self.assertIn("cargo install cargo-machete", dict(report.skipped)["cargo-machete"])
 
+    def test_cargo_deny_path_follows_the_manifest_folder(self):
+        nested = tree(self)
+        write(nested / "app" / "Cargo.toml", "")
+        out = json.dumps({"type": "diagnostic", "fields": {"severity": "error", "code": "banned", "message": "m"}})
+        self.assertEqual([f.path for f in analyze.parse_cargo_deny(out, nested, nested)], ["app/Cargo.lock"])
+
     def test_cargo_deny_runs_only_with_a_deny_toml(self):
         deny = next(t for t in analyze.TOOLS if t.name == "cargo-deny")
         self.assertFalse(deny.applies(self.root))
@@ -914,6 +986,27 @@ class RustSupplyChain(unittest.TestCase):
         tool = analyze.Tool("cargo-deny", "rust", lambda exe, root, tmp: [sys.executable, str(script)], analyze.parse_cargo_deny, findings_exit=(1,), stderr=True)
         found, error = analyze._run_one(tool, sys.executable, self.root, dict(os.environ), 60)
         self.assertEqual((error, [f.rule for f in found]), (None, ["banned"]))
+
+
+class TestLineRanges(unittest.TestCase):
+    def test_cfg_test_modules_test_fns_and_inner_attribute(self):
+        src = "fn a() {}\n#[cfg(test)]\nmod t {\n    #[test]\n    fn b() { 1 }\n}\n#[test]\nfn c() { 2 }\n#[cfg(not(test))]\nfn d() {}\n"
+        self.assertEqual(unsafe_scan.test_line_ranges(src), [(2, 6), (4, 5), (7, 8)])
+        self.assertEqual(unsafe_scan.test_line_ranges("#![cfg(test)]\nfn a() {}\n"), [(1, 2)])
+
+    def test_strings_with_braces_do_not_end_the_item(self):
+        src = '#[cfg(test)]\nmod t {\n    const S: &str = "}";\n    fn f() {}\n}\nfn after() {}\n'
+        self.assertEqual(unsafe_scan.test_line_ranges(src), [(1, 5)])
+
+    def test_findings_in_cfg_test_code_are_dropped(self):
+        root = tree(self)
+        write(root / "Cargo.toml", "")
+        write(root / "src" / "lib.rs", "fn a() {}\n#[cfg(test)]\nmod t {\n    fn b() { 1u64 as u32; }\n}\n")
+        def msg(line):
+            return json.dumps({"reason": "compiler-message", "message": {"level": "warning", "message": "m", "code": {"code": "clippy::cast_possible_truncation"},
+                                                                       "spans": [{"file_name": "src/lib.rs", "line_start": line, "is_primary": True}]}})
+        found = analyze.parse_clippy(msg(4) + "\n" + msg(1), root, root)
+        self.assertEqual([f.line for f in found], [1])
 
 
 class UnsafeScan(unittest.TestCase):
@@ -978,6 +1071,31 @@ class UnsafeScan(unittest.TestCase):
         self.assertEqual(unsafe_scan.undocumented("fn f() {\n    // SAFETY: fine\n    let x = unsafe { };\n}\n"), (1, []))
         self.assertEqual(unsafe_scan.undocumented("// SAFETY: old\nfn f() { }\nunsafe { }\n"), (1, [3]))
 
+    def test_c_raw_strings_are_skipped(self):
+        self.assertEqual(unsafe_scan.undocumented('let a = cr"\\"; unsafe { }\nlet b = cr#"unsafe { "#;\n'), (1, [1]))
+
+    def test_safety_does_not_carry_to_the_next_match_arm(self):
+        src = "match x {\n    A => 1, // SAFETY: about A\n    B => unsafe { f() },\n}\n"
+        self.assertEqual(unsafe_scan.undocumented(src), (1, [3]))
+        own = "match x {\n    // SAFETY: about B\n    B => unsafe { f() },\n}\n"
+        self.assertEqual(unsafe_scan.undocumented(own), (1, []))
+        self.assertEqual(unsafe_scan.undocumented("match x {\n    A => 1,\n    // SAFETY: B\n    B => unsafe { f() },\n}\n"), (1, []))
+
+    def test_adversarial_input_stays_fast(self):
+        for chunk in ("unsafe impl ", "unsafe extern ", "unsafe /**/ ", "'\\ "):
+            src = chunk * (240_000 // len(chunk))
+            started = time.monotonic()
+            unsafe_scan.undocumented(src)
+            self.assertLess(time.monotonic() - started, 2, chunk)
+
+    def test_oversized_files_are_skipped(self):
+        root = tree(self)
+        write(root / "Cargo.toml", "")
+        write(root / "src" / "main.rs", "fn main() { unsafe { } }\n")
+        with mock.patch.object(analyze, "UNSAFE_SCAN_MAX_BYTES", 5):
+            self.assertEqual(analyze.scan_unsafe(root), [])
+        self.assertEqual(len(analyze.scan_unsafe(root)), 1)
+
     def test_comment_right_after_the_brace(self):
         self.assertEqual(unsafe_scan.undocumented("unsafe {\n    // SAFETY: fine\n    f()\n}\n"), (1, []))
 
@@ -1009,6 +1127,33 @@ class UnsafeScan(unittest.TestCase):
         report = analyze.run_tools([t for t in analyze.TOOLS if t.name == "unsafe-scan"], root, {"rust"}, path=str(root))
         self.assertEqual(report.ran, ["unsafe-scan"])
         self.assertEqual(len(report.findings), 1)
+
+
+class ToolEnvironment(unittest.TestCase):
+    def test_rustup_auto_install_is_off_for_every_tool(self):
+        self.assertEqual(analyze.TOOL_ENV["RUSTUP_AUTO_INSTALL"], "0")
+        root = tree(self)
+        script = write(root / "p.py", "import os\nprint(os.environ.get('RUSTUP_AUTO_INSTALL'))\n")
+        seen = []
+        tool = analyze.Tool("probe", "rust", lambda exe, r, t: [sys.executable, str(script)], lambda out, r, t: seen.append(out.strip()) or [], binary=sys.executable)
+        with mock.patch.dict(os.environ, {"RUSTUP_AUTO_INSTALL": "1"}):
+            analyze.run_tools([tool], root, {"rust"}, path=os.environ["PATH"])
+        self.assertEqual(seen, ["0"])
+
+
+class RustcEnvironment(unittest.TestCase):
+    def test_rustc_probes_get_the_tool_environment(self):
+        seen = []
+
+        def fake(argv, **kw):
+            seen.append(kw["env"])
+            return types.SimpleNamespace(stdout="host: x\n")
+        analyze._rustc.cache_clear()
+        self.addCleanup(analyze._rustc.cache_clear)
+        with mock.patch.object(analyze.shutil, "which", return_value="rustc"), mock.patch.object(analyze.subprocess, "run", fake), \
+                mock.patch.dict(os.environ, {"RUSTUP_AUTO_INSTALL": "1"}):
+            self.assertEqual(analyze._host_triple(Path("/x")), "x")
+        self.assertEqual(seen[0]["RUSTUP_AUTO_INSTALL"], "0")
 
 
 class ClippyCategories(unittest.TestCase):

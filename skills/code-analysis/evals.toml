@@ -5,7 +5,7 @@ commands = ["code-jig analyze"]
 output = ["(?i)unused"]
 
 [[case]]
-prompt = "Check this Rust crate for bugs, panics and unsafe code. Report by category; do not change anything."
+prompt = "Run the code analysis on this repository and list what it reports, by category. Do not change anything."
 fixture = "rust"
 commands = ["code-jig analyze"]
-output = ["(?i)unsafe"]
+output = ["undocumented[-_]unsafe", "src/lib\\.rs"]

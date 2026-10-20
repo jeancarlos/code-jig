@@ -16,7 +16,7 @@ code-jig analyze                 # whole repo
 code-jig analyze --base main     # only files changed since main, plus untracked ones
 code-jig analyze --top 30        # more findings per category
 code-jig analyze --json          # machine-readable
-code-jig analyze --strict        # Rust: also arithmetic_side_effects
+code-jig analyze --strict        # Rust: also indexing, casts, expect, unreachable, arithmetic
 ```
 
 Exit 0 means clean, 1 means findings or a tool error, 2 means no project, a bad `--base`, or no analyzer installed.
@@ -33,7 +33,7 @@ Exit 0 means clean, 1 means findings or a tool error, 2 means no project, a bad 
 | knip | Node | Unused files, exports, types and dependencies; dependencies used but not listed, and imports that do not resolve |
 | tsc | Node, with `tsconfig.json` | Type errors |
 | dotnet build | .NET | Compiler and analyzer warnings, SonarAnalyzer and Roslynator included when the project references them, and NuGet audit warnings (NU1901-NU1904) for vulnerable packages; restore asks nuget.org for advisories, sending package names |
-| clippy | Rust, with `cargo` | `cargo clippy --all-targets --offline`, with `--all-features` when the manifest declares features (default features when they conflict), `--workspace` for a workspace, and the host target when `.cargo/config` sets a build target the laptop cannot run. Correctness, suspicious, perf, style and complexity groups as bug (complexity lints as complexity), panic risks as bug (`unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented`, `unreachable`, `indexing_slicing`, `dbg_macro`, `mem_forget`, truncating and sign-losing casts; none reported in `#[cfg(test)]`, `tests/` or `benches/`), unsafe lints as security, `unused*` and `dead_code` as unused, compiler errors as type. `--strict`, or `strict = true` under `[package.metadata.code-jig]`, adds `arithmetic_side_effects`; `target = "<triple>"` there picks the target. A `[lints]` table in Cargo.toml replaces these levels with the project's own |
+| clippy | Rust, with `cargo` | `cargo clippy --all-targets --offline`, with `--all-features` when the manifest declares features (default features when they conflict), `--workspace` for a workspace, and the `.cargo/config` build target when its std is installed, otherwise the host target with a note in the report. Correctness, suspicious, perf, style and complexity groups as bug (complexity lints as complexity), panic risks as bug (`unwrap_used`, `panic`, `todo`, `unimplemented`, `dbg_macro`, `mem_forget`; none reported in `#[cfg(test)]` items, `#[test]` fns, `tests/` or `benches/`), unsafe lints as security, `unused*` and `dead_code` as unused, compiler errors as type. `--strict`, or `strict = true` under `[package.metadata.code-jig]`, adds the noisy lints `indexing_slicing`, `cast_possible_truncation`, `cast_sign_loss`, `expect_used`, `unreachable` and `arithmetic_side_effects` (also skipped in test code); `target = "<triple>"` there picks the target. A `[lints]` table in Cargo.toml replaces these levels with the project's own |
 | unsafe-scan | Rust | Each `unsafe` block, impl or extern block with no `SAFETY:` comment before it or right after its brace, as a low security finding that carries the file's unsafe count; lines clippy's `undocumented_unsafe_blocks` already reported are not repeated |
 | cargo-audit | Rust, with `Cargo.lock` and a local advisory db | RustSEC advisories as dependency, run with `--no-fetch`; run `cargo audit` once online to fill `~/.cargo/advisory-db` |
 | cargo-machete | Rust | Dependencies declared in Cargo.toml and never used, as unused |
@@ -46,7 +46,7 @@ Exit 0 means clean, 1 means findings or a tool error, 2 means no project, a bad 
 
 `code-jig analyze` itself sets `DOTNET_CLI_TELEMETRY_OPTOUT=1`, `SEMGREP_SEND_METRICS=off` and `KIOTA_CLI_TELEMETRY_OPTOUT=1` for every tool, in any shell; there is nothing to export. Missing tools are listed as skipped with an install hint.
 
-Analysis executes the repo's own code: `eslint.config.js`, MSBuild targets, mypy plugins and the tools in `node_modules/.bin`. Run it only where you would run the repo's tests.
+Analysis executes the repo's own code: `eslint.config.js`, MSBuild targets, mypy plugins, the tools in `node_modules/.bin`, and for Rust `build.rs` scripts, proc macros, the runner and linker wrappers in `.cargo/config`, and the toolchain a `rust-toolchain.toml` names (`RUSTUP_AUTO_INSTALL=0` stops rustup from downloading a missing one). Run it only where you would run the repo's tests.
 
 ## Fix in this order
 
