@@ -16,6 +16,7 @@ from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
+from functools import lru_cache
 from pathlib import Path, PureWindowsPath
 
 from codejig import unsafe_scan
@@ -84,6 +85,7 @@ class Tool:
     fallback_note: str = ""
     stderr: bool = False
     inline: Callable[[Path], list[Finding]] | None = None
+    note: Callable[[Path], str | None] | None = None
 
 
 class Partial(ValueError):
@@ -407,31 +409,54 @@ def _clippy_env(root: Path, tmp: Path) -> dict:
     return {"CLIPPY_CONF_DIR": str(tmp)}
 
 
-def _host_triple() -> str | None:
+@lru_cache(maxsize=32)
+def _rustc(cwd: str, *args: str) -> str:
     rustc = shutil.which("rustc")
     if rustc is None:
-        return None
+        return ""
     try:
-        out = subprocess.run([rustc, "-vV"], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False).stdout
-    except OSError:
-        return None
+        return subprocess.run([rustc, *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=30).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def _host_triple(cwd: Path | None = None) -> str | None:
+    out = _rustc(str(cwd or Path.cwd()), "-vV")
     return next((ln.split(":", 1)[1].strip() for ln in out.splitlines() if ln.startswith("host:")), None)
 
 
-def _config_sets_target(start: Path) -> bool:
+def _target_installed(triple: str, cwd: Path) -> bool:
+    sysroot = _rustc(str(cwd), "--print", "sysroot").strip()
+    return bool(sysroot) and (Path(sysroot) / "lib" / "rustlib" / triple).is_dir()
+
+
+def _config_targets(start: Path) -> list[str]:
     for base in (start, *start.parents):
         for name in ("config.toml", "config"):
             f = base / ".cargo" / name
-            if f.is_file() and (_cargo_data(f).get("build") or {}).get("target"):
-                return True
-    return False
+            target = (_cargo_data(f).get("build") or {}).get("target") if f.is_file() else None
+            if target:
+                return [target] if isinstance(target, str) else [t for t in target if isinstance(t, str)]
+    return []
 
 
-def _clippy_target(manifest: Path, data: dict) -> list[str]:
-    target = _jig_meta(data).get("target")
-    if not isinstance(target, str):
-        target = _host_triple() if _config_sets_target(manifest.parent) else None
-    return ["--target", target] if target else []
+def _clippy_target(manifest: Path, data: dict) -> tuple[list[str], str | None]:
+    chosen = _jig_meta(data).get("target")
+    if isinstance(chosen, str):
+        return ["--target", chosen], None
+    configured = _config_targets(manifest.parent)
+    missing = [t for t in configured if not _target_installed(t, manifest.parent)]
+    if not missing:
+        return [], None
+    host = _host_triple(manifest.parent)
+    if not host:
+        return [], None
+    return ["--target", host], f"build target {', '.join(missing)} from .cargo/config has no std installed (rustup target add); analyzed {host} instead, so code for the other target was not checked"
+
+
+def _clippy_note(root: Path) -> str | None:
+    manifest = _cargo_manifest(root)
+    return _clippy_target(manifest, _cargo_data(manifest))[1]
 
 
 def _clippy_argv(exe: str, root: Path, strict: bool, all_features: bool = True) -> list[str]:
@@ -439,13 +464,13 @@ def _clippy_argv(exe: str, root: Path, strict: bool, all_features: bool = True) 
     data = _cargo_data(manifest)
     scope = ["--workspace"] if "workspace" in data else []
     features = ["--all-features"] if all_features and data.get("features") else []
-    return [exe, "clippy", "--manifest-path", str(manifest), "--offline", "--all-targets", *scope, *features, *_clippy_target(manifest, data),
+    return [exe, "clippy", "--manifest-path", str(manifest), "--offline", "--all-targets", *scope, *features, *_clippy_target(manifest, data)[0],
             "--message-format", "json", "--quiet", "--", *_clippy_flags(manifest, strict)]
 
 
 def clippy_tool(strict: bool = False) -> Tool:
     return Tool("clippy", "rust", lambda exe, root, tmp: _clippy_argv(exe, root, strict), parse_clippy, hint="rustup component add clippy",
-                binary="cargo", findings_exit=(101,), env=_clippy_env, fallback=lambda exe, root, tmp: _clippy_argv(exe, root, strict, False),
+                binary="cargo", findings_exit=(101,), env=_clippy_env, note=_clippy_note, fallback=lambda exe, root, tmp: _clippy_argv(exe, root, strict, False),
                 fallback_note="--all-features does not compile (conflicting features?); analyzed the default features only")
 
 
@@ -841,6 +866,9 @@ def run_tools(tools: list[Tool], root: Path, stacks: set[str], path: str | None 
         kept = [f for f in found if _wanted(t.name, f, root)]
         report = replace(report, dropped=report.dropped + len(found) - len(kept))
         _add_new(report.findings, seen, kept)
+        note = t.note(root) if t.note else None
+        if note:
+            report.errors.append((t.name, note))
         if error:
             report.errors.append((t.name, error))
     return report

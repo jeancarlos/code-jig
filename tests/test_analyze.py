@@ -834,13 +834,36 @@ class RustBuildScope(unittest.TestCase):
         self.assertEqual(report.errors, [])
         self.assertEqual(sorted(f.path for f in report.findings if f.rule == "clippy::indexing_slicing"), ["a/src/lib.rs", "b/src/lib.rs"])
 
-    def test_config_target_is_replaced_by_the_host(self):
+    def test_installed_config_target_is_kept(self):
         root = rust_crate(self)
-        write(root / ".cargo" / "config.toml", '[build]\ntarget = "armv7-unknown-linux-musleabihf"\n')
+        host = analyze._host_triple(root)
+        write(root / ".cargo" / "config.toml", f'[build]\ntarget = "{host}"\n')
         argv = analyze.clippy_tool().argv("cargo", root, Path())
-        host = analyze._host_triple()
-        self.assertEqual(argv[argv.index("--target") + 1], host)
-        self.assertEqual(clippy_findings(root).errors, [])
+        self.assertNotIn("--target", argv)
+        self.assertIsNone(analyze._clippy_note(root))
+
+    def test_uninstalled_config_target_falls_back_to_host_and_says_so(self):
+        root = rust_crate(self)
+        write(root / ".cargo" / "config.toml", '[build]\ntarget = "thumbv7em-none-eabi"\n')
+        with mock.patch.object(analyze, "_target_installed", return_value=False):
+            argv = analyze.clippy_tool().argv("cargo", root, Path())
+            note = analyze._clippy_note(root)
+        self.assertEqual(argv[argv.index("--target") + 1], analyze._host_triple(root))
+        self.assertIn("thumbv7em-none-eabi", note)
+        self.assertIn("rustup target add", note)
+
+    def test_note_reaches_the_report(self):
+        root = rust_crate(self)
+        write(root / ".cargo" / "config.toml", '[build]\ntarget = "thumbv7em-none-eabi"\n')
+        report = clippy_findings(root)
+        self.assertEqual([t for t, _ in report.errors], ["clippy"])
+        self.assertIn("thumbv7em-none-eabi", report.errors[0][1])
+        self.assertIn("clippy::unwrap_used", {f.rule for f in report.findings})
+
+    def test_installed_target_is_detected_in_the_sysroot(self):
+        root = rust_crate(self)
+        self.assertTrue(analyze._target_installed(analyze._host_triple(root), root))
+        self.assertFalse(analyze._target_installed("nope-unknown-none", root))
 
     def test_metadata_target_wins(self):
         root = rust_crate(self, '[package.metadata.code-jig]\ntarget = "x86_64-unknown-linux-gnu"\n')
