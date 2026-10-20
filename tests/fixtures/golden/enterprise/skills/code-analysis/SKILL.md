@@ -5,17 +5,18 @@ description: Use when the user asks to analyse code quality, find bugs, code sme
 
 # Code analysis
 
-`harness analyze` runs the local analyzers for every stack it finds (.NET, Node, Python, Rust, Java, Go) and prints one summary grouped the way Sonar groups issues. It never downloads a tool and never sends code anywhere.
+`code-jig analyze` runs the local analyzers for every stack it finds (.NET, Node, Python, Rust, Java, Go) and prints one summary grouped the way Sonar groups issues. It never downloads a tool and never sends code anywhere.
 
 ## Run it
 
-From the repository root run `harness analyze` (the launcher installed with the pack). Without the launcher, point `PYTHONPATH` at the codex-harness checkout, the folder that contains `harness/` (POSIX: `PYTHONPATH=<checkout> python -m harness analyze`; Windows PowerShell: `$env:PYTHONPATH = "<checkout>"; py -3 -m harness analyze`):
+From the repository root run `code-jig analyze` (the launcher installed with the pack). Without the launcher, point `PYTHONPATH` at the code-jig checkout, the folder that contains `codejig/` (POSIX: `PYTHONPATH=<checkout> python -m codejig analyze`; Windows PowerShell: `$env:PYTHONPATH = "<checkout>"; py -3 -m codejig analyze`):
 
 ```
-harness analyze                 # whole repo
-harness analyze --base main     # only files changed since main, plus untracked ones
-harness analyze --top 30        # more findings per category
-harness analyze --json          # machine-readable
+code-jig analyze                 # whole repo
+code-jig analyze --base main     # only files changed since main, plus untracked ones
+code-jig analyze --top 30        # more findings per category
+code-jig analyze --json          # machine-readable
+code-jig analyze --strict        # Rust: also arithmetic_side_effects
 ```
 
 Exit 0 means clean, 1 means findings or a tool error, 2 means no project, a bad `--base`, or no analyzer installed.
@@ -32,14 +33,18 @@ Exit 0 means clean, 1 means findings or a tool error, 2 means no project, a bad 
 | knip | Node | Unused files, exports, types and dependencies; dependencies used but not listed, and imports that do not resolve |
 | tsc | Node, with `tsconfig.json` | Type errors |
 | dotnet build | .NET | Compiler and analyzer warnings, SonarAnalyzer and Roslynator included when the project references them, and NuGet audit warnings (NU1901-NU1904) for vulnerable packages; restore asks nuget.org for advisories, sending package names |
-| clippy | Rust, with `cargo` | `cargo clippy` lints: complexity lints as complexity, `unused*` and `dead_code` as unused, compiler errors as type, the rest bug |
+| clippy | Rust, with `cargo` | `cargo clippy --all-targets --offline`, with `--all-features` when the manifest declares features (default features when they conflict), `--workspace` for a workspace, and the host target when `.cargo/config` sets a build target the laptop cannot run. Correctness, suspicious, perf, style and complexity groups as bug (complexity lints as complexity), panic risks as bug (`unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented`, `unreachable`, `indexing_slicing`, `dbg_macro`, `mem_forget`, truncating and sign-losing casts; none reported in `#[cfg(test)]`, `tests/` or `benches/`), unsafe lints as security, `unused*` and `dead_code` as unused, compiler errors as type. `--strict`, or `strict = true` under `[package.metadata.code-jig]`, adds `arithmetic_side_effects`; `target = "<triple>"` there picks the target. A `[lints]` table in Cargo.toml replaces these levels with the project's own |
+| unsafe-scan | Rust | Each `unsafe` block, impl or extern block with no `SAFETY:` comment before it or right after its brace, as a low security finding that carries the file's unsafe count; lines clippy's `undocumented_unsafe_blocks` already reported are not repeated |
+| cargo-audit | Rust, with `Cargo.lock` and a local advisory db | RustSEC advisories as dependency, run with `--no-fetch`; run `cargo audit` once online to fill `~/.cargo/advisory-db` |
+| cargo-machete | Rust | Dependencies declared in Cargo.toml and never used, as unused |
+| cargo-deny | Rust, with `deny.toml` | `cargo deny check --disable-fetch` errors and warnings as dependency |
 | pmd | Java | PMD 7 quickstart ruleset: Security rules as security, complexity and unused-code rules grouped as such, the rest bug |
 | go-vet | Go | `go vet` diagnostics, all as bug |
 | semgrep | all, with `.semgrep.yml` or `.semgrep/` | Your own local rules only, run with `--metrics=off` |
 | gitleaks | all | Secrets in the working tree, uncommitted files included, and in the git history; the secret itself is never printed |
-| osv-scanner | all | Known vulnerabilities in lockfiles, with `--offline`: the first run downloads the vulnerability database, no project data leaves |
+| osv-scanner | all | Known vulnerabilities in lockfiles (Cargo.lock included), with `--offline`: the first run downloads the vulnerability database, no project data leaves |
 
-`harness analyze` itself sets `DOTNET_CLI_TELEMETRY_OPTOUT=1`, `SEMGREP_SEND_METRICS=off` and `KIOTA_CLI_TELEMETRY_OPTOUT=1` for every tool, in any shell; there is nothing to export. Missing tools are listed as skipped with an install hint.
+`code-jig analyze` itself sets `DOTNET_CLI_TELEMETRY_OPTOUT=1`, `SEMGREP_SEND_METRICS=off` and `KIOTA_CLI_TELEMETRY_OPTOUT=1` for every tool, in any shell; there is nothing to export. Missing tools are listed as skipped with an install hint.
 
 Analysis executes the repo's own code: `eslint.config.js`, MSBuild targets, mypy plugins and the tools in `node_modules/.bin`. Run it only where you would run the repo's tests.
 
@@ -58,7 +63,7 @@ Rerun with `--base` and the branch this one will merge into (`main` when it exis
 
 Only with the user's agreement, as dev dependencies:
 
-- .NET: in `Directory.Build.props`, `<PackageReference Include="SonarAnalyzer.CSharp" PrivateAssets="all" />` and `<PackageReference Include="Roslynator.Analyzers" PrivateAssets="all" />`. Raise rules in `.editorconfig`, for example `dotnet_diagnostic.S3776.severity = warning`. SonarAnalyzer is under SonarSource's source-available licence, free to use but not open source; Roslynator and the built-in CA rules are the open-source alternative. Run dotnet commands with `DOTNET_CLI_TELEMETRY_OPTOUT=1`.
+- .NET: in `Directory.Build.props`, `<PackageReference Include="SonarAnalyzer.CSharp" PrivateAssets="all" />` and `<PackageReference Include="Roslynator.Analyzers" PrivateAssets="all" />`. Raise rules in `.editorconfig`, for example `dotnet_diagnostic.S3776.severity = warning`. SonarAnalyzer is under SonarSource's source-available licence, free to use but not open source; Roslynator and the built-in CA rules are the open-source alternative. Run dotnet commands with `DOTNET_CLI_TELEMETRY_OPTOUT=1` (PowerShell: `$env:DOTNET_CLI_TELEMETRY_OPTOUT = "1"` first).
 - Node: `npm install -D eslint eslint-plugin-sonarjs eslint-plugin-security typescript-eslint`, then in `eslint.config.mjs`:
 
   ```js
