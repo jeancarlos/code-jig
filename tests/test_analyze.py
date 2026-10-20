@@ -15,7 +15,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codejig import analyze
+from codejig import analyze, unsafe_scan
 from tests.util import tree, write
 
 LIZARD_CSV = textwrap.dedent('''\
@@ -749,7 +749,7 @@ class RustClippy(unittest.TestCase):
         got = self.rules(report)
         for expected in (("bug", "clippy::unwrap_used", "src/lib.rs"), ("bug", "clippy::indexing_slicing", "src/lib.rs"),
                          ("bug", "clippy::panic", "src/lib.rs"), ("bug", "clippy::cast_possible_truncation", "src/lib.rs"),
-                         ("bug", "clippy::needless_return", "src/lib.rs"), ("security", "clippy::undocumented_unsafe_blocks", "src/lib.rs")):
+                         ("bug", "clippy::needless_return", "src/lib.rs")):
             self.assertIn(expected, got)
         self.assertEqual({f.line for f in report.findings if f.rule in analyze.CLIPPY_PANIC}, {2, 6, 10})
         self.assertFalse([f for f in report.findings if f.path.startswith("tests/")])
@@ -902,6 +902,58 @@ class RustSupplyChain(unittest.TestCase):
         tool = analyze.Tool("cargo-deny", "rust", lambda exe, root, tmp: [sys.executable, str(script)], analyze.parse_cargo_deny, findings_exit=(1,), stderr=True)
         found, error = analyze._run_one(tool, sys.executable, self.root, dict(os.environ), 60)
         self.assertEqual((error, [f.rule for f in found]), (None, ["banned"]))
+
+
+class UnsafeScan(unittest.TestCase):
+    SRC = textwrap.dedent('''\
+        fn a(p: *const u8) -> u8 {
+            // SAFETY: caller passes a valid pointer
+            unsafe { *p }
+        }
+        fn b(p: *const u8) -> u8 {
+            unsafe { *p }
+        }
+        fn c(p: *const u8) -> u8 {
+            unsafe {
+                // Safety: checked above
+                *p
+            }
+        }
+        fn d<'a>(p: &'a str) -> &'a str {
+            let _ = "unsafe { not code }";
+            let _ = r#"unsafe { " still a string }"#;
+            let _ = '\\'';
+            // unsafe { in a comment }
+            /* unsafe { /* nested */ } */
+            p
+        }
+        unsafe fn e() {}
+        unsafe impl Send for T {}
+        fn f(p: *const u8) -> u8 {
+            unsafe { *p }
+        }
+    ''')
+
+    def test_counts_and_undocumented_lines(self):
+        self.assertEqual(unsafe_scan.undocumented(self.SRC), (5, [6, 23, 25]))
+
+    def test_unsafe_in_strings_and_comments_is_not_counted(self):
+        self.assertEqual(unsafe_scan.undocumented('let s = "unsafe {";\n// unsafe {\n'), (0, []))
+
+    def test_tool_reports_low_security_per_block(self):
+        root = rust_crate(self, lib=self.SRC)
+        report = analyze.run_tools([t for t in analyze.TOOLS if t.name == "unsafe-scan"], root, {"rust"})
+        self.assertEqual(report.errors, [])
+        self.assertEqual([(f.category, f.rule, f.path, f.line) for f in report.findings], [("security", "undocumented-unsafe", "src/lib.rs", n) for n in (6, 23, 25)])
+        self.assertIn("low", report.findings[0].message)
+
+    def test_tool_runs_without_any_binary_on_the_path(self):
+        root = tree(self)
+        write(root / "Cargo.toml", "")
+        write(root / "src" / "main.rs", "fn main() { unsafe { } }\n")
+        report = analyze.run_tools([t for t in analyze.TOOLS if t.name == "unsafe-scan"], root, {"rust"}, path=str(root))
+        self.assertEqual(report.ran, ["unsafe-scan"])
+        self.assertEqual(len(report.findings), 1)
 
 
 class ClippyCategories(unittest.TestCase):

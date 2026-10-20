@@ -18,6 +18,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path, PureWindowsPath
 
+from codejig import unsafe_scan
+
 CATEGORIES = ("security", "secret", "dependency", "bug", "type", "unused", "complexity", "duplication")
 TOOL_ENV = {"SEMGREP_SEND_METRICS": "off", "SEMGREP_ENABLE_VERSION_CHECK": "0", "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
             "DOTNET_NOLOGO": "1", "KIOTA_CLI_TELEMETRY_OPTOUT": "1", "PYTHONUTF8": "1"}
@@ -81,6 +83,7 @@ class Tool:
     fallback: Callable[[str, Path, Path], list[str]] | None = None
     fallback_note: str = ""
     stderr: bool = False
+    inline: Callable[[Path], list[Finding]] | None = None
 
 
 class Partial(ValueError):
@@ -99,8 +102,7 @@ class Report:
 
 
 CLIPPY_GROUPS = ("correctness", "suspicious", "perf", "style", "complexity")
-CLIPPY_EXTRA = ("cognitive_complexity", "too_many_arguments", "too_many_lines", "undocumented_unsafe_blocks", "missing_safety_doc",
-                "not_unsafe_ptr_arg_deref", "multiple_unsafe_ops_per_block", "transmute_undefined_repr")
+CLIPPY_EXTRA = ("cognitive_complexity", "too_many_arguments", "too_many_lines", "missing_safety_doc", "not_unsafe_ptr_arg_deref", "multiple_unsafe_ops_per_block", "transmute_undefined_repr")
 CLIPPY_IN_TESTS = ("unwrap", "expect", "panic", "indexing-slicing", "dbg")
 TEST_DIRS = {"tests", "benches"}
 CARGO, GO_MOD = ("Cargo.toml",), ("go.mod",)
@@ -516,6 +518,20 @@ def parse_cargo_deny(out: str, root: Path, tmp: Path) -> list[Finding]:
     return found
 
 
+def scan_unsafe(root: Path) -> list[Finding]:
+    found = []
+    for name in source_files(root):
+        if not name.endswith(".rs"):
+            continue
+        try:
+            total, bare = unsafe_scan.undocumented((root / name).read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+        found += [Finding("security", "unsafe-scan", "undocumented-unsafe", name, n,
+                          f"low: unsafe without a SAFETY comment ({total} unsafe in this file)") for n in bare]
+    return found
+
+
 def parse_go_vet(out: str, root: Path, tmp: Path) -> list[Finding]:
     found, decoder, pos = [], json.JSONDecoder(), 0
     while pos < len(out) and out[pos:].strip():
@@ -690,6 +706,7 @@ TOOLS = [
     Tool("cargo-deny", "rust", lambda exe, root, tmp: [exe, "--manifest-path", str(_cargo_manifest(root)), "--format", "json", "check", "--disable-fetch"],
          parse_cargo_deny, lambda root: (_cargo_manifest(root).parent / "deny.toml").is_file(), "cargo install cargo-deny", reason="no deny.toml",
          binary="cargo-deny", findings_exit=(1,), stderr=True),
+    Tool("unsafe-scan", "rust", lambda exe, root, tmp: [], lambda out, root, tmp: [], inline=scan_unsafe),
     Tool("pmd", "java", lambda exe, root, tmp: [exe, "check", "-d", ".", "-R", "rulesets/java/quickstart.xml", "-f", "json", "--no-cache", "--no-progress"],
          parse_pmd, hint="install PMD 7 from its GitHub releases", findings_exit=(4,)),
     Tool("go-vet", "go", lambda exe, root, tmp: [exe, "-C", str(marker_dir(root, GO_MOD) or root), "vet", "-json", "./..."], parse_go_vet, hint="install Go", binary="go"),
@@ -802,11 +819,11 @@ def run_tools(tools: list[Tool], root: Path, stacks: set[str], path: str | None 
         if not t.applies(root):
             report.skipped.append((t.name, t.reason))
             continue
-        exe = resolve(t.binary or t.name, root, t.stack, path)
+        exe = resolve(t.binary or t.name, root, t.stack, path) if t.inline is None else sys.executable
         if exe is None:
             report.skipped.append((t.name, f"not installed; {t.hint}"))
             continue
-        found, error = _run_one(t, exe, root, env, timeout)
+        found, error = (t.inline(root), None) if t.inline else _run_one(t, exe, root, env, timeout)
         report.ran.append(t.name)
         kept = [f for f in found if _wanted(t.name, f, root)]
         report = replace(report, dropped=report.dropped + len(found) - len(kept))
