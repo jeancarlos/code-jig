@@ -4,6 +4,9 @@ What changed in each release, written for the people who install code-jig. Versi
 
 ## Unreleased
 
+- `doctor`, `cross-review` and `skill-check` find the native Codex binary behind an npm launcher such as `codex.CMD`, so a Windows install no longer needs `--codex-bin`.
+- A tier model missing from your account's catalog now lists the models of the same family first.
+
 ## 0.13.0 - 2026-10-20
 
 - `code-jig analyze` now covers Rust, Java and Go projects as well, with an unsafe-code scan that checks each `unsafe` block for a `SAFETY` note.
