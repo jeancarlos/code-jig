@@ -16,13 +16,14 @@ from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
+from functools import lru_cache
 from pathlib import Path, PureWindowsPath
 
 from codejig import unsafe_scan
 
 CATEGORIES = ("security", "secret", "dependency", "bug", "type", "unused", "complexity", "duplication")
 TOOL_ENV = {"SEMGREP_SEND_METRICS": "off", "SEMGREP_ENABLE_VERSION_CHECK": "0", "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
-            "DOTNET_NOLOGO": "1", "KIOTA_CLI_TELEMETRY_OPTOUT": "1", "PYTHONUTF8": "1"}
+            "DOTNET_NOLOGO": "1", "KIOTA_CLI_TELEMETRY_OPTOUT": "1", "PYTHONUTF8": "1", "RUSTUP_AUTO_INSTALL": "0"}
 COGNITIVE, CYCLOMATIC, NLOC, PARAMS = 15, 15, 100, 7
 CODE_SUFFIXES = {".py", ".cs", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".vue", ".java", ".kt", ".go", ".rs", ".swift", ".php", ".rb", ".scala", ".lua", ".c", ".cc", ".cpp", ".h", ".hpp", ".m"}
 SKIP_DIRS = {".git", "node_modules", "bin", "obj", ".venv", "venv", "dist", "build", "__pycache__", "coverage", "htmlcov", ".nyc_output", "target", "vendor"}
@@ -44,9 +45,10 @@ KNIP_BROKEN = ("unlisted", "unresolved", "binaries", "cycles")
 MYPY = re.compile(r"^(.+?):(\d+)(?::\d+)*: error: (.*?)(?:  \[([\w-]+)\])?$")
 DUP_LOC = re.compile(r"^(.+):(\d+) ~ (\d+)$")
 GO_POSN = re.compile(r"^(.+):(\d+):\d+$")
-CLIPPY_PANIC = {f"clippy::{n}" for n in (
-    "unwrap_used", "expect_used", "panic", "todo", "unimplemented", "unreachable", "indexing_slicing", "dbg_macro", "mem_forget",
-    "cast_possible_truncation", "cast_sign_loss", "arithmetic_side_effects")}
+CLIPPY_PANIC_DEFAULT = {f"clippy::{n}" for n in ("unwrap_used", "panic", "todo", "unimplemented", "dbg_macro", "mem_forget")}
+CLIPPY_STRICT = {f"clippy::{n}" for n in (
+    "indexing_slicing", "cast_possible_truncation", "cast_sign_loss", "expect_used", "unreachable", "arithmetic_side_effects")}
+CLIPPY_PANIC = CLIPPY_PANIC_DEFAULT | CLIPPY_STRICT
 CLIPPY_UNSAFE = {f"clippy::{n}" for n in (
     "undocumented_unsafe_blocks", "missing_safety_doc", "not_unsafe_ptr_arg_deref", "multiple_unsafe_ops_per_block", "transmute_undefined_repr")}
 CLIPPY_COMPLEXITY = {"clippy::cognitive_complexity", "clippy::too_many_arguments", "clippy::too_many_lines", "clippy::type_complexity",
@@ -84,6 +86,7 @@ class Tool:
     fallback_note: str = ""
     stderr: bool = False
     inline: Callable[[Path], list[Finding]] | None = None
+    note: Callable[[Path], str | None] | None = None
 
 
 class Partial(ValueError):
@@ -104,6 +107,7 @@ class Report:
 CLIPPY_GROUPS = ("correctness", "suspicious", "perf", "style", "complexity")
 CLIPPY_EXTRA = ("cognitive_complexity", "too_many_arguments", "too_many_lines", "undocumented_unsafe_blocks", "missing_safety_doc", "not_unsafe_ptr_arg_deref", "multiple_unsafe_ops_per_block", "transmute_undefined_repr")
 CLIPPY_IN_TESTS = ("unwrap", "expect", "panic", "indexing-slicing", "dbg")
+UNSAFE_SCAN_MAX_BYTES = 2_000_000
 TEST_DIRS = {"tests", "benches"}
 CARGO, GO_MOD = ("Cargo.toml",), ("go.mod",)
 JAVA_MARKERS = ("pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts")
@@ -393,9 +397,9 @@ def _clippy_flags(manifest: Path, strict: bool) -> list[str]:
     data = _cargo_data(manifest)
     if _own_lints(data):
         return []
-    names = [f"clippy::{n}" for n in (*CLIPPY_GROUPS, *CLIPPY_EXTRA)] + sorted(CLIPPY_PANIC - {"clippy::arithmetic_side_effects"})
+    names = [f"clippy::{n}" for n in (*CLIPPY_GROUPS, *CLIPPY_EXTRA)] + sorted(CLIPPY_PANIC_DEFAULT)
     if strict or _jig_meta(data).get("strict") is True:
-        names.append("clippy::arithmetic_side_effects")
+        names += sorted(CLIPPY_STRICT)
     return [a for n in names for a in ("-W", n)]
 
 
@@ -407,31 +411,55 @@ def _clippy_env(root: Path, tmp: Path) -> dict:
     return {"CLIPPY_CONF_DIR": str(tmp)}
 
 
-def _host_triple() -> str | None:
+@lru_cache(maxsize=32)
+def _rustc(cwd: str, *args: str) -> str:
     rustc = shutil.which("rustc")
     if rustc is None:
-        return None
+        return ""
     try:
-        out = subprocess.run([rustc, "-vV"], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False).stdout
-    except OSError:
-        return None
+        return subprocess.run([rustc, *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=30,
+                              env={**os.environ, **TOOL_ENV}).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def _host_triple(cwd: Path | None = None) -> str | None:
+    out = _rustc(str(cwd or Path.cwd()), "-vV")
     return next((ln.split(":", 1)[1].strip() for ln in out.splitlines() if ln.startswith("host:")), None)
 
 
-def _config_sets_target(start: Path) -> bool:
+def _target_installed(triple: str, cwd: Path) -> bool:
+    sysroot = _rustc(str(cwd), "--print", "sysroot").strip()
+    return bool(sysroot) and (Path(sysroot) / "lib" / "rustlib" / triple).is_dir()
+
+
+def _config_targets(start: Path) -> list[str]:
     for base in (start, *start.parents):
         for name in ("config.toml", "config"):
             f = base / ".cargo" / name
-            if f.is_file() and (_cargo_data(f).get("build") or {}).get("target"):
-                return True
-    return False
+            target = (_cargo_data(f).get("build") or {}).get("target") if f.is_file() else None
+            if target:
+                return [target] if isinstance(target, str) else [t for t in target if isinstance(t, str)]
+    return []
 
 
-def _clippy_target(manifest: Path, data: dict) -> list[str]:
-    target = _jig_meta(data).get("target")
-    if not isinstance(target, str):
-        target = _host_triple() if _config_sets_target(manifest.parent) else None
-    return ["--target", target] if target else []
+def _clippy_target(manifest: Path, data: dict) -> tuple[list[str], str | None]:
+    chosen = _jig_meta(data).get("target")
+    if isinstance(chosen, str):
+        return ["--target", chosen], None
+    configured = _config_targets(manifest.parent)
+    missing = [t for t in configured if not _target_installed(t, manifest.parent)]
+    if not missing:
+        return [], None
+    host = _host_triple(manifest.parent)
+    if not host:
+        return [], None
+    return ["--target", host], f"build target {', '.join(missing)} from .cargo/config has no std installed (rustup target add); analyzed {host} instead, so code for the other target was not checked"
+
+
+def _clippy_note(root: Path) -> str | None:
+    manifest = _cargo_manifest(root)
+    return _clippy_target(manifest, _cargo_data(manifest))[1]
 
 
 def _clippy_argv(exe: str, root: Path, strict: bool, all_features: bool = True) -> list[str]:
@@ -439,18 +467,27 @@ def _clippy_argv(exe: str, root: Path, strict: bool, all_features: bool = True) 
     data = _cargo_data(manifest)
     scope = ["--workspace"] if "workspace" in data else []
     features = ["--all-features"] if all_features and data.get("features") else []
-    return [exe, "clippy", "--manifest-path", str(manifest), "--offline", "--all-targets", *scope, *features, *_clippy_target(manifest, data),
+    return [exe, "clippy", "--manifest-path", str(manifest), "--offline", "--all-targets", *scope, *features, *_clippy_target(manifest, data)[0],
             "--message-format", "json", "--quiet", "--", *_clippy_flags(manifest, strict)]
 
 
 def clippy_tool(strict: bool = False) -> Tool:
     return Tool("clippy", "rust", lambda exe, root, tmp: _clippy_argv(exe, root, strict), parse_clippy, hint="rustup component add clippy",
-                binary="cargo", findings_exit=(101,), env=_clippy_env, fallback=lambda exe, root, tmp: _clippy_argv(exe, root, strict, False),
+                binary="cargo", findings_exit=(101,), env=_clippy_env, note=_clippy_note, fallback=lambda exe, root, tmp: _clippy_argv(exe, root, strict, False),
                 fallback_note="--all-features does not compile (conflicting features?); analyzed the default features only")
 
 
+def _in_test_code(source: Path, line: int, cache: dict) -> bool:
+    if source not in cache:
+        try:
+            cache[source] = unsafe_scan.test_line_ranges(source.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            cache[source] = []
+    return any(start <= line <= end for start, end in cache[source])
+
+
 def parse_clippy(out: str, root: Path, tmp: Path) -> list[Finding]:
-    found = []
+    found, ranges = [], {}
     for line in out.splitlines():
         if not line.startswith("{"):
             continue
@@ -460,8 +497,9 @@ def parse_clippy(out: str, root: Path, tmp: Path) -> list[Finding]:
         if span is None or msg.get("level") not in ("warning", "error"):
             continue
         code = (msg.get("code") or {}).get("code") or ""
-        path = rel(str(_cargo_manifest(root).parent / span["file_name"]), root)
-        if code in CLIPPY_PANIC and not TEST_DIRS.isdisjoint(Path(path).parts[:-1]):
+        source = _cargo_manifest(root).parent / span["file_name"]
+        path = rel(str(source), root)
+        if code in CLIPPY_PANIC and (not TEST_DIRS.isdisjoint(Path(path).parts[:-1]) or _in_test_code(source, int(span["line_start"]), ranges)):
             continue
         found.append(Finding(_clippy_category(code, msg["level"]), "clippy", code or msg["level"], path, int(span["line_start"]), msg["message"]))
     return found
@@ -510,14 +548,14 @@ def parse_cargo_machete(out: str, root: Path, tmp: Path) -> list[Finding]:
 
 
 def parse_cargo_deny(out: str, root: Path, tmp: Path) -> list[Finding]:
-    found = []
+    found, lock = [], rel(str(_cargo_manifest(root).parent / "Cargo.lock"), root)
     for line in out.splitlines():
         if not line.startswith("{"):
             continue
         entry = json.loads(line)
         fields = entry.get("fields") or {}
         if entry.get("type") == "diagnostic" and fields.get("severity") in ("error", "warning"):
-            found.append(Finding("dependency", "cargo-deny", fields.get("code") or "diagnostic", "Cargo.lock", 0, fields.get("message", "")))
+            found.append(Finding("dependency", "cargo-deny", fields.get("code") or "diagnostic", lock, 0, fields.get("message", "")))
     return found
 
 
@@ -527,6 +565,8 @@ def scan_unsafe(root: Path) -> list[Finding]:
         if not name.endswith(".rs"):
             continue
         try:
+            if (root / name).stat().st_size > UNSAFE_SCAN_MAX_BYTES:
+                continue
             total, bare = unsafe_scan.undocumented((root / name).read_text(encoding="utf-8", errors="replace"))
         except OSError:
             continue
@@ -777,9 +817,11 @@ def _run_one(t: Tool, exe: str, root: Path, env: dict, timeout: int) -> tuple[li
         tmp = Path(d)
         error = None
         try:
-            code, out, err = _launch(t, t.argv(exe, root, tmp), root, env, tmp, timeout)
-            if t.fallback and code not in t.ok and _has_type_error(t, out, root, tmp):
-                code, out, err = _launch(t, t.fallback(exe, root, tmp), root, env, tmp, timeout)
+            argv = t.argv(exe, root, tmp)
+            code, out, err = _launch(t, argv, root, env, tmp, timeout)
+            retry = t.fallback(exe, root, tmp) if t.fallback and code not in t.ok and _has_type_error(t, out, root, tmp) else argv
+            if retry != argv:
+                code, out, err = _launch(t, retry, root, env, tmp, timeout)
                 error = None if _has_type_error(t, out, root, tmp) else t.fallback_note
         except subprocess.TimeoutExpired:
             return [], f"timed out after {timeout}s"
@@ -841,6 +883,9 @@ def run_tools(tools: list[Tool], root: Path, stacks: set[str], path: str | None 
         kept = [f for f in found if _wanted(t.name, f, root)]
         report = replace(report, dropped=report.dropped + len(found) - len(kept))
         _add_new(report.findings, seen, kept)
+        note = t.note(root) if t.note else None
+        if note:
+            report.errors.append((t.name, note))
         if error:
             report.errors.append((t.name, error))
     return report
