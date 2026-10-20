@@ -5,7 +5,7 @@ import io
 import unittest
 from unittest import mock
 
-from codejig.doctor import SHIM_MAX_BYTES, check_binary, report
+from codejig.doctor import SHIM_MAX_BYTES, check_binary, report, resolve_codex_bin
 from tests.util import tree
 
 
@@ -56,3 +56,31 @@ class Report(unittest.TestCase):
             self.assertEqual(report([("ok", "a", "fine"), ("warn", "b", "hmm")]), 0)
             self.assertEqual(report([("FAIL", "c", "bad")]), 1)
         self.assertIn("FAIL c: bad", out.getvalue())
+
+
+class ResolveBinary(unittest.TestCase):
+    def setUp(self):
+        self.root = tree(self)
+        self.shim = self.root / "codex.CMD"
+        self.shim.write_text("@node codex.js %*\n", encoding="utf-8")
+
+    def native(self):
+        d = self.root / "node_modules" / "@openai" / "codex" / "vendor" / "x86_64"
+        d.mkdir(parents=True)
+        return fake_binary(d, ["alpha_key"])
+
+    def test_launcher_resolves_to_the_native_binary_beside_it(self):
+        native = self.native()
+        self.assertEqual(resolve_codex_bin(str(self.shim)), native)
+
+    def test_launcher_without_a_native_binary_stays_a_launcher(self):
+        self.assertEqual(resolve_codex_bin(str(self.shim)), self.shim)
+
+    def test_a_native_binary_is_kept(self):
+        native = fake_binary(self.root, ["alpha_key"])
+        self.native()
+        self.assertEqual(resolve_codex_bin(str(native)), native)
+
+    def test_nothing_to_resolve(self):
+        with mock.patch("shutil.which", return_value=None), mock.patch.dict("os.environ", {}, clear=True):
+            self.assertIsNone(resolve_codex_bin(None))

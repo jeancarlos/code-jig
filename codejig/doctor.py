@@ -43,9 +43,21 @@ PACK_KEYS = (
 SHIM_MAX_BYTES = 1_000_000
 
 
+def native_behind(launcher: Path) -> Path | None:
+    pkg = launcher.parent / "node_modules" / "@openai" / "codex"
+    if not pkg.is_dir():
+        return None
+    return next((p for p in sorted(pkg.rglob("codex*")) if p.is_file() and p.stem == "codex" and p.suffix in ("", ".exe")
+                 and p.stat().st_size >= SHIM_MAX_BYTES), None)
+
+
 def resolve_codex_bin(arg: str | None) -> Path | None:
     value = arg or os.environ.get("CODEX_BIN") or shutil.which("codex")
-    return Path(value) if value else None
+    if not value:
+        return None
+    path = Path(value)
+    small = path.is_file() and path.stat().st_size < SHIM_MAX_BYTES
+    return (native_behind(path) if small else None) or path
 
 
 def check_binary(bin_path: Path | None, keys=PACK_KEYS) -> list[Check]:
@@ -181,7 +193,9 @@ def _profile_check(home: Path, t, policy, ov: Overlay) -> Check:
 def _model_check(t, cat: dict) -> Check:
     name = f"tier {t.name} model"
     if t.model not in cat:
-        return ("FAIL", name, f"{t.model} is not in this account's catalog; candidates: {', '.join(sorted(cat))}")
+        near = sorted(m for m in cat if family(m) == family(t.model))
+        hint = f"same family: {', '.join(near)}; " if near else ""
+        return ("FAIL", name, f"{t.model} is not in this account's catalog; {hint}candidates: {', '.join(sorted(cat))}")
     if cat[t.model] and t.effort not in cat[t.model]:
         return ("FAIL", name, f"{t.model} does not support {t.effort}; supported: {', '.join(sorted(cat[t.model]))}")
     return ("ok", name, f"{t.model} supports {t.effort}")

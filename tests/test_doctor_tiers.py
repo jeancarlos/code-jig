@@ -47,6 +47,12 @@ class Tiers(unittest.TestCase):
         self.assertIn("m-a", detail)
         self.assertEqual(self.levels()["tier default model"], "FAIL")
 
+    def test_missing_model_names_its_family_first(self):
+        write(self.ov.root / "profiles.toml", 'default = "m-zzz"\nreview = "n-b"\n')
+        run(self.core, self.ov, self.home)
+        detail = next(d for lv, n, d in check_tiers(self.home, self.core, self.ov) if n == "tier default model")
+        self.assertIn("same family: m-a; candidates:", detail)
+
     def test_unsupported_effort_fails(self):
         write(self.ov.root / "profiles.toml", 'default = "n-b"\nreview = "m-a"\n')
         run(self.core, self.ov, self.home)
