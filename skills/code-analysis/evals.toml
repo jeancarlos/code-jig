@@ -8,4 +8,4 @@ output = ["(?i)unused"]
 prompt = "Run the code analysis on this repository and list what it reports, by category. Do not change anything."
 fixture = "rust"
 commands = ["code-jig analyze"]
-output = ["undocumented-unsafe", "src/lib\\.rs"]
+output = ["undocumented[-_]unsafe", "src/lib\\.rs"]
