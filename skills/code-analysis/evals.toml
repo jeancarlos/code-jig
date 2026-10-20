@@ -3,3 +3,9 @@ prompt = "What would Sonar complain about in this code? Report by category; do n
 fixture = "repo"
 commands = ["code-jig analyze"]
 output = ["(?i)unused"]
+
+[[case]]
+prompt = "Check this Rust crate for bugs, panics and unsafe code. Report by category; do not change anything."
+fixture = "rust"
+commands = ["code-jig analyze"]
+output = ["(?i)unsafe"]

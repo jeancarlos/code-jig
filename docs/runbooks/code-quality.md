@@ -16,7 +16,7 @@ code-jig analyze --top 30 --json    # more findings, machine-readable
 code-jig analyze --timeout 1200     # per tool, in seconds (default 600)
 ```
 
-It finds the stacks from marker files at the given path (`*.sln` or `*.slnx` there, or `*.csproj` there or one folder down, for .NET; `package.json` for Node; `pyproject.toml`, `setup.py`, `setup.cfg`, `requirements*.txt`, or `.py` files there or one folder down, for Python), runs every applicable tool that is installed, and prints:
+It finds the stacks from marker files at the given path (`*.sln` or `*.slnx` there, or `*.csproj` there or one folder down, for .NET; `package.json` for Node; `pyproject.toml`, `setup.py`, `setup.cfg`, `requirements*.txt`, or `.py` files there or one folder down, for Python; `Cargo.toml` for Rust; `pom.xml`, `build.gradle*` or `settings.gradle*` for Java; `go.mod` for Go, each there or one folder down, so a Tauri app's `src-tauri/Cargo.toml` is found), runs every applicable tool that is installed, and prints:
 
 ```
 analyze: python
@@ -33,15 +33,22 @@ Exit 0: clean. Exit 1: findings or a tool error. Exit 2: no project found, a bad
 | Tool | Runs when | Category mapping |
 |---|---|---|
 | lizard | always, on source files that git tracks or would track (ignored files are skipped) | `complexity` above cognitive 15 (Sonar's default for S3776), cyclomatic 15, 100 lines of code or 7 parameters (code-jig's limits); `duplication` for repeated blocks |
-| ruff | Python | `S` followed by digits (the bandit rules) security, `C90*`/`PLR09*` complexity, the rest bug; the repo's ruff config applies, plus `S` and `B` |
+| ruff | Python | `S` followed by digits (the bandit rules) security, `C90*`/`PLR09*` complexity, the rest bug; the repo's ruff config applies, plus `S` and `B`, except `S101` inside test files (`tests/`, `test_*.py`, `*_test.py`, `conftest.py`), where `assert` is the idiom; an `assert` in application code is still reported, because `python -O` strips it |
 | vulture | Python | `unused`: unused imports, variables and arguments, unreachable code and impossible conditions (80% confidence or more). With a `[tool.vulture]` section in `pyproject.toml`, vulture runs with the project's own `paths`, `exclude` and `min_confidence`; set `min_confidence = 60` there to include unused functions and classes |
 | mypy | Python with a mypy config | type |
 | eslint | Node with an eslint config | `sonarjs/*` complexity and security rules mapped, `security/*` security, the rest bug |
 | knip | Node | `unused` files, exports, types and dependencies; `bug` for dependencies used but not listed and imports that do not resolve |
 | tsc | Node with `tsconfig.json` | type |
+| cargo clippy | Rust | `cargo clippy --all-targets --offline`, with `--all-features` when the manifest declares features (the default features when they conflict, and the run says so), `--workspace` for a workspace, and the host target when `.cargo/config` sets a build target. Groups correctness, suspicious, perf, style and complexity as bug (complexity lints as complexity); panic risks (`unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented`, `unreachable`, `indexing_slicing`, `dbg_macro`, `mem_forget`, `cast_possible_truncation`, `cast_sign_loss`) as bug, never in `#[cfg(test)]`, `tests/` or `benches/`; unsafe lints as security; `unused*` and `dead_code` as unused; compiler errors as type. `--strict` or `[package.metadata.code-jig] strict = true` adds `arithmetic_side_effects`, `target = "<triple>"` there picks the target. A `[lints]` table in Cargo.toml replaces these levels, and a `clippy.toml` keeps its own test-code settings |
+| unsafe-scan | Rust | security, low: an `unsafe` block, impl or extern block with no `SAFETY:` comment before it (same statement) or right after its brace; strings and comments are skipped, and lines clippy's `undocumented_unsafe_blocks` already reported are not repeated |
+| cargo-audit | Rust with `Cargo.lock` and `~/.cargo/advisory-db` | dependency, `--no-fetch` so nothing is downloaded |
+| cargo-machete | Rust | unused dependencies |
+| cargo-deny | Rust with `deny.toml` | dependency, `--disable-fetch` |
+| pmd | Java | PMD 7 quickstart ruleset; Security rules as security, complexity and unused-code rules grouped as such, the rest bug |
+| go vet | Go | `go vet` diagnostics, all as bug |
 | dotnet build | .NET with a solution or project at the root | `S3776` and other complexity rules, `CA3*`, `CA5*` and known Sonar security rules as security, `CS*` as type, NuGet audit warnings `NU1901`-`NU1904` as dependency (project-level warnings carry no line), the rest bug |
 | semgrep | `.semgrep.yml`, `.semgrep.yaml` or `.semgrep/` exists | security |
-| gitleaks | always on the working tree, uncommitted and untracked files included (ignored files skipped); again on the git history when `.git` exists | secret, never printing the secret; the message carries gitleaks' fingerprint |
+| gitleaks | always on the working tree, uncommitted and untracked files included (git-ignored files and folders skipped through a generated allowlist, which also keeps the scan fast); again on the git history when `.git` exists | secret, never printing the secret; the message carries gitleaks' fingerprint |
 | osv-scanner | always | dependency |
 
 `dotnet build` runs with `--no-incremental`, because an incremental build skips the compiler and with it every analyzer warning.
@@ -132,9 +139,11 @@ CI pins the versions it tests against: lizard 1.24.1, ruff 0.17.0, vulture 2.16,
 
 | Symptom | Cause |
 |---|---|
-| `code-jig: no .NET, Node or Python project found` | No marker file at the path given; point it at the project folder |
+| `code-jig: no .NET, Node, Python, Rust, Java or Go project found` | No marker file at the path given; point it at the project folder |
 | `error: <tool>: exit N: ...` | The tool ran and failed without findings; the message is its own first line of output |
 | `error: <tool>: unreadable output` | The tool's output format changed; report it with the tool's version |
 | `error: <tool>: timed out after 600s` | Raise `--timeout`, or analyze a subfolder. The tool and every process it started are killed. |
 | `code-jig: no analyzer ran` | Every tool was skipped; install at least one from the skipped list |
 | `dotnet` skipped with "no solution or project at the root" | Run it from the folder with the `.sln` or `.csproj` |
+
+Code-quality findings in `node_modules`, `vendor`, `target`, `build`, `bin`, `obj` and other generated folders, or outside the repository (dependency crates), are dropped. Secret and vulnerability scanners are never filtered by folder name: gitleaks and osv-scanner drop only git-ignored files, and gitleaks-history and semgrep drop nothing. Dropped findings are counted in a `not shown:` line and in the JSON `dropped` field. When lizard crashes on a file, `analyze` finds the files that crash it, leaves them out and lists them as an error.
