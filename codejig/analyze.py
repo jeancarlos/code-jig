@@ -417,7 +417,8 @@ def _rustc(cwd: str, *args: str) -> str:
     if rustc is None:
         return ""
     try:
-        return subprocess.run([rustc, *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=30).stdout
+        return subprocess.run([rustc, *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=30,
+                              env={**os.environ, **TOOL_ENV}).stdout
     except (OSError, subprocess.TimeoutExpired):
         return ""
 

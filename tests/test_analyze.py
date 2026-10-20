@@ -1141,6 +1141,21 @@ class ToolEnvironment(unittest.TestCase):
         self.assertEqual(seen, ["0"])
 
 
+class RustcEnvironment(unittest.TestCase):
+    def test_rustc_probes_get_the_tool_environment(self):
+        seen = []
+
+        def fake(argv, **kw):
+            seen.append(kw["env"])
+            return types.SimpleNamespace(stdout="host: x\n")
+        analyze._rustc.cache_clear()
+        self.addCleanup(analyze._rustc.cache_clear)
+        with mock.patch.object(analyze.shutil, "which", return_value="rustc"), mock.patch.object(analyze.subprocess, "run", fake), \
+                mock.patch.dict(os.environ, {"RUSTUP_AUTO_INSTALL": "1"}):
+            self.assertEqual(analyze._host_triple(Path("/x")), "x")
+        self.assertEqual(seen[0]["RUSTUP_AUTO_INSTALL"], "0")
+
+
 class ClippyCategories(unittest.TestCase):
     def test_unsafe_lints_are_security(self):
         self.assertEqual(analyze._clippy_category("clippy::missing_safety_doc", "warning"), "security")
