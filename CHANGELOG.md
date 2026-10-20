@@ -4,6 +4,11 @@ What changed in each release, written for the people who install code-jig. Versi
 
 ## Unreleased
 
+## 0.13.0 - 2026-10-20
+
+- `code-jig analyze` now covers Rust, Java and Go projects as well, with an unsafe-code scan that checks each `unsafe` block for a `SAFETY` note.
+- Rust analysis keeps an installed build target and says so when it falls back to the host, never lets `rustup` download a toolchain on its own, and puts the noisy clippy lints behind `--strict`. Findings inside test code are skipped.
+
 ## 0.12.2 - 2026-10-18
 
 - Every Python file, including the skill scripts and eval fixtures, carries its copyright and licence in an SPDX header, and the six touched skills are re-stamped.
