@@ -785,6 +785,57 @@ class RustClippy(unittest.TestCase):
         self.assertIn("clippy::arithmetic_side_effects", analyze.clippy_tool(True).argv("cargo", root, root))
 
 
+@unittest.skipUnless(shutil.which("cargo"), "cargo not installed")
+class RustBuildScope(unittest.TestCase):
+    GATED = '#[cfg(feature = "sim")]\npub fn gated(v: &[u32]) -> u32 {\n    v[0]\n}\n'
+
+    def test_all_features_reach_gated_code(self):
+        root = rust_crate(self, "[features]\nsim = []\n", self.GATED)
+        report = clippy_findings(root)
+        self.assertEqual(report.errors, [])
+        self.assertIn(("clippy::indexing_slicing", 3), {(f.rule, f.line) for f in report.findings})
+
+    def test_conflicting_features_fall_back_to_default(self):
+        lib = '#[cfg(all(feature = "a", feature = "b"))]\ncompile_error!("a and b conflict");\n\npub fn f(v: &[u32]) -> u32 {\n    v[0]\n}\n'
+        root = rust_crate(self, "[features]\na = []\nb = []\n", lib)
+        report = clippy_findings(root)
+        self.assertEqual([r for _, r in report.errors], [analyze.clippy_tool().fallback_note])
+        self.assertIn("clippy::indexing_slicing", {f.rule for f in report.findings})
+        self.assertFalse([f for f in report.findings if f.category == "type"])
+
+    def test_no_features_no_flag(self):
+        argv = analyze.clippy_tool().argv("cargo", rust_crate(self), Path())
+        self.assertNotIn("--all-features", argv)
+        self.assertIn("--offline", argv)
+        self.assertNotIn("--target", argv)
+
+    def test_workspace_covers_every_member(self):
+        root = tree(self)
+        write(root / "Cargo.toml", '[workspace]\nresolver = "2"\nmembers = ["a", "b"]\n')
+        for name in "ab":
+            write(root / name / "Cargo.toml", f'[package]\nname = "m{name}"\nversion = "0.1.0"\nedition = "2021"\n')
+            write(root / name / "src" / "lib.rs", "pub fn f(v: &[u32]) -> u32 {\n    v[0]\n}\n")
+        target = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, target, True)
+        with mock.patch.dict(os.environ, {"CARGO_TARGET_DIR": str(target)}):
+            report = clippy_findings(root)
+        self.assertEqual(report.errors, [])
+        self.assertEqual(sorted(f.path for f in report.findings if f.rule == "clippy::indexing_slicing"), ["a/src/lib.rs", "b/src/lib.rs"])
+
+    def test_config_target_is_replaced_by_the_host(self):
+        root = rust_crate(self)
+        write(root / ".cargo" / "config.toml", '[build]\ntarget = "armv7-unknown-linux-musleabihf"\n')
+        argv = analyze.clippy_tool().argv("cargo", root, Path())
+        host = analyze._host_triple()
+        self.assertEqual(argv[argv.index("--target") + 1], host)
+        self.assertEqual(clippy_findings(root).errors, [])
+
+    def test_metadata_target_wins(self):
+        root = rust_crate(self, '[package.metadata.code-jig]\ntarget = "x86_64-unknown-linux-gnu"\n')
+        argv = analyze.clippy_tool().argv("cargo", root, Path())
+        self.assertEqual(argv[argv.index("--target") + 1], "x86_64-unknown-linux-gnu")
+
+
 class ClippyCategories(unittest.TestCase):
     def test_unsafe_lints_are_security(self):
         self.assertEqual(analyze._clippy_category("clippy::missing_safety_doc", "warning"), "security")

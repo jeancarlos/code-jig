@@ -78,6 +78,8 @@ class Tool:
     findings_exit: tuple[int, ...] = ()
     recover: Callable[[str, Path, dict, int], tuple[list[Finding], str | None]] | None = None
     env: Callable[[Path, Path], dict] | None = None
+    fallback: Callable[[str, Path, Path], list[str]] | None = None
+    fallback_note: str = ""
 
 
 class Partial(ValueError):
@@ -399,15 +401,46 @@ def _clippy_env(root: Path, tmp: Path) -> dict:
     return {"CLIPPY_CONF_DIR": str(tmp)}
 
 
-def _clippy_argv(exe: str, root: Path, strict: bool) -> list[str]:
+def _host_triple() -> str | None:
+    rustc = shutil.which("rustc")
+    if rustc is None:
+        return None
+    try:
+        out = subprocess.run([rustc, "-vV"], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False).stdout
+    except OSError:
+        return None
+    return next((ln.split(":", 1)[1].strip() for ln in out.splitlines() if ln.startswith("host:")), None)
+
+
+def _config_sets_target(start: Path) -> bool:
+    for base in (start, *start.parents):
+        for name in ("config.toml", "config"):
+            f = base / ".cargo" / name
+            if f.is_file() and (_cargo_data(f).get("build") or {}).get("target"):
+                return True
+    return False
+
+
+def _clippy_target(manifest: Path, data: dict) -> list[str]:
+    target = _jig_meta(data).get("target")
+    if not isinstance(target, str):
+        target = _host_triple() if _config_sets_target(manifest.parent) else None
+    return ["--target", target] if target else []
+
+
+def _clippy_argv(exe: str, root: Path, strict: bool, all_features: bool = True) -> list[str]:
     manifest = _cargo_manifest(root)
-    return [exe, "clippy", "--manifest-path", str(manifest), "--all-targets", "--message-format", "json", "--quiet", "--",
-            *_clippy_flags(manifest, strict)]
+    data = _cargo_data(manifest)
+    scope = ["--workspace"] if "workspace" in data else []
+    features = ["--all-features"] if all_features and data.get("features") else []
+    return [exe, "clippy", "--manifest-path", str(manifest), "--offline", "--all-targets", *scope, *features, *_clippy_target(manifest, data),
+            "--message-format", "json", "--quiet", "--", *_clippy_flags(manifest, strict)]
 
 
 def clippy_tool(strict: bool = False) -> Tool:
     return Tool("clippy", "rust", lambda exe, root, tmp: _clippy_argv(exe, root, strict), parse_clippy, hint="rustup component add clippy",
-                binary="cargo", findings_exit=(101,), env=_clippy_env)
+                binary="cargo", findings_exit=(101,), env=_clippy_env, fallback=lambda exe, root, tmp: _clippy_argv(exe, root, strict, False),
+                fallback_note="--all-features does not compile (conflicting features?); analyzed the default features only")
 
 
 def parse_clippy(out: str, root: Path, tmp: Path) -> list[Finding]:
@@ -638,16 +671,30 @@ def _execute(argv: list[str], root: Path, env: dict, timeout: int) -> tuple[int,
     return proc.returncode, out, err
 
 
+def _launch(t: Tool, argv: list[str], root: Path, env: dict, tmp: Path, timeout: int) -> tuple[int, str, str]:
+    return _execute(argv, root, {**env, **(t.env(root, tmp) if t.env else {})}, timeout)
+
+
+def _has_type_error(t: Tool, out: str, root: Path, tmp: Path) -> bool:
+    try:
+        return any(f.category == "type" for f in t.parse(out, root, tmp))
+    except (ValueError, KeyError, TypeError, IndexError, AttributeError, Partial):
+        return False
+
+
 def _run_one(t: Tool, exe: str, root: Path, env: dict, timeout: int) -> tuple[list[Finding], str | None]:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
+        error = None
         try:
-            code, out, err = _execute(t.argv(exe, root, tmp), root, {**env, **(t.env(root, tmp) if t.env else {})}, timeout)
+            code, out, err = _launch(t, t.argv(exe, root, tmp), root, env, tmp, timeout)
+            if t.fallback and code not in t.ok and _has_type_error(t, out, root, tmp):
+                code, out, err = _launch(t, t.fallback(exe, root, tmp), root, env, tmp, timeout)
+                error = None if _has_type_error(t, out, root, tmp) else t.fallback_note
         except subprocess.TimeoutExpired:
             return [], f"timed out after {timeout}s"
         except OSError as e:
             return [], f"cannot run: {e}"
-        error = None
         if code not in t.ok and t.recover and "Traceback" in err:
             return t.recover(exe, root, env, timeout)
         try:
