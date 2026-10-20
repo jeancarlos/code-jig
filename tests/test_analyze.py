@@ -761,7 +761,7 @@ class RustClippy(unittest.TestCase):
         got = self.rules(report)
         for expected in (("bug", "clippy::unwrap_used", "src/lib.rs"), ("bug", "clippy::indexing_slicing", "src/lib.rs"),
                          ("bug", "clippy::panic", "src/lib.rs"), ("bug", "clippy::cast_possible_truncation", "src/lib.rs"),
-                         ("bug", "clippy::needless_return", "src/lib.rs")):
+                         ("bug", "clippy::needless_return", "src/lib.rs"), ("security", "clippy::undocumented_unsafe_blocks", "src/lib.rs")):
             self.assertIn(expected, got)
         self.assertEqual({f.line for f in report.findings if f.rule in analyze.CLIPPY_PANIC}, {2, 6, 10})
         self.assertFalse([f for f in report.findings if f.path.startswith("tests/")])
@@ -947,10 +947,53 @@ class UnsafeScan(unittest.TestCase):
     ''')
 
     def test_counts_and_undocumented_lines(self):
-        self.assertEqual(unsafe_scan.undocumented(self.SRC), (5, [6, 23, 25]))
+        self.assertEqual(unsafe_scan.undocumented(self.SRC), (6, [6, 23, 25]))
 
     def test_unsafe_in_strings_and_comments_is_not_counted(self):
         self.assertEqual(unsafe_scan.undocumented('let s = "unsafe {";\n// unsafe {\n'), (0, []))
+
+    def test_non_ascii_identifiers_do_not_crash(self):
+        self.assertEqual(unsafe_scan.undocumented("fn \u00e9() { let \u00f1ame = 1; unsafe { } }\n"), (1, [1]))
+        self.assertEqual(unsafe_scan.undocumented("let \u00e9unsafe = 1;\n"), (0, []))
+
+    def test_unsafe_inside_literals_and_nested_comments_is_ignored(self):
+        src = 'let a = r#"unsafe { "#;\nlet b = br"unsafe {";\nlet c = b"unsafe {";\n/* /* unsafe { */ unsafe { */\n'
+        self.assertEqual(unsafe_scan.undocumented(src), (0, []))
+
+    def test_comments_between_unsafe_and_brace(self):
+        self.assertEqual(unsafe_scan.undocumented("unsafe /* c */ { }\n"), (1, [1]))
+        self.assertEqual(unsafe_scan.undocumented("unsafe\n// c\n{ }\n"), (1, [1]))
+        self.assertEqual(unsafe_scan.undocumented("// SAFETY: ok\nunsafe /* c */ { }\n"), (1, []))
+
+    def test_declarations_are_counted_not_flagged(self):
+        self.assertEqual(unsafe_scan.undocumented("unsafe fn f() {}\nunsafe trait T {}\nunsafe extern \"C\" fn g() {}\n"), (3, []))
+
+    def test_extern_block_and_impl_need_safety(self):
+        self.assertEqual(unsafe_scan.undocumented('unsafe extern "C" { fn f(); }\nunsafe impl Send for T {}\n'), (2, [1, 2]))
+        self.assertEqual(unsafe_scan.undocumented('// SAFETY: audited\nunsafe impl Send for T {}\n'), (1, []))
+
+    def test_only_a_safety_label_counts(self):
+        self.assertEqual(unsafe_scan.undocumented("// no safety concerns here\nunsafe { }\n"), (1, [2]))
+        self.assertEqual(unsafe_scan.undocumented("// SAFETY: fine\n\n\n\n\nlet x = unsafe { };\n"), (1, []))
+        self.assertEqual(unsafe_scan.undocumented("fn f() {\n    // SAFETY: fine\n    let x = unsafe { };\n}\n"), (1, []))
+        self.assertEqual(unsafe_scan.undocumented("// SAFETY: old\nfn f() { }\nunsafe { }\n"), (1, [3]))
+
+    def test_comment_right_after_the_brace(self):
+        self.assertEqual(unsafe_scan.undocumented("unsafe {\n    // SAFETY: fine\n    f()\n}\n"), (1, []))
+
+    def test_inline_tool_failure_is_an_error_not_a_crash(self):
+        def boom(root):
+            raise ValueError("bad")
+        tool = analyze.Tool("unsafe-scan", "rust", lambda exe, root, tmp: [], lambda out, root, tmp: [], inline=boom)
+        report = analyze.run_tools([tool], tree(self), {"rust"})
+        self.assertEqual(report.errors, [("unsafe-scan", "failed: bad")])
+
+    def test_clippy_hits_are_not_repeated(self):
+        root = rust_crate(self, lib=self.SRC)
+        with mock.patch.dict(os.environ, {}):
+            report = analyze.run_tools([analyze.clippy_tool(), *[t for t in analyze.TOOLS if t.name == "unsafe-scan"]], root, {"rust"})
+        by_line = [(f.path, f.line) for f in report.findings if f.category == "security"]
+        self.assertEqual(len(by_line), len(set(by_line)))
 
     def test_tool_reports_low_security_per_block(self):
         root = rust_crate(self, lib=self.SRC)

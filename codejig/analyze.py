@@ -102,7 +102,7 @@ class Report:
 
 
 CLIPPY_GROUPS = ("correctness", "suspicious", "perf", "style", "complexity")
-CLIPPY_EXTRA = ("cognitive_complexity", "too_many_arguments", "too_many_lines", "missing_safety_doc", "not_unsafe_ptr_arg_deref", "multiple_unsafe_ops_per_block", "transmute_undefined_repr")
+CLIPPY_EXTRA = ("cognitive_complexity", "too_many_arguments", "too_many_lines", "undocumented_unsafe_blocks", "missing_safety_doc", "not_unsafe_ptr_arg_deref", "multiple_unsafe_ops_per_block", "transmute_undefined_repr")
 CLIPPY_IN_TESTS = ("unwrap", "expect", "panic", "indexing-slicing", "dbg")
 TEST_DIRS = {"tests", "benches"}
 CARGO, GO_MOD = ("Cargo.toml",), ("go.mod",)
@@ -765,6 +765,13 @@ def _has_type_error(t: Tool, out: str, root: Path, tmp: Path) -> bool:
         return False
 
 
+def _run_inline(t: Tool, root: Path) -> tuple[list[Finding], str | None]:
+    try:
+        return t.inline(root), None
+    except (OSError, ValueError, KeyError, TypeError, IndexError, AttributeError, RecursionError) as e:
+        return [], f"failed: {e}"
+
+
 def _run_one(t: Tool, exe: str, root: Path, env: dict, timeout: int) -> tuple[list[Finding], str | None]:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
@@ -826,7 +833,10 @@ def run_tools(tools: list[Tool], root: Path, stacks: set[str], path: str | None 
         if exe is None:
             report.skipped.append((t.name, f"not installed; {t.hint}"))
             continue
-        found, error = (t.inline(root), None) if t.inline else _run_one(t, exe, root, env, timeout)
+        found, error = _run_inline(t, root) if t.inline else _run_one(t, exe, root, env, timeout)
+        if t.inline:
+            covered = {(f.path, f.line) for f in report.findings if f.rule == "clippy::undocumented_unsafe_blocks"}
+            found = [f for f in found if (f.path, f.line) not in covered]
         report.ran.append(t.name)
         kept = [f for f in found if _wanted(t.name, f, root)]
         report = replace(report, dropped=report.dropped + len(found) - len(kept))
