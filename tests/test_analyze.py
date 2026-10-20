@@ -880,6 +880,21 @@ class RustBuildScope(unittest.TestCase):
         self.assertIn("thumbv7em-none-eabi", note)
         self.assertIn("rustup target add", note)
 
+    def test_fallback_does_not_rerun_an_identical_command(self):
+        root = rust_crate(self)
+        runs = []
+        real = analyze._execute
+
+        def counting(argv, *a, **kw):
+            runs.append(argv)
+            return real(argv, *a, **kw)
+        lib = root / "src" / "lib.rs"
+        lib.write_text("pub fn f() -> u32 { \"x\" }\n", encoding="utf-8")
+        with mock.patch.object(analyze, "_execute", counting):
+            report = clippy_findings(root)
+        self.assertEqual(len(runs), 1)
+        self.assertTrue([f for f in report.findings if f.category == "type"])
+
     def test_note_reaches_the_report(self):
         root = rust_crate(self)
         write(root / ".cargo" / "config.toml", '[build]\ntarget = "thumbv7em-none-eabi"\n')
@@ -951,6 +966,12 @@ class RustSupplyChain(unittest.TestCase):
         self.assertEqual({n for n, _ in report.skipped}, {"cargo-audit", "cargo-machete", "cargo-deny"})
         self.assertIn("deny.toml", dict(report.skipped)["cargo-deny"])
         self.assertIn("cargo install cargo-machete", dict(report.skipped)["cargo-machete"])
+
+    def test_cargo_deny_path_follows_the_manifest_folder(self):
+        nested = tree(self)
+        write(nested / "app" / "Cargo.toml", "")
+        out = json.dumps({"type": "diagnostic", "fields": {"severity": "error", "code": "banned", "message": "m"}})
+        self.assertEqual([f.path for f in analyze.parse_cargo_deny(out, nested, nested)], ["app/Cargo.lock"])
 
     def test_cargo_deny_runs_only_with_a_deny_toml(self):
         deny = next(t for t in analyze.TOOLS if t.name == "cargo-deny")
@@ -1081,6 +1102,18 @@ class UnsafeScan(unittest.TestCase):
         report = analyze.run_tools([t for t in analyze.TOOLS if t.name == "unsafe-scan"], root, {"rust"}, path=str(root))
         self.assertEqual(report.ran, ["unsafe-scan"])
         self.assertEqual(len(report.findings), 1)
+
+
+class ToolEnvironment(unittest.TestCase):
+    def test_rustup_auto_install_is_off_for_every_tool(self):
+        self.assertEqual(analyze.TOOL_ENV["RUSTUP_AUTO_INSTALL"], "0")
+        root = tree(self)
+        script = write(root / "p.py", "import os\nprint(os.environ.get('RUSTUP_AUTO_INSTALL'))\n")
+        seen = []
+        tool = analyze.Tool("probe", "rust", lambda exe, r, t: [sys.executable, str(script)], lambda out, r, t: seen.append(out.strip()) or [], binary=sys.executable)
+        with mock.patch.dict(os.environ, {"RUSTUP_AUTO_INSTALL": "1"}):
+            analyze.run_tools([tool], root, {"rust"}, path=os.environ["PATH"])
+        self.assertEqual(seen, ["0"])
 
 
 class ClippyCategories(unittest.TestCase):
