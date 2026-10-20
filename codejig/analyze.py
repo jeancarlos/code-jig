@@ -45,9 +45,10 @@ KNIP_BROKEN = ("unlisted", "unresolved", "binaries", "cycles")
 MYPY = re.compile(r"^(.+?):(\d+)(?::\d+)*: error: (.*?)(?:  \[([\w-]+)\])?$")
 DUP_LOC = re.compile(r"^(.+):(\d+) ~ (\d+)$")
 GO_POSN = re.compile(r"^(.+):(\d+):\d+$")
-CLIPPY_PANIC = {f"clippy::{n}" for n in (
-    "unwrap_used", "expect_used", "panic", "todo", "unimplemented", "unreachable", "indexing_slicing", "dbg_macro", "mem_forget",
-    "cast_possible_truncation", "cast_sign_loss", "arithmetic_side_effects")}
+CLIPPY_PANIC_DEFAULT = {f"clippy::{n}" for n in ("unwrap_used", "panic", "todo", "unimplemented", "dbg_macro", "mem_forget")}
+CLIPPY_STRICT = {f"clippy::{n}" for n in (
+    "indexing_slicing", "cast_possible_truncation", "cast_sign_loss", "expect_used", "unreachable", "arithmetic_side_effects")}
+CLIPPY_PANIC = CLIPPY_PANIC_DEFAULT | CLIPPY_STRICT
 CLIPPY_UNSAFE = {f"clippy::{n}" for n in (
     "undocumented_unsafe_blocks", "missing_safety_doc", "not_unsafe_ptr_arg_deref", "multiple_unsafe_ops_per_block", "transmute_undefined_repr")}
 CLIPPY_COMPLEXITY = {"clippy::cognitive_complexity", "clippy::too_many_arguments", "clippy::too_many_lines", "clippy::type_complexity",
@@ -395,9 +396,9 @@ def _clippy_flags(manifest: Path, strict: bool) -> list[str]:
     data = _cargo_data(manifest)
     if _own_lints(data):
         return []
-    names = [f"clippy::{n}" for n in (*CLIPPY_GROUPS, *CLIPPY_EXTRA)] + sorted(CLIPPY_PANIC - {"clippy::arithmetic_side_effects"})
+    names = [f"clippy::{n}" for n in (*CLIPPY_GROUPS, *CLIPPY_EXTRA)] + sorted(CLIPPY_PANIC_DEFAULT)
     if strict or _jig_meta(data).get("strict") is True:
-        names.append("clippy::arithmetic_side_effects")
+        names += sorted(CLIPPY_STRICT)
     return [a for n in names for a in ("-W", n)]
 
 
@@ -474,8 +475,17 @@ def clippy_tool(strict: bool = False) -> Tool:
                 fallback_note="--all-features does not compile (conflicting features?); analyzed the default features only")
 
 
+def _in_test_code(source: Path, line: int, cache: dict) -> bool:
+    if source not in cache:
+        try:
+            cache[source] = unsafe_scan.test_line_ranges(source.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            cache[source] = []
+    return any(start <= line <= end for start, end in cache[source])
+
+
 def parse_clippy(out: str, root: Path, tmp: Path) -> list[Finding]:
-    found = []
+    found, ranges = [], {}
     for line in out.splitlines():
         if not line.startswith("{"):
             continue
@@ -485,8 +495,9 @@ def parse_clippy(out: str, root: Path, tmp: Path) -> list[Finding]:
         if span is None or msg.get("level") not in ("warning", "error"):
             continue
         code = (msg.get("code") or {}).get("code") or ""
-        path = rel(str(_cargo_manifest(root).parent / span["file_name"]), root)
-        if code in CLIPPY_PANIC and not TEST_DIRS.isdisjoint(Path(path).parts[:-1]):
+        source = _cargo_manifest(root).parent / span["file_name"]
+        path = rel(str(source), root)
+        if code in CLIPPY_PANIC and (not TEST_DIRS.isdisjoint(Path(path).parts[:-1]) or _in_test_code(source, int(span["line_start"]), ranges)):
             continue
         found.append(Finding(_clippy_category(code, msg["level"]), "clippy", code or msg["level"], path, int(span["line_start"]), msg["message"]))
     return found

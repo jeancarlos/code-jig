@@ -130,3 +130,60 @@ def undocumented(src: str) -> tuple[int, list[int]]:
         elif follower == "extern":
             total += 1
     return total, bare
+
+
+def _attr_end(toks: list[tuple[str, str, int]], i: int) -> int:
+    depth = 0
+    while i < len(toks):
+        if toks[i][1] == "[":
+            depth += 1
+        elif toks[i][1] == "]":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return len(toks) - 1
+
+
+def _is_test_attr(words: list[str]) -> bool:
+    return words == ["test"] or (words[:1] == ["cfg"] and "test" in words and "not" not in words)
+
+
+def _item_end(toks: list[tuple[str, str, int]], i: int) -> int:
+    while i < len(toks) and toks[i][1] == "#":
+        i = _attr_end(toks, i + 2 if toks[i + 1][1] == "!" else i + 1) + 1 if i + 1 < len(toks) else len(toks)
+    parens = 0
+    while i < len(toks):
+        tok = toks[i][1]
+        parens += (tok in ("(", "[")) - (tok in (")", "]"))
+        if parens <= 0 and tok in ("{", ";"):
+            break
+        i += 1
+    if i >= len(toks) or toks[i][1] == ";":
+        return min(i, len(toks) - 1)
+    depth = 0
+    while i < len(toks):
+        depth += (toks[i][1] == "{") - (toks[i][1] == "}")
+        if depth == 0:
+            return i
+        i += 1
+    return len(toks) - 1
+
+
+def test_line_ranges(src: str) -> list[tuple[int, int]]:
+    toks = tokens(src)
+    ranges = []
+    for i, (kind, value, line) in enumerate(toks):
+        if kind != "punct" or value != "#" or i + 1 >= len(toks):
+            continue
+        inner = toks[i + 1][1] == "!"
+        start = i + 2 if inner else i + 1
+        if start >= len(toks) or toks[start][1] != "[":
+            continue
+        end = _attr_end(toks, start)
+        if not _is_test_attr([t[1] for t in toks[start:end] if t[0] == "word"]):
+            continue
+        if inner:
+            return [(1, toks[-1][2] if toks else 1)]
+        ranges.append((line, toks[min(_item_end(toks, end + 1), len(toks) - 1)][2]))
+    return ranges
