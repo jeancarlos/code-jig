@@ -47,6 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--base")
     a.add_argument("--top", type=int, default=10)
     a.add_argument("--json", action="store_true")
+    a.add_argument("--strict", action="store_true")
     a.add_argument("--timeout", type=int, default=600)
     tr = sub.add_parser("trace")
     tr.add_argument("ids")

@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import textwrap
 import time
 import types
@@ -683,6 +684,116 @@ class Cli(unittest.TestCase):
         args = self.args()
         args.base = "nope"
         self.assertEqual(analyze.cli(args), 2)
+
+
+RUST_LIB = textwrap.dedent('''\
+    pub fn first(v: &[u32]) -> u32 {
+        v.iter().max().unwrap() + v[0]
+    }
+
+    pub fn boom() {
+        panic!("x")
+    }
+
+    pub fn narrow(x: u64) -> u32 {
+        x as u32
+    }
+
+    pub fn read(p: *const u8) -> u8 {
+        unsafe { *p }
+    }
+
+    pub fn style() -> u32 {
+        return 1;
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn inside() {
+            let v = vec![1];
+            v.iter().max().unwrap();
+            let _ = v[0];
+            panic!("fine in tests");
+        }
+    }
+''')
+RUST_IT = "pub fn helper(v: &[u32]) -> u32 {\n    v.iter().max().unwrap() + v[0]\n}\n"
+
+
+def rust_crate(test: unittest.TestCase, manifest: str = "", lib: str = RUST_LIB) -> Path:
+    root = tree(test)
+    write(root / "Cargo.toml", '[package]\nname = "fx"\nversion = "0.1.0"\nedition = "2021"\n' + manifest)
+    write(root / "src" / "lib.rs", lib)
+    write(root / "tests" / "it.rs", RUST_IT)
+    target = Path(tempfile.mkdtemp())
+    test.addCleanup(shutil.rmtree, target, True)
+    patch = mock.patch.dict(os.environ, {"CARGO_TARGET_DIR": str(target)})
+    patch.start()
+    test.addCleanup(patch.stop)
+    return root
+
+
+def clippy_findings(root: Path, strict: bool = False) -> analyze.Report:
+    return analyze.run_tools([analyze.clippy_tool(strict)], root, {"rust"})
+
+
+@unittest.skipUnless(shutil.which("cargo"), "cargo not installed")
+class RustClippy(unittest.TestCase):
+    def rules(self, report):
+        return {(f.category, f.rule, f.path) for f in report.findings}
+
+    def test_tiers_and_test_code(self):
+        report = clippy_findings(rust_crate(self))
+        self.assertEqual(report.errors, [])
+        got = self.rules(report)
+        for expected in (("bug", "clippy::unwrap_used", "src/lib.rs"), ("bug", "clippy::indexing_slicing", "src/lib.rs"),
+                         ("bug", "clippy::panic", "src/lib.rs"), ("bug", "clippy::cast_possible_truncation", "src/lib.rs"),
+                         ("bug", "clippy::needless_return", "src/lib.rs"), ("security", "clippy::undocumented_unsafe_blocks", "src/lib.rs")):
+            self.assertIn(expected, got)
+        self.assertEqual({f.line for f in report.findings if f.rule in analyze.CLIPPY_PANIC}, {2, 6, 10})
+        self.assertFalse([f for f in report.findings if f.path.startswith("tests/")])
+
+    def test_arithmetic_only_when_strict(self):
+        lib = "pub fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\n"
+        root = rust_crate(self, lib=lib)
+        self.assertNotIn("clippy::arithmetic_side_effects", {f.rule for f in clippy_findings(root).findings})
+        self.assertIn("clippy::arithmetic_side_effects", {f.rule for f in clippy_findings(root, strict=True).findings})
+
+    def test_arithmetic_when_manifest_asks(self):
+        lib = "pub fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\n"
+        root = rust_crate(self, "[package.metadata.code-jig]\nstrict = true\n", lib)
+        self.assertIn("clippy::arithmetic_side_effects", {f.rule for f in clippy_findings(root).findings})
+
+    def test_project_lints_are_honored(self):
+        root = rust_crate(self, "[lints.clippy]\nunwrap_used = \"allow\"\n")
+        rules = {f.rule for f in clippy_findings(root).findings}
+        self.assertNotIn("clippy::unwrap_used", rules)
+        self.assertNotIn("clippy::indexing_slicing", rules)
+
+    def test_project_clippy_toml_is_not_overridden(self):
+        root = rust_crate(self)
+        write(root / "clippy.toml", "too-many-arguments-threshold = 20\n")
+        self.assertEqual(analyze._clippy_env(root, root), {})
+
+    def test_flags_without_project_lints(self):
+        root = rust_crate(self)
+        argv = analyze.clippy_tool().argv("cargo", root, root)
+        self.assertNotIn("clippy::all", argv)
+        self.assertIn("clippy::unwrap_used", argv)
+        self.assertNotIn("clippy::arithmetic_side_effects", argv)
+        self.assertIn("clippy::arithmetic_side_effects", analyze.clippy_tool(True).argv("cargo", root, root))
+
+
+class ClippyCategories(unittest.TestCase):
+    def test_unsafe_lints_are_security(self):
+        self.assertEqual(analyze._clippy_category("clippy::missing_safety_doc", "warning"), "security")
+
+    def test_panic_lint_in_tests_dir_dropped(self):
+        root = tree(self)
+        line = json.dumps({"reason": "compiler-message", "message": {"level": "warning", "message": "m", "code": {"code": "clippy::unwrap_used"},
+                                                                   "spans": [{"file_name": "benches/b.rs", "line_start": 3, "is_primary": True}]}})
+        self.assertEqual(analyze.parse_clippy(line, root, root), [])
 
 
 @unittest.skipUnless(os.environ.get("CODE_JIG_REAL_TOOLS"), "set CODE_JIG_REAL_TOOLS=1 to run the real-tool tests")

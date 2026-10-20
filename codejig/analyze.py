@@ -11,6 +11,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import tomllib
 from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -41,6 +42,11 @@ KNIP_BROKEN = ("unlisted", "unresolved", "binaries", "cycles")
 MYPY = re.compile(r"^(.+?):(\d+)(?::\d+)*: error: (.*?)(?:  \[([\w-]+)\])?$")
 DUP_LOC = re.compile(r"^(.+):(\d+) ~ (\d+)$")
 GO_POSN = re.compile(r"^(.+):(\d+):\d+$")
+CLIPPY_PANIC = {f"clippy::{n}" for n in (
+    "unwrap_used", "expect_used", "panic", "todo", "unimplemented", "unreachable", "indexing_slicing", "dbg_macro", "mem_forget",
+    "cast_possible_truncation", "cast_sign_loss", "arithmetic_side_effects")}
+CLIPPY_UNSAFE = {f"clippy::{n}" for n in (
+    "undocumented_unsafe_blocks", "missing_safety_doc", "not_unsafe_ptr_arg_deref", "multiple_unsafe_ops_per_block", "transmute_undefined_repr")}
 CLIPPY_COMPLEXITY = {"clippy::cognitive_complexity", "clippy::too_many_arguments", "clippy::too_many_lines", "clippy::type_complexity",
                      "clippy::excessive_nesting"}
 PMD_COMPLEXITY = {"CyclomaticComplexity", "CognitiveComplexity", "NPathComplexity", "ExcessiveParameterList", "ExcessiveMethodLength",
@@ -71,6 +77,7 @@ class Tool:
     binary: str = ""
     findings_exit: tuple[int, ...] = ()
     recover: Callable[[str, Path, dict, int], tuple[list[Finding], str | None]] | None = None
+    env: Callable[[Path, Path], dict] | None = None
 
 
 class Partial(ValueError):
@@ -88,8 +95,11 @@ class Report:
     dropped: int = 0
 
 
-CLIPPY_WARN = ("-W", "clippy::correctness", "-W", "clippy::suspicious", "-W", "clippy::cognitive_complexity", "-W", "clippy::too_many_arguments",
-               "-W", "clippy::too_many_lines")
+CLIPPY_GROUPS = ("correctness", "suspicious", "perf", "style", "complexity")
+CLIPPY_EXTRA = ("cognitive_complexity", "too_many_arguments", "too_many_lines", "undocumented_unsafe_blocks", "missing_safety_doc",
+                "not_unsafe_ptr_arg_deref", "multiple_unsafe_ops_per_block", "transmute_undefined_repr")
+CLIPPY_IN_TESTS = ("unwrap", "expect", "panic", "indexing-slicing", "dbg")
+TEST_DIRS = {"tests", "benches"}
 CARGO, GO_MOD = ("Cargo.toml",), ("go.mod",)
 JAVA_MARKERS = ("pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts")
 
@@ -342,6 +352,8 @@ def parse_dotnet(out: str, root: Path, tmp: Path) -> list[Finding]:
 def _clippy_category(code: str, level: str) -> str:
     if code in CLIPPY_COMPLEXITY:
         return "complexity"
+    if code in CLIPPY_UNSAFE:
+        return "security"
     if code.startswith("unused") or code == "dead_code":
         return "unused"
     if level == "error" and not code.startswith("clippy::"):
@@ -351,6 +363,51 @@ def _clippy_category(code: str, level: str) -> str:
 
 def _cargo_manifest(root: Path) -> Path:
     return (marker_dir(root, CARGO) or root) / "Cargo.toml"
+
+
+def _cargo_data(manifest: Path) -> dict:
+    try:
+        return tomllib.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _jig_meta(data: dict) -> dict:
+    meta = (data.get("package") or {}).get("metadata") or (data.get("workspace") or {}).get("metadata") or {}
+    return meta.get("code-jig") or {}
+
+
+def _own_lints(data: dict) -> bool:
+    return bool(data.get("lints") or (data.get("workspace") or {}).get("lints"))
+
+
+def _clippy_flags(manifest: Path, strict: bool) -> list[str]:
+    data = _cargo_data(manifest)
+    if _own_lints(data):
+        return []
+    names = [f"clippy::{n}" for n in (*CLIPPY_GROUPS, *CLIPPY_EXTRA)] + sorted(CLIPPY_PANIC - {"clippy::arithmetic_side_effects"})
+    if strict or _jig_meta(data).get("strict") is True:
+        names.append("clippy::arithmetic_side_effects")
+    return [a for n in names for a in ("-W", n)]
+
+
+def _clippy_env(root: Path, tmp: Path) -> dict:
+    manifest = _cargo_manifest(root)
+    if (manifest.parent / "clippy.toml").is_file() or (manifest.parent / ".clippy.toml").is_file() or _own_lints(_cargo_data(manifest)):
+        return {}
+    (tmp / "clippy.toml").write_text("".join(f"allow-{n}-in-tests = true\n" for n in CLIPPY_IN_TESTS), encoding="utf-8")
+    return {"CLIPPY_CONF_DIR": str(tmp)}
+
+
+def _clippy_argv(exe: str, root: Path, strict: bool) -> list[str]:
+    manifest = _cargo_manifest(root)
+    return [exe, "clippy", "--manifest-path", str(manifest), "--all-targets", "--message-format", "json", "--quiet", "--",
+            *_clippy_flags(manifest, strict)]
+
+
+def clippy_tool(strict: bool = False) -> Tool:
+    return Tool("clippy", "rust", lambda exe, root, tmp: _clippy_argv(exe, root, strict), parse_clippy, hint="rustup component add clippy",
+                binary="cargo", findings_exit=(101,), env=_clippy_env)
 
 
 def parse_clippy(out: str, root: Path, tmp: Path) -> list[Finding]:
@@ -364,8 +421,10 @@ def parse_clippy(out: str, root: Path, tmp: Path) -> list[Finding]:
         if span is None or msg.get("level") not in ("warning", "error"):
             continue
         code = (msg.get("code") or {}).get("code") or ""
-        found.append(Finding(_clippy_category(code, msg["level"]), "clippy", code or msg["level"], rel(str(_cargo_manifest(root).parent / span["file_name"]), root),
-                             int(span["line_start"]), msg["message"]))
+        path = rel(str(_cargo_manifest(root).parent / span["file_name"]), root)
+        if code in CLIPPY_PANIC and not TEST_DIRS.isdisjoint(Path(path).parts[:-1]):
+            continue
+        found.append(Finding(_clippy_category(code, msg["level"]), "clippy", code or msg["level"], path, int(span["line_start"]), msg["message"]))
     return found
 
 
@@ -534,9 +593,7 @@ TOOLS = [
          lambda root: (root / "tsconfig.json").is_file(), "npm install -D typescript", reason="no tsconfig.json", findings_exit=(1, 2)),
     Tool("dotnet", "dotnet", lambda exe, root, tmp: [exe, "build", "--nologo", "--no-incremental", "-clp:NoSummary", *_dotnet_target(root)],
          parse_dotnet, lambda root: bool(_dotnet_target(root)), "install the .NET SDK", reason="no solution or project at the root", findings_exit=(1,)),
-    Tool("clippy", "rust", lambda exe, root, tmp: [exe, "clippy", "--manifest-path", str(_cargo_manifest(root)), "--all-targets", "--message-format", "json", "--quiet", "--",
-                                 "-A", "clippy::all", *CLIPPY_WARN], parse_clippy,
-         hint="rustup component add clippy", binary="cargo", findings_exit=(101,)),
+    clippy_tool(),
     Tool("pmd", "java", lambda exe, root, tmp: [exe, "check", "-d", ".", "-R", "rulesets/java/quickstart.xml", "-f", "json", "--no-cache", "--no-progress"],
          parse_pmd, hint="install PMD 7 from its GitHub releases", findings_exit=(4,)),
     Tool("go-vet", "go", lambda exe, root, tmp: [exe, "-C", str(marker_dir(root, GO_MOD) or root), "vet", "-json", "./..."], parse_go_vet, hint="install Go", binary="go"),
@@ -585,7 +642,7 @@ def _run_one(t: Tool, exe: str, root: Path, env: dict, timeout: int) -> tuple[li
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
         try:
-            code, out, err = _execute(t.argv(exe, root, tmp), root, env, timeout)
+            code, out, err = _execute(t.argv(exe, root, tmp), root, {**env, **(t.env(root, tmp) if t.env else {})}, timeout)
         except subprocess.TimeoutExpired:
             return [], f"timed out after {timeout}s"
         except OSError as e:
@@ -689,7 +746,8 @@ def cli(args) -> int:
     except (ValueError, OSError) as e:
         print(f"code-jig: {e}", file=sys.stderr)
         return 2
-    report = run_tools(TOOLS, root, stacks, timeout=args.timeout)
+    tools = [clippy_tool(True) if t.name == "clippy" and getattr(args, "strict", False) else t for t in TOOLS]
+    report = run_tools(tools, root, stacks, timeout=args.timeout)
     if keep is not None:
         report = Report([f for f in report.findings if f.path in keep], report.skipped, report.errors, report.ran, report.dropped)
     if args.json:
