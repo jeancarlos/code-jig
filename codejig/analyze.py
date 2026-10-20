@@ -109,9 +109,12 @@ CARGO, GO_MOD = ("Cargo.toml",), ("go.mod",)
 JAVA_MARKERS = ("pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts")
 
 
+def _subdirs(root: Path) -> list[Path]:
+    return sorted(p for p in root.iterdir() if p.is_dir() and p.name not in SKIP_DIRS and not p.name.startswith("."))
+
+
 def marker_dir(root: Path, names: tuple[str, ...]) -> Path | None:
-    subdirs = sorted(p for p in root.iterdir() if p.is_dir() and p.name not in SKIP_DIRS and not p.name.startswith("."))
-    return next((base for base in (root, *subdirs) if any((base / n).is_file() for n in names)), None)
+    return next((base for base in (root, *_subdirs(root)) if any((base / n).is_file() for n in names)), None)
 
 
 def detect(root: Path) -> set[str]:
@@ -121,7 +124,7 @@ def detect(root: Path) -> set[str]:
     if (root / "package.json").is_file():
         stacks.add("node")
     markers = ("pyproject.toml", "setup.py", "setup.cfg")
-    if any((root / m).is_file() for m in markers) or any(root.glob("requirements*.txt")) or any(root.glob("*.py")) or any(root.glob("*/*.py")):
+    if any((root / m).is_file() for m in markers) or any(root.glob("requirements*.txt")) or any(root.glob("*.py")) or any(any(d.glob("*.py")) for d in _subdirs(root)):
         stacks.add("python")
     for stack, names in (("rust", CARGO), ("java", JAVA_MARKERS), ("go", GO_MOD)):
         if marker_dir(root, names):

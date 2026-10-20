@@ -86,6 +86,18 @@ class Detect(unittest.TestCase):
         write(self.root / "go.mod", "")
         self.assertEqual(analyze.detect(self.root), {"rust", "java", "go"})
 
+    def test_rust_only_tree_is_not_python(self):
+        write(self.root / "Cargo.toml", "")
+        write(self.root / "src" / "main.rs", "fn main() {}\n")
+        write(self.root / "target" / "gen.py", "x = 1\n")
+        write(self.root / ".venv" / "a.py", "x = 1\n")
+        self.assertEqual(analyze.detect(self.root), {"rust"})
+
+    def test_python_script_beside_rust_is_still_python(self):
+        write(self.root / "Cargo.toml", "")
+        write(self.root / "tools" / "icons.py", "x = 1\n")
+        self.assertEqual(analyze.detect(self.root), {"rust", "python"})
+
     def test_java_by_pom(self):
         write(self.root / "pom.xml", "")
         self.assertEqual(analyze.detect(self.root), {"java"})
@@ -989,6 +1001,16 @@ class RealTools(unittest.TestCase):
         self.assertEqual(report.errors, [])
         self.assertIn("RUSTSEC-2020-0071", {f.rule for f in report.findings})
         self.assertEqual({f.path for f in report.findings}, {"Cargo.lock"})
+
+    @unittest.skipUnless(shutil.which("lizard"), "lizard not installed")
+    def test_real_lizard_reads_rust(self):
+        root = tree(self)
+        body = "pub fn f(x: u32) -> u32 {\n" + "".join(f"    if x > {i} {{\n" for i in range(18)) + "        return 1;\n" + "    }\n" * 18 + "    0\n}\n"
+        write(root / "Cargo.toml", "")
+        write(root / "src" / "lib.rs", body)
+        report = analyze.run_tools([t for t in analyze.TOOLS if t.name == "lizard"], root, {"rust"})
+        self.assertEqual(report.errors, [])
+        self.assertIn(("cyclomatic-complexity", "src/lib.rs"), {(f.rule, f.path) for f in report.findings})
 
     @unittest.skipUnless(shutil.which("vulture"), "vulture not installed")
     def test_real_vulture(self):
