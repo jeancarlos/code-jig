@@ -23,7 +23,7 @@ from codejig import unsafe_scan
 
 CATEGORIES = ("security", "secret", "dependency", "bug", "type", "unused", "complexity", "duplication")
 TOOL_ENV = {"SEMGREP_SEND_METRICS": "off", "SEMGREP_ENABLE_VERSION_CHECK": "0", "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
-            "DOTNET_NOLOGO": "1", "KIOTA_CLI_TELEMETRY_OPTOUT": "1", "PYTHONUTF8": "1"}
+            "DOTNET_NOLOGO": "1", "KIOTA_CLI_TELEMETRY_OPTOUT": "1", "PYTHONUTF8": "1", "RUSTUP_AUTO_INSTALL": "0"}
 COGNITIVE, CYCLOMATIC, NLOC, PARAMS = 15, 15, 100, 7
 CODE_SUFFIXES = {".py", ".cs", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".vue", ".java", ".kt", ".go", ".rs", ".swift", ".php", ".rb", ".scala", ".lua", ".c", ".cc", ".cpp", ".h", ".hpp", ".m"}
 SKIP_DIRS = {".git", "node_modules", "bin", "obj", ".venv", "venv", "dist", "build", "__pycache__", "coverage", "htmlcov", ".nyc_output", "target", "vendor"}
@@ -546,14 +546,14 @@ def parse_cargo_machete(out: str, root: Path, tmp: Path) -> list[Finding]:
 
 
 def parse_cargo_deny(out: str, root: Path, tmp: Path) -> list[Finding]:
-    found = []
+    found, lock = [], rel(str(_cargo_manifest(root).parent / "Cargo.lock"), root)
     for line in out.splitlines():
         if not line.startswith("{"):
             continue
         entry = json.loads(line)
         fields = entry.get("fields") or {}
         if entry.get("type") == "diagnostic" and fields.get("severity") in ("error", "warning"):
-            found.append(Finding("dependency", "cargo-deny", fields.get("code") or "diagnostic", "Cargo.lock", 0, fields.get("message", "")))
+            found.append(Finding("dependency", "cargo-deny", fields.get("code") or "diagnostic", lock, 0, fields.get("message", "")))
     return found
 
 
@@ -813,9 +813,11 @@ def _run_one(t: Tool, exe: str, root: Path, env: dict, timeout: int) -> tuple[li
         tmp = Path(d)
         error = None
         try:
-            code, out, err = _launch(t, t.argv(exe, root, tmp), root, env, tmp, timeout)
-            if t.fallback and code not in t.ok and _has_type_error(t, out, root, tmp):
-                code, out, err = _launch(t, t.fallback(exe, root, tmp), root, env, tmp, timeout)
+            argv = t.argv(exe, root, tmp)
+            code, out, err = _launch(t, argv, root, env, tmp, timeout)
+            retry = t.fallback(exe, root, tmp) if t.fallback and code not in t.ok and _has_type_error(t, out, root, tmp) else argv
+            if retry != argv:
+                code, out, err = _launch(t, retry, root, env, tmp, timeout)
                 error = None if _has_type_error(t, out, root, tmp) else t.fallback_note
         except subprocess.TimeoutExpired:
             return [], f"timed out after {timeout}s"
