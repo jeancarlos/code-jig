@@ -1071,6 +1071,31 @@ class UnsafeScan(unittest.TestCase):
         self.assertEqual(unsafe_scan.undocumented("fn f() {\n    // SAFETY: fine\n    let x = unsafe { };\n}\n"), (1, []))
         self.assertEqual(unsafe_scan.undocumented("// SAFETY: old\nfn f() { }\nunsafe { }\n"), (1, [3]))
 
+    def test_c_raw_strings_are_skipped(self):
+        self.assertEqual(unsafe_scan.undocumented('let a = cr"\\"; unsafe { }\nlet b = cr#"unsafe { "#;\n'), (1, [1]))
+
+    def test_safety_does_not_carry_to_the_next_match_arm(self):
+        src = "match x {\n    A => 1, // SAFETY: about A\n    B => unsafe { f() },\n}\n"
+        self.assertEqual(unsafe_scan.undocumented(src), (1, [3]))
+        own = "match x {\n    // SAFETY: about B\n    B => unsafe { f() },\n}\n"
+        self.assertEqual(unsafe_scan.undocumented(own), (1, []))
+        self.assertEqual(unsafe_scan.undocumented("match x {\n    A => 1,\n    // SAFETY: B\n    B => unsafe { f() },\n}\n"), (1, []))
+
+    def test_adversarial_input_stays_fast(self):
+        for chunk in ("unsafe impl ", "unsafe extern ", "unsafe /**/ ", "'\\ "):
+            src = chunk * (240_000 // len(chunk))
+            started = time.monotonic()
+            unsafe_scan.undocumented(src)
+            self.assertLess(time.monotonic() - started, 2, chunk)
+
+    def test_oversized_files_are_skipped(self):
+        root = tree(self)
+        write(root / "Cargo.toml", "")
+        write(root / "src" / "main.rs", "fn main() { unsafe { } }\n")
+        with mock.patch.object(analyze, "UNSAFE_SCAN_MAX_BYTES", 5):
+            self.assertEqual(analyze.scan_unsafe(root), [])
+        self.assertEqual(len(analyze.scan_unsafe(root)), 1)
+
     def test_comment_right_after_the_brace(self):
         self.assertEqual(unsafe_scan.undocumented("unsafe {\n    // SAFETY: fine\n    f()\n}\n"), (1, []))
 
