@@ -107,6 +107,7 @@ class Report:
 CLIPPY_GROUPS = ("correctness", "suspicious", "perf", "style", "complexity")
 CLIPPY_EXTRA = ("cognitive_complexity", "too_many_arguments", "too_many_lines", "undocumented_unsafe_blocks", "missing_safety_doc", "not_unsafe_ptr_arg_deref", "multiple_unsafe_ops_per_block", "transmute_undefined_repr")
 CLIPPY_IN_TESTS = ("unwrap", "expect", "panic", "indexing-slicing", "dbg")
+UNSAFE_SCAN_MAX_BYTES = 2_000_000
 TEST_DIRS = {"tests", "benches"}
 CARGO, GO_MOD = ("Cargo.toml",), ("go.mod",)
 JAVA_MARKERS = ("pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts")
@@ -563,6 +564,8 @@ def scan_unsafe(root: Path) -> list[Finding]:
         if not name.endswith(".rs"):
             continue
         try:
+            if (root / name).stat().st_size > UNSAFE_SCAN_MAX_BYTES:
+                continue
             total, bare = unsafe_scan.undocumented((root / name).read_text(encoding="utf-8", errors="replace"))
         except OSError:
             continue
