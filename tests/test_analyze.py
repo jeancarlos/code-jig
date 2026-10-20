@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import textwrap
 import time
 import types
@@ -14,7 +15,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codejig import analyze
+from codejig import analyze, unsafe_scan
 from tests.util import tree, write
 
 LIZARD_CSV = textwrap.dedent('''\
@@ -78,6 +79,43 @@ class Detect(unittest.TestCase):
     def test_python_package_without_packaging_files(self):
         write(self.root / "pkg" / "__init__.py", "")
         self.assertEqual(analyze.detect(self.root), {"python"})
+
+    def test_rust_java_go_by_marker(self):
+        write(self.root / "Cargo.toml", "")
+        write(self.root / "build.gradle.kts", "")
+        write(self.root / "go.mod", "")
+        self.assertEqual(analyze.detect(self.root), {"rust", "java", "go"})
+
+    def test_rust_only_tree_is_not_python(self):
+        write(self.root / "Cargo.toml", "")
+        write(self.root / "src" / "main.rs", "fn main() {}\n")
+        write(self.root / "target" / "gen.py", "x = 1\n")
+        write(self.root / ".venv" / "a.py", "x = 1\n")
+        self.assertEqual(analyze.detect(self.root), {"rust"})
+
+    def test_python_script_beside_rust_is_still_python(self):
+        write(self.root / "Cargo.toml", "")
+        write(self.root / "tools" / "icons.py", "x = 1\n")
+        self.assertEqual(analyze.detect(self.root), {"rust", "python"})
+
+    def test_java_by_pom(self):
+        write(self.root / "pom.xml", "")
+        self.assertEqual(analyze.detect(self.root), {"java"})
+
+    def test_nested_projects_are_found_one_folder_down(self):
+        write(self.root / "src-tauri" / "Cargo.toml", "")
+        write(self.root / "backend" / "go.mod", "")
+        write(self.root / "target" / "debug" / "pom.xml", "")
+        self.assertEqual(analyze.detect(self.root), {"rust", "go"})
+
+    def test_rust_and_go_tools_run_in_the_nested_project(self):
+        write(self.root / "src-tauri" / "Cargo.toml", "")
+        write(self.root / "backend" / "go.mod", "")
+        by = {t.name: t for t in analyze.TOOLS}
+        clippy = by["clippy"].argv("cargo", self.root, self.root)
+        self.assertEqual(clippy[clippy.index("--manifest-path") + 1], str(self.root / "src-tauri" / "Cargo.toml"))
+        vet = by["go-vet"].argv("go", self.root, self.root)
+        self.assertEqual(vet[:3], ["go", "-C", str(self.root / "backend")])
 
     def test_dotnet_by_solution(self):
         write(self.root / "App.slnx", "")
@@ -208,6 +246,46 @@ class Parsers(unittest.TestCase):
             ("bug", "NU1900", "Api/Api.csproj", 0), ("bug", "NETSDK1045", "Api/Api.csproj", 0)])
         self.assertIn("GHSA-5crp-9r3c-p9vr", found[0].message)
         self.assertNotIn("[", found[0].message.split("https")[0])
+
+    def test_clippy(self):
+        def msg(level, code, name, primary=True):
+            return json.dumps({"reason": "compiler-message", "message": {
+                "level": level, "message": f"{name} problem", "code": {"code": code} if code else None,
+                "spans": [{"file_name": "src/lib.rs", "line_start": 7, "is_primary": primary}]}})
+        out = "\n".join([
+            msg("warning", "clippy::cognitive_complexity", "big"), msg("warning", "unused_variables", "unused"),
+            msg("warning", "clippy::needless_return", "ret"), msg("error", "E0308", "types"), msg("warning", None, "plain"),
+            msg("warning", "clippy::skipped", "secondary", primary=False),
+            json.dumps({"reason": "compiler-artifact"}), json.dumps({"reason": "compiler-message", "message": {"level": "note", "spans": []}}),
+            ""])
+        found = analyze.parse_clippy(out, self.root, self.tmp)
+        self.assertEqual([(f.category, f.rule, f.path, f.line) for f in found], [
+            ("complexity", "clippy::cognitive_complexity", "src/lib.rs", 7), ("unused", "unused_variables", "src/lib.rs", 7),
+            ("bug", "clippy::needless_return", "src/lib.rs", 7), ("type", "E0308", "src/lib.rs", 7), ("bug", "warning", "src/lib.rs", 7)])
+
+    def test_go_vet(self):
+        one = {"example.com/m": {"printf": [{"posn": str(self.root / "main.go") + ":5:2", "message": "wrong type"}]}}
+        two = {"example.com/n": {"unusedresult": [{"posn": "b.go:9:1", "message": "result unused"}], "empty": None}}
+        out = json.dumps(one, indent="\t") + "\n" + json.dumps(two, indent="\t") + "\n"
+        found = analyze.parse_go_vet(out, self.root, self.tmp)
+        self.assertEqual([(f.category, f.rule, f.path, f.line) for f in found], [
+            ("bug", "printf", "main.go", 5), ("bug", "unusedresult", "b.go", 9)])
+        self.assertEqual(analyze.parse_go_vet("", self.root, self.tmp), [])
+
+    def test_pmd(self):
+        def v(rule, ruleset, line):
+            return {"rule": rule, "ruleset": ruleset, "beginline": line, "description": f"{rule} here"}
+        out = json.dumps({"files": [{"filename": str(self.root / "src" / "A.java"), "violations": [
+            v("CyclomaticComplexity", "Design", 3), v("UnusedLocalVariable", "Best Practices", 4),
+            v("HardCodedCryptoKey", "Security", 5), v("EmptyCatchBlock", "Error Prone", 6)]}, {"filename": "B.java"}]})
+        found = analyze.parse_pmd(out, self.root, self.tmp)
+        self.assertEqual([(f.category, f.rule, f.path, f.line) for f in found], [
+            ("complexity", "CyclomaticComplexity", "src/A.java", 3), ("unused", "UnusedLocalVariable", "src/A.java", 4),
+            ("security", "HardCodedCryptoKey", "src/A.java", 5), ("bug", "EmptyCatchBlock", "src/A.java", 6)])
+
+    def test_pmd_rejects_non_object(self):
+        with self.assertRaises(ValueError):
+            analyze.parse_pmd("[]", self.root, self.tmp)
 
     def test_vulture(self):
         out = textwrap.dedent("""\
@@ -417,6 +495,74 @@ class Run(unittest.TestCase):
         time.sleep(6)
         self.assertFalse(marker.exists())
 
+    def test_findings_outside_the_repo_or_in_build_dirs_are_dropped(self):
+        rows = [analyze.Finding("bug", "t", "r", path, 1, "m") for path in
+                ("src/a.py", "/home/u/.cargo/registry/x.rs", "src-tauri/target/debug/x.rmeta", "vendor/lib/a.go", "targets/a.py")]
+        fake_tool(self.bindir, "mypy", "")
+        t = analyze.Tool("mypy", "any", lambda exe, root, tmp: [exe], lambda out, root, tmp: rows, ok=(0,))
+        report = analyze.run_tools([t], self.root, {"python"}, path=str(self.bindir))
+        self.assertEqual([f.path for f in report.findings], ["src/a.py", "targets/a.py"])
+
+    def test_gitleaks_config_allows_only_the_ignored_paths(self):
+        config = analyze._gitleaks_config(["node_modules/", ".env", "a.b/"])
+        self.assertIn("useDefault = true", config)
+        self.assertIn(r"(^|/)(node_modules/|\.env$|a\.b/)", config)
+
+    def test_ignored_paths_come_from_git_and_are_empty_outside_a_repo(self):
+        self.assertEqual(analyze._ignored_paths(self.root), [])
+        git(self.root, "init", "-q")
+        write(self.root / ".gitignore", "dist/\n")
+        write(self.root / "dist" / "a.js", "x")
+        self.assertEqual(analyze._ignored_paths(self.root), ["dist/"])
+        self.assertEqual(analyze._ignored_paths(self.root, limit=0), [])
+
+    def test_dropped_findings_are_counted_and_shown(self):
+        rows = [analyze.Finding("bug", "t", "r", path, 1, "m") for path in ("a.py", "vendor/b.py", "/abs/c.py")]
+        fake_tool(self.bindir, "mypy", "")
+        t = analyze.Tool("mypy", "any", lambda exe, root, tmp: [exe], lambda out, root, tmp: rows, ok=(0,))
+        report = analyze.run_tools([t], self.root, {"python"}, path=str(self.bindir))
+        self.assertEqual(report.dropped, 2)
+        self.assertIn("not shown: 2 findings", "\n".join(analyze.render(report, {"python"})))
+
+    def test_secret_scanners_keep_tracked_files_in_build_dirs(self):
+        git(self.root, "init", "-q")
+        write(self.root / ".gitignore", "target/\n")
+        write(self.root / "vendor" / "k.env", "x")
+        write(self.root / "target" / "k.bin", "x")
+        git(self.root, "add", ".gitignore", "vendor/k.env")
+        rows = [analyze.Finding("secret", "gitleaks", "key", path, 1, "m") for path in ("vendor/k.env", "target/k.bin")]
+        hist = [analyze.Finding("secret", "gitleaks", "key", "target/old.bin", 1, "m")]
+        for name, found, want in (("gitleaks", rows, ["vendor/k.env"]), ("gitleaks-history", hist, ["target/old.bin"])):
+            fake_tool(self.bindir, name, "")
+            t = analyze.Tool(name, "any", lambda exe, root, tmp: [exe], lambda out, root, tmp, found=found: found, ok=(0,))
+            report = analyze.run_tools([t], self.root, {"python"}, path=str(self.bindir) + os.pathsep + os.path.dirname(shutil.which("git")))
+            self.assertEqual([f.path for f in report.findings], want, name)
+
+    def test_lizard_crash_leaves_out_only_the_files_that_crash(self):
+        write(self.root / "ok1.py", "x = 1\n")
+        write(self.root / "ok2.py", "x = 2\n")
+        write(self.root / "bad.go", "x\n")
+        body = textwrap.dedent('''\
+            import sys
+            files = open(sys.argv[sys.argv.index("-f") + 1]).read().split()
+            if "bad.go" in files:
+                sys.stderr.write("Traceback (most recent call last):\\nAttributeError: boom\\n")
+                sys.exit(1)
+            print("9,8,51,1,9,\\"f@2-10@ok1.py\\",\\"ok1.py\\",\\"f\\",\\"f( x )\\",2,10,200")
+        ''')
+        fake_tool(self.bindir, "lizard", body=body)
+        t = analyze.TOOLS[0]
+        self.assertEqual(t.name, "lizard")
+        with mock.patch.object(analyze, "source_files", return_value=["ok1.py", "ok2.py", "bad.go"]):
+            report = analyze.run_tools([t], self.root, {"python"}, path=str(self.bindir))
+        self.assertEqual([(n, "bad.go" in why) for n, why in report.errors], [("lizard", True)])
+        self.assertEqual([f.rule for f in report.findings], ["cognitive-complexity"])
+
+    def test_error_reason_skips_progress_lines(self):
+        err = "go: downloading github.com/x/y v1.0.0\n# pkg\nvet: ./a.go:3:1: undefined: z\n"
+        self.assertEqual(analyze._first(err), "vet: ./a.go:3:1: undefined: z")
+        self.assertEqual(analyze._first("# only noise\n"), "")
+
     def test_lineless_findings_with_different_messages_are_kept(self):
         proj = "Api/Api.csproj"
         out = f"{proj} : warning NU1903: Package 'A' 1.0 is vulnerable\n{proj} : warning NU1903: Package 'B' 2.0 is vulnerable\n"
@@ -552,6 +698,330 @@ class Cli(unittest.TestCase):
         self.assertEqual(analyze.cli(args), 2)
 
 
+RUST_LIB = textwrap.dedent('''\
+    pub fn first(v: &[u32]) -> u32 {
+        v.iter().max().unwrap() + v[0]
+    }
+
+    pub fn boom() {
+        panic!("x")
+    }
+
+    pub fn narrow(x: u64) -> u32 {
+        x as u32
+    }
+
+    pub fn read(p: *const u8) -> u8 {
+        unsafe { *p }
+    }
+
+    pub fn style() -> u32 {
+        return 1;
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn inside() {
+            let v = vec![1];
+            v.iter().max().unwrap();
+            let _ = v[0];
+            panic!("fine in tests");
+        }
+    }
+''')
+RUST_IT = "pub fn helper(v: &[u32]) -> u32 {\n    v.iter().max().unwrap() + v[0]\n}\n"
+
+
+def rust_crate(test: unittest.TestCase, manifest: str = "", lib: str = RUST_LIB) -> Path:
+    root = tree(test)
+    write(root / "Cargo.toml", '[package]\nname = "fx"\nversion = "0.1.0"\nedition = "2021"\n' + manifest)
+    write(root / "src" / "lib.rs", lib)
+    write(root / "tests" / "it.rs", RUST_IT)
+    target = Path(tempfile.mkdtemp())
+    test.addCleanup(shutil.rmtree, target, True)
+    patch = mock.patch.dict(os.environ, {"CARGO_TARGET_DIR": str(target)})
+    patch.start()
+    test.addCleanup(patch.stop)
+    return root
+
+
+def clippy_findings(root: Path, strict: bool = False) -> analyze.Report:
+    return analyze.run_tools([analyze.clippy_tool(strict)], root, {"rust"})
+
+
+@unittest.skipUnless(shutil.which("cargo"), "cargo not installed")
+class RustClippy(unittest.TestCase):
+    def rules(self, report):
+        return {(f.category, f.rule, f.path) for f in report.findings}
+
+    def test_tiers_and_test_code(self):
+        report = clippy_findings(rust_crate(self))
+        self.assertEqual(report.errors, [])
+        got = self.rules(report)
+        for expected in (("bug", "clippy::unwrap_used", "src/lib.rs"), ("bug", "clippy::indexing_slicing", "src/lib.rs"),
+                         ("bug", "clippy::panic", "src/lib.rs"), ("bug", "clippy::cast_possible_truncation", "src/lib.rs"),
+                         ("bug", "clippy::needless_return", "src/lib.rs"), ("security", "clippy::undocumented_unsafe_blocks", "src/lib.rs")):
+            self.assertIn(expected, got)
+        self.assertEqual({f.line for f in report.findings if f.rule in analyze.CLIPPY_PANIC}, {2, 6, 10})
+        self.assertFalse([f for f in report.findings if f.path.startswith("tests/")])
+
+    def test_arithmetic_only_when_strict(self):
+        lib = "pub fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\n"
+        root = rust_crate(self, lib=lib)
+        self.assertNotIn("clippy::arithmetic_side_effects", {f.rule for f in clippy_findings(root).findings})
+        self.assertIn("clippy::arithmetic_side_effects", {f.rule for f in clippy_findings(root, strict=True).findings})
+
+    def test_arithmetic_when_manifest_asks(self):
+        lib = "pub fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\n"
+        root = rust_crate(self, "[package.metadata.code-jig]\nstrict = true\n", lib)
+        self.assertIn("clippy::arithmetic_side_effects", {f.rule for f in clippy_findings(root).findings})
+
+    def test_project_lints_are_honored(self):
+        root = rust_crate(self, "[lints.clippy]\nunwrap_used = \"allow\"\n")
+        rules = {f.rule for f in clippy_findings(root).findings}
+        self.assertNotIn("clippy::unwrap_used", rules)
+        self.assertNotIn("clippy::indexing_slicing", rules)
+
+    def test_project_clippy_toml_is_not_overridden(self):
+        root = rust_crate(self)
+        write(root / "clippy.toml", "too-many-arguments-threshold = 20\n")
+        self.assertEqual(analyze._clippy_env(root, root), {})
+
+    def test_flags_without_project_lints(self):
+        root = rust_crate(self)
+        argv = analyze.clippy_tool().argv("cargo", root, root)
+        self.assertNotIn("clippy::all", argv)
+        self.assertIn("clippy::unwrap_used", argv)
+        self.assertNotIn("clippy::arithmetic_side_effects", argv)
+        self.assertIn("clippy::arithmetic_side_effects", analyze.clippy_tool(True).argv("cargo", root, root))
+
+
+@unittest.skipUnless(shutil.which("cargo"), "cargo not installed")
+class RustBuildScope(unittest.TestCase):
+    GATED = '#[cfg(feature = "sim")]\npub fn gated(v: &[u32]) -> u32 {\n    v[0]\n}\n'
+
+    def test_all_features_reach_gated_code(self):
+        root = rust_crate(self, "[features]\nsim = []\n", self.GATED)
+        report = clippy_findings(root)
+        self.assertEqual(report.errors, [])
+        self.assertIn(("clippy::indexing_slicing", 3), {(f.rule, f.line) for f in report.findings})
+
+    def test_conflicting_features_fall_back_to_default(self):
+        lib = '#[cfg(all(feature = "a", feature = "b"))]\ncompile_error!("a and b conflict");\n\npub fn f(v: &[u32]) -> u32 {\n    v[0]\n}\n'
+        root = rust_crate(self, "[features]\na = []\nb = []\n", lib)
+        report = clippy_findings(root)
+        self.assertEqual([r for _, r in report.errors], [analyze.clippy_tool().fallback_note])
+        self.assertIn("clippy::indexing_slicing", {f.rule for f in report.findings})
+        self.assertFalse([f for f in report.findings if f.category == "type"])
+
+    def test_no_features_no_flag(self):
+        argv = analyze.clippy_tool().argv("cargo", rust_crate(self), Path())
+        self.assertNotIn("--all-features", argv)
+        self.assertIn("--offline", argv)
+        self.assertNotIn("--target", argv)
+
+    def test_workspace_covers_every_member(self):
+        root = tree(self)
+        write(root / "Cargo.toml", '[workspace]\nresolver = "2"\nmembers = ["a", "b"]\n')
+        for name in "ab":
+            write(root / name / "Cargo.toml", f'[package]\nname = "m{name}"\nversion = "0.1.0"\nedition = "2021"\n')
+            write(root / name / "src" / "lib.rs", "pub fn f(v: &[u32]) -> u32 {\n    v[0]\n}\n")
+        target = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, target, True)
+        with mock.patch.dict(os.environ, {"CARGO_TARGET_DIR": str(target)}):
+            report = clippy_findings(root)
+        self.assertEqual(report.errors, [])
+        self.assertEqual(sorted(f.path for f in report.findings if f.rule == "clippy::indexing_slicing"), ["a/src/lib.rs", "b/src/lib.rs"])
+
+    def test_config_target_is_replaced_by_the_host(self):
+        root = rust_crate(self)
+        write(root / ".cargo" / "config.toml", '[build]\ntarget = "armv7-unknown-linux-musleabihf"\n')
+        argv = analyze.clippy_tool().argv("cargo", root, Path())
+        host = analyze._host_triple()
+        self.assertEqual(argv[argv.index("--target") + 1], host)
+        self.assertEqual(clippy_findings(root).errors, [])
+
+    def test_metadata_target_wins(self):
+        root = rust_crate(self, '[package.metadata.code-jig]\ntarget = "x86_64-unknown-linux-gnu"\n')
+        argv = analyze.clippy_tool().argv("cargo", root, Path())
+        self.assertEqual(argv[argv.index("--target") + 1], "x86_64-unknown-linux-gnu")
+
+
+class RustSupplyChain(unittest.TestCase):
+    def setUp(self):
+        self.root = tree(self)
+        self.tmp = self.root
+        write(self.root / "Cargo.toml", '[package]\nname = "fx"\n\n[dependencies]\nserde = "1"\nlog = "0.4"\n')
+
+    def test_cargo_audit(self):
+        advisory = {"id": "RUSTSEC-2020-0071", "title": "Potential segfault in time"}
+        out = json.dumps({"vulnerabilities": {"found": True, "count": 1, "list": [{"advisory": advisory, "package": {"name": "time", "version": "0.1.43"}}]},
+                          "warnings": {"unmaintained": [{"kind": "unmaintained", "advisory": {"id": "RUSTSEC-2021-0139", "title": "ansi_term is unmaintained"},
+                                                         "package": {"name": "ansi_term", "version": "0.12.1"}}], "yanked": []}})
+        found = analyze.parse_cargo_audit(out, self.root, self.tmp)
+        self.assertEqual([(f.category, f.tool, f.rule, f.path, f.line, f.message) for f in found], [
+            ("dependency", "cargo-audit", "RUSTSEC-2020-0071", "Cargo.lock", 0, "time@0.1.43: Potential segfault in time"),
+            ("dependency", "cargo-audit", "RUSTSEC-2021-0139", "Cargo.lock", 0, "ansi_term@0.12.1: ansi_term is unmaintained")])
+
+    def test_cargo_audit_needs_a_lockfile_and_a_local_advisory_db(self):
+        home = self.root / "cargo home"
+        with mock.patch.dict(os.environ, {"CARGO_HOME": str(home)}):
+            self.assertFalse(analyze._audit_ready(self.root))
+            write(self.root / "Cargo.lock", "")
+            self.assertFalse(analyze._audit_ready(self.root))
+            (home / "advisory-db").mkdir(parents=True)
+            self.assertTrue(analyze._audit_ready(self.root))
+
+    def test_cargo_machete(self):
+        out = ("Analyzing dependencies of crates in this directory...\ncargo-machete found the following unused dependencies in this directory:\n"
+               f"fx -- {self.root / 'Cargo.toml'}:\n\tlog\n\tserde\n")
+        found = analyze.parse_cargo_machete(out, self.root, self.tmp)
+        self.assertEqual([(f.category, f.tool, f.rule, f.path, f.line) for f in found], [
+            ("unused", "cargo-machete", "unused-dependency", "Cargo.toml", 6), ("unused", "cargo-machete", "unused-dependency", "Cargo.toml", 5)])
+
+    def test_cargo_deny(self):
+        def diag(severity, code, message):
+            return json.dumps({"type": "diagnostic", "fields": {"code": code, "message": message, "severity": severity, "labels": []}})
+        out = "\n".join([diag("error", "vulnerability", "time 0.1.43 is vulnerable"), diag("warning", "unmaintained", "ansi_term is unmaintained"),
+                         diag("note", "license-not-encountered", "skip"), json.dumps({"type": "summary", "fields": {}}), "plain text"])
+        found = analyze.parse_cargo_deny(out, self.root, self.tmp)
+        self.assertEqual([(f.category, f.rule, f.message) for f in found], [
+            ("dependency", "vulnerability", "time 0.1.43 is vulnerable"), ("dependency", "unmaintained", "ansi_term is unmaintained")])
+
+    def test_missing_tools_are_skipped_with_a_hint(self):
+        empty = self.root / "empty"
+        empty.mkdir()
+        wanted = [t for t in analyze.TOOLS if t.name in ("cargo-audit", "cargo-machete", "cargo-deny")]
+        write(self.root / "Cargo.lock", "")
+        report = analyze.run_tools(wanted, self.root, {"rust"}, path=str(empty))
+        self.assertEqual(report.errors, [])
+        self.assertEqual(report.ran, [])
+        self.assertEqual({n for n, _ in report.skipped}, {"cargo-audit", "cargo-machete", "cargo-deny"})
+        self.assertIn("deny.toml", dict(report.skipped)["cargo-deny"])
+        self.assertIn("cargo install cargo-machete", dict(report.skipped)["cargo-machete"])
+
+    def test_cargo_deny_runs_only_with_a_deny_toml(self):
+        deny = next(t for t in analyze.TOOLS if t.name == "cargo-deny")
+        self.assertFalse(deny.applies(self.root))
+        write(self.root / "deny.toml", "")
+        self.assertTrue(deny.applies(self.root))
+        self.assertTrue(deny.stderr)
+
+    def test_stderr_tools_parse_stderr(self):
+        script = self.root / "fake.py"
+        write(script, "import sys\nsys.stderr.write('{\"type\": \"diagnostic\", \"fields\": {\"severity\": \"error\", \"code\": \"banned\", \"message\": \"m\"}}\\n')\nsys.exit(1)\n")
+        tool = analyze.Tool("cargo-deny", "rust", lambda exe, root, tmp: [sys.executable, str(script)], analyze.parse_cargo_deny, findings_exit=(1,), stderr=True)
+        found, error = analyze._run_one(tool, sys.executable, self.root, dict(os.environ), 60)
+        self.assertEqual((error, [f.rule for f in found]), (None, ["banned"]))
+
+
+class UnsafeScan(unittest.TestCase):
+    SRC = textwrap.dedent('''\
+        fn a(p: *const u8) -> u8 {
+            // SAFETY: caller passes a valid pointer
+            unsafe { *p }
+        }
+        fn b(p: *const u8) -> u8 {
+            unsafe { *p }
+        }
+        fn c(p: *const u8) -> u8 {
+            unsafe {
+                // Safety: checked above
+                *p
+            }
+        }
+        fn d<'a>(p: &'a str) -> &'a str {
+            let _ = "unsafe { not code }";
+            let _ = r#"unsafe { " still a string }"#;
+            let _ = '\\'';
+            // unsafe { in a comment }
+            /* unsafe { /* nested */ } */
+            p
+        }
+        unsafe fn e() {}
+        unsafe impl Send for T {}
+        fn f(p: *const u8) -> u8 {
+            unsafe { *p }
+        }
+    ''')
+
+    def test_counts_and_undocumented_lines(self):
+        self.assertEqual(unsafe_scan.undocumented(self.SRC), (6, [6, 23, 25]))
+
+    def test_unsafe_in_strings_and_comments_is_not_counted(self):
+        self.assertEqual(unsafe_scan.undocumented('let s = "unsafe {";\n// unsafe {\n'), (0, []))
+
+    def test_non_ascii_identifiers_do_not_crash(self):
+        self.assertEqual(unsafe_scan.undocumented("fn \u00e9() { let \u00f1ame = 1; unsafe { } }\n"), (1, [1]))
+        self.assertEqual(unsafe_scan.undocumented("let \u00e9unsafe = 1;\n"), (0, []))
+
+    def test_unsafe_inside_literals_and_nested_comments_is_ignored(self):
+        src = 'let a = r#"unsafe { "#;\nlet b = br"unsafe {";\nlet c = b"unsafe {";\n/* /* unsafe { */ unsafe { */\n'
+        self.assertEqual(unsafe_scan.undocumented(src), (0, []))
+
+    def test_comments_between_unsafe_and_brace(self):
+        self.assertEqual(unsafe_scan.undocumented("unsafe /* c */ { }\n"), (1, [1]))
+        self.assertEqual(unsafe_scan.undocumented("unsafe\n// c\n{ }\n"), (1, [1]))
+        self.assertEqual(unsafe_scan.undocumented("// SAFETY: ok\nunsafe /* c */ { }\n"), (1, []))
+
+    def test_declarations_are_counted_not_flagged(self):
+        self.assertEqual(unsafe_scan.undocumented("unsafe fn f() {}\nunsafe trait T {}\nunsafe extern \"C\" fn g() {}\n"), (3, []))
+
+    def test_extern_block_and_impl_need_safety(self):
+        self.assertEqual(unsafe_scan.undocumented('unsafe extern "C" { fn f(); }\nunsafe impl Send for T {}\n'), (2, [1, 2]))
+        self.assertEqual(unsafe_scan.undocumented('// SAFETY: audited\nunsafe impl Send for T {}\n'), (1, []))
+
+    def test_only_a_safety_label_counts(self):
+        self.assertEqual(unsafe_scan.undocumented("// no safety concerns here\nunsafe { }\n"), (1, [2]))
+        self.assertEqual(unsafe_scan.undocumented("// SAFETY: fine\n\n\n\n\nlet x = unsafe { };\n"), (1, []))
+        self.assertEqual(unsafe_scan.undocumented("fn f() {\n    // SAFETY: fine\n    let x = unsafe { };\n}\n"), (1, []))
+        self.assertEqual(unsafe_scan.undocumented("// SAFETY: old\nfn f() { }\nunsafe { }\n"), (1, [3]))
+
+    def test_comment_right_after_the_brace(self):
+        self.assertEqual(unsafe_scan.undocumented("unsafe {\n    // SAFETY: fine\n    f()\n}\n"), (1, []))
+
+    def test_inline_tool_failure_is_an_error_not_a_crash(self):
+        def boom(root):
+            raise ValueError("bad")
+        tool = analyze.Tool("unsafe-scan", "rust", lambda exe, root, tmp: [], lambda out, root, tmp: [], inline=boom)
+        report = analyze.run_tools([tool], tree(self), {"rust"})
+        self.assertEqual(report.errors, [("unsafe-scan", "failed: bad")])
+
+    def test_clippy_hits_are_not_repeated(self):
+        root = rust_crate(self, lib=self.SRC)
+        with mock.patch.dict(os.environ, {}):
+            report = analyze.run_tools([analyze.clippy_tool(), *[t for t in analyze.TOOLS if t.name == "unsafe-scan"]], root, {"rust"})
+        by_line = [(f.path, f.line) for f in report.findings if f.category == "security"]
+        self.assertEqual(len(by_line), len(set(by_line)))
+
+    def test_tool_reports_low_security_per_block(self):
+        root = rust_crate(self, lib=self.SRC)
+        report = analyze.run_tools([t for t in analyze.TOOLS if t.name == "unsafe-scan"], root, {"rust"})
+        self.assertEqual(report.errors, [])
+        self.assertEqual([(f.category, f.rule, f.path, f.line) for f in report.findings], [("security", "undocumented-unsafe", "src/lib.rs", n) for n in (6, 23, 25)])
+        self.assertIn("low", report.findings[0].message)
+
+    def test_tool_runs_without_any_binary_on_the_path(self):
+        root = tree(self)
+        write(root / "Cargo.toml", "")
+        write(root / "src" / "main.rs", "fn main() { unsafe { } }\n")
+        report = analyze.run_tools([t for t in analyze.TOOLS if t.name == "unsafe-scan"], root, {"rust"}, path=str(root))
+        self.assertEqual(report.ran, ["unsafe-scan"])
+        self.assertEqual(len(report.findings), 1)
+
+
+class ClippyCategories(unittest.TestCase):
+    def test_unsafe_lints_are_security(self):
+        self.assertEqual(analyze._clippy_category("clippy::missing_safety_doc", "warning"), "security")
+
+    def test_panic_lint_in_tests_dir_dropped(self):
+        root = tree(self)
+        line = json.dumps({"reason": "compiler-message", "message": {"level": "warning", "message": "m", "code": {"code": "clippy::unwrap_used"},
+                                                                   "spans": [{"file_name": "benches/b.rs", "line_start": 3, "is_primary": True}]}})
+        self.assertEqual(analyze.parse_clippy(line, root, root), [])
+
+
 @unittest.skipUnless(os.environ.get("CODE_JIG_REAL_TOOLS"), "set CODE_JIG_REAL_TOOLS=1 to run the real-tool tests")
 class RealTools(unittest.TestCase):
     def test_real_lizard_and_ruff(self):
@@ -564,6 +1034,26 @@ class RealTools(unittest.TestCase):
         rules = {f.rule for f in report.findings}
         self.assertIn("cognitive-complexity", rules)
         self.assertTrue(any(r.startswith("S") for r in rules))
+
+    @unittest.skipUnless(shutil.which("osv-scanner"), "osv-scanner not installed")
+    def test_real_osv_scanner_reads_cargo_lock(self):
+        root = tree(self)
+        write(root / "Cargo.toml", '[package]\nname = "fx"\nversion = "0.1.0"\n')
+        write(root / "Cargo.lock", 'version = 3\n\n[[package]]\nname = "time"\nversion = "0.1.43"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\n')
+        report = analyze.run_tools([t for t in analyze.TOOLS if t.name == "osv-scanner"], root, {"rust"})
+        self.assertEqual(report.errors, [])
+        self.assertIn("RUSTSEC-2020-0071", {f.rule for f in report.findings})
+        self.assertEqual({f.path for f in report.findings}, {"Cargo.lock"})
+
+    @unittest.skipUnless(shutil.which("lizard"), "lizard not installed")
+    def test_real_lizard_reads_rust(self):
+        root = tree(self)
+        body = "pub fn f(x: u32) -> u32 {\n" + "".join(f"    if x > {i} {{\n" for i in range(18)) + "        return 1;\n" + "    }\n" * 18 + "    0\n}\n"
+        write(root / "Cargo.toml", "")
+        write(root / "src" / "lib.rs", body)
+        report = analyze.run_tools([t for t in analyze.TOOLS if t.name == "lizard"], root, {"rust"})
+        self.assertEqual(report.errors, [])
+        self.assertIn(("cyclomatic-complexity", "src/lib.rs"), {(f.rule, f.path) for f in report.findings})
 
     @unittest.skipUnless(shutil.which("vulture"), "vulture not installed")
     def test_real_vulture(self):
@@ -605,6 +1095,34 @@ class RealTools(unittest.TestCase):
         self.assertEqual(report.errors, [])
         self.assertEqual({(f.category, f.path) for f in report.findings}, {("secret", "settings.py"), ("secret", "local.py")})
         self.assertNotIn(key, json.dumps([f.message for f in report.findings]))
+
+    @unittest.skipUnless(shutil.which("gitleaks"), "gitleaks not installed")
+    def test_real_gitleaks_skips_git_ignored_folders_but_not_tracked_vendor(self):
+        root = tree(self)
+        key = "AKIA" + "Q7Z2X4J6L3N5P2R7"
+        write(root / "pyproject.toml", "")
+        write(root / ".gitignore", "node_modules/\ndist/\n")
+        write(root / "vendor" / "lib.py", f'KEY = "{key}"\n')
+        git(root, "init", "-q")
+        git(root, "add", ".")
+        git(root, "commit", "-q", "-m", "x")
+        write(root / "node_modules" / "dep.py", f'KEY = "{key}"\n')
+        write(root / "dist" / "bundle.py", f'KEY = "{key}"\n')
+        tools = [t for t in analyze.TOOLS if t.name == "gitleaks"]
+        report = analyze.run_tools(tools, root, {"python"})
+        self.assertEqual(report.errors, [])
+        self.assertEqual([f.path for f in report.findings], ["vendor/lib.py"])
+
+    @unittest.skipUnless(shutil.which("ruff"), "ruff not installed")
+    def test_real_ruff_flags_assert_outside_tests_only(self):
+        root = tree(self)
+        write(root / "pyproject.toml", "")
+        for rel in ("app/core.py", "tests/test_core.py", "pkg/test_x.py", "pkg/tests/helper.py", "conftest.py", "pkg/y_test.py"):
+            write(root / rel, "def f(x):\n    assert x\n")
+        tools = [t for t in analyze.TOOLS if t.name == "ruff"]
+        report = analyze.run_tools(tools, root, {"python"})
+        self.assertEqual(report.errors, [])
+        self.assertEqual([(f.rule, f.path) for f in report.findings], [("S101", "app/core.py")])
 
     @unittest.skipUnless(shutil.which("osv-scanner"), "osv-scanner not installed")
     def test_real_osv_scanner(self):
