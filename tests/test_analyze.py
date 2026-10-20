@@ -719,6 +719,14 @@ RUST_LIB = textwrap.dedent('''\
         return 1;
     }
 
+    pub fn ex(o: Option<u32>) -> u32 {
+        o.expect("x")
+    }
+
+    pub fn unr() {
+        unreachable!()
+    }
+
     #[cfg(test)]
     mod tests {
         #[test]
@@ -726,6 +734,9 @@ RUST_LIB = textwrap.dedent('''\
             let v = vec![1];
             v.iter().max().unwrap();
             let _ = v[0];
+            let _ = 5u64 as u32;
+            let _ = (-1i32) as u32;
+            unreachable!();
             panic!("fine in tests");
         }
     }
@@ -755,15 +766,31 @@ class RustClippy(unittest.TestCase):
     def rules(self, report):
         return {(f.category, f.rule, f.path) for f in report.findings}
 
-    def test_tiers_and_test_code(self):
+    def lines(self, report, rule):
+        return sorted(f.line for f in report.findings if f.rule == rule)
+
+    def test_default_tier_and_test_code(self):
         report = clippy_findings(rust_crate(self))
         self.assertEqual(report.errors, [])
         got = self.rules(report)
-        for expected in (("bug", "clippy::unwrap_used", "src/lib.rs"), ("bug", "clippy::indexing_slicing", "src/lib.rs"),
-                         ("bug", "clippy::panic", "src/lib.rs"), ("bug", "clippy::cast_possible_truncation", "src/lib.rs"),
+        for expected in (("bug", "clippy::unwrap_used", "src/lib.rs"), ("bug", "clippy::panic", "src/lib.rs"),
                          ("bug", "clippy::needless_return", "src/lib.rs"), ("security", "clippy::undocumented_unsafe_blocks", "src/lib.rs")):
             self.assertIn(expected, got)
-        self.assertEqual({f.line for f in report.findings if f.rule in analyze.CLIPPY_PANIC}, {2, 6, 10})
+        rules = {f.rule for f in report.findings}
+        self.assertFalse(rules & {"clippy::indexing_slicing", "clippy::cast_possible_truncation", "clippy::cast_sign_loss", "clippy::expect_used",
+                                  "clippy::unreachable", "clippy::arithmetic_side_effects"})
+        self.assertEqual(self.lines(report, "clippy::unwrap_used"), [2])
+        self.assertFalse([f for f in report.findings if f.path.startswith("tests/")])
+
+    def test_strict_tier_adds_noisy_lints_but_not_from_test_code(self):
+        report = clippy_findings(rust_crate(self), strict=True)
+        src = RUST_LIB.splitlines()
+        first_test = next(n for n, ln in enumerate(src, 1) if ln.strip() == "#[cfg(test)]")
+        for rule in ("clippy::indexing_slicing", "clippy::cast_possible_truncation", "clippy::expect_used", "clippy::unreachable"):
+            lines = self.lines(report, rule)
+            self.assertTrue(lines, rule)
+            self.assertTrue(all(n < first_test for n in lines), (rule, lines))
+        self.assertEqual(self.lines(report, "clippy::cast_sign_loss"), [])
         self.assertFalse([f for f in report.findings if f.path.startswith("tests/")])
 
     def test_arithmetic_only_when_strict(self):
@@ -781,7 +808,6 @@ class RustClippy(unittest.TestCase):
         root = rust_crate(self, "[lints.clippy]\nunwrap_used = \"allow\"\n")
         rules = {f.rule for f in clippy_findings(root).findings}
         self.assertNotIn("clippy::unwrap_used", rules)
-        self.assertNotIn("clippy::indexing_slicing", rules)
 
     def test_project_clippy_toml_is_not_overridden(self):
         root = rust_crate(self)
@@ -794,25 +820,27 @@ class RustClippy(unittest.TestCase):
         self.assertNotIn("clippy::all", argv)
         self.assertIn("clippy::unwrap_used", argv)
         self.assertNotIn("clippy::arithmetic_side_effects", argv)
+        self.assertNotIn("clippy::indexing_slicing", argv)
+        self.assertIn("clippy::indexing_slicing", analyze.clippy_tool(True).argv("cargo", root, root))
         self.assertIn("clippy::arithmetic_side_effects", analyze.clippy_tool(True).argv("cargo", root, root))
 
 
 @unittest.skipUnless(shutil.which("cargo"), "cargo not installed")
 class RustBuildScope(unittest.TestCase):
-    GATED = '#[cfg(feature = "sim")]\npub fn gated(v: &[u32]) -> u32 {\n    v[0]\n}\n'
+    GATED = '#[cfg(feature = "sim")]\npub fn gated(v: &[u32]) -> u32 {\n    *v.first().unwrap()\n}\n'
 
     def test_all_features_reach_gated_code(self):
         root = rust_crate(self, "[features]\nsim = []\n", self.GATED)
         report = clippy_findings(root)
         self.assertEqual(report.errors, [])
-        self.assertIn(("clippy::indexing_slicing", 3), {(f.rule, f.line) for f in report.findings})
+        self.assertIn(("clippy::unwrap_used", 3), {(f.rule, f.line) for f in report.findings})
 
     def test_conflicting_features_fall_back_to_default(self):
-        lib = '#[cfg(all(feature = "a", feature = "b"))]\ncompile_error!("a and b conflict");\n\npub fn f(v: &[u32]) -> u32 {\n    v[0]\n}\n'
+        lib = '#[cfg(all(feature = "a", feature = "b"))]\ncompile_error!("a and b conflict");\n\npub fn f(v: &[u32]) -> u32 {\n    *v.first().unwrap()\n}\n'
         root = rust_crate(self, "[features]\na = []\nb = []\n", lib)
         report = clippy_findings(root)
         self.assertEqual([r for _, r in report.errors], [analyze.clippy_tool().fallback_note])
-        self.assertIn("clippy::indexing_slicing", {f.rule for f in report.findings})
+        self.assertIn("clippy::unwrap_used", {f.rule for f in report.findings})
         self.assertFalse([f for f in report.findings if f.category == "type"])
 
     def test_no_features_no_flag(self):
@@ -826,13 +854,13 @@ class RustBuildScope(unittest.TestCase):
         write(root / "Cargo.toml", '[workspace]\nresolver = "2"\nmembers = ["a", "b"]\n')
         for name in "ab":
             write(root / name / "Cargo.toml", f'[package]\nname = "m{name}"\nversion = "0.1.0"\nedition = "2021"\n')
-            write(root / name / "src" / "lib.rs", "pub fn f(v: &[u32]) -> u32 {\n    v[0]\n}\n")
+            write(root / name / "src" / "lib.rs", "pub fn f(v: &[u32]) -> u32 {\n    *v.first().unwrap()\n}\n")
         target = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, target, True)
         with mock.patch.dict(os.environ, {"CARGO_TARGET_DIR": str(target)}):
             report = clippy_findings(root)
         self.assertEqual(report.errors, [])
-        self.assertEqual(sorted(f.path for f in report.findings if f.rule == "clippy::indexing_slicing"), ["a/src/lib.rs", "b/src/lib.rs"])
+        self.assertEqual(sorted(f.path for f in report.findings if f.rule == "clippy::unwrap_used"), ["a/src/lib.rs", "b/src/lib.rs"])
 
     def test_installed_config_target_is_kept(self):
         root = rust_crate(self)
@@ -937,6 +965,27 @@ class RustSupplyChain(unittest.TestCase):
         tool = analyze.Tool("cargo-deny", "rust", lambda exe, root, tmp: [sys.executable, str(script)], analyze.parse_cargo_deny, findings_exit=(1,), stderr=True)
         found, error = analyze._run_one(tool, sys.executable, self.root, dict(os.environ), 60)
         self.assertEqual((error, [f.rule for f in found]), (None, ["banned"]))
+
+
+class TestLineRanges(unittest.TestCase):
+    def test_cfg_test_modules_test_fns_and_inner_attribute(self):
+        src = "fn a() {}\n#[cfg(test)]\nmod t {\n    #[test]\n    fn b() { 1 }\n}\n#[test]\nfn c() { 2 }\n#[cfg(not(test))]\nfn d() {}\n"
+        self.assertEqual(unsafe_scan.test_line_ranges(src), [(2, 6), (4, 5), (7, 8)])
+        self.assertEqual(unsafe_scan.test_line_ranges("#![cfg(test)]\nfn a() {}\n"), [(1, 2)])
+
+    def test_strings_with_braces_do_not_end_the_item(self):
+        src = '#[cfg(test)]\nmod t {\n    const S: &str = "}";\n    fn f() {}\n}\nfn after() {}\n'
+        self.assertEqual(unsafe_scan.test_line_ranges(src), [(1, 5)])
+
+    def test_findings_in_cfg_test_code_are_dropped(self):
+        root = tree(self)
+        write(root / "Cargo.toml", "")
+        write(root / "src" / "lib.rs", "fn a() {}\n#[cfg(test)]\nmod t {\n    fn b() { 1u64 as u32; }\n}\n")
+        def msg(line):
+            return json.dumps({"reason": "compiler-message", "message": {"level": "warning", "message": "m", "code": {"code": "clippy::cast_possible_truncation"},
+                                                                       "spans": [{"file_name": "src/lib.rs", "line_start": line, "is_primary": True}]}})
+        found = analyze.parse_clippy(msg(4) + "\n" + msg(1), root, root)
+        self.assertEqual([f.line for f in found], [1])
 
 
 class UnsafeScan(unittest.TestCase):
