@@ -836,6 +836,74 @@ class RustBuildScope(unittest.TestCase):
         self.assertEqual(argv[argv.index("--target") + 1], "x86_64-unknown-linux-gnu")
 
 
+class RustSupplyChain(unittest.TestCase):
+    def setUp(self):
+        self.root = tree(self)
+        self.tmp = self.root
+        write(self.root / "Cargo.toml", '[package]\nname = "fx"\n\n[dependencies]\nserde = "1"\nlog = "0.4"\n')
+
+    def test_cargo_audit(self):
+        advisory = {"id": "RUSTSEC-2020-0071", "title": "Potential segfault in time"}
+        out = json.dumps({"vulnerabilities": {"found": True, "count": 1, "list": [{"advisory": advisory, "package": {"name": "time", "version": "0.1.43"}}]},
+                          "warnings": {"unmaintained": [{"kind": "unmaintained", "advisory": {"id": "RUSTSEC-2021-0139", "title": "ansi_term is unmaintained"},
+                                                         "package": {"name": "ansi_term", "version": "0.12.1"}}], "yanked": []}})
+        found = analyze.parse_cargo_audit(out, self.root, self.tmp)
+        self.assertEqual([(f.category, f.tool, f.rule, f.path, f.line, f.message) for f in found], [
+            ("dependency", "cargo-audit", "RUSTSEC-2020-0071", "Cargo.lock", 0, "time@0.1.43: Potential segfault in time"),
+            ("dependency", "cargo-audit", "RUSTSEC-2021-0139", "Cargo.lock", 0, "ansi_term@0.12.1: ansi_term is unmaintained")])
+
+    def test_cargo_audit_needs_a_lockfile_and_a_local_advisory_db(self):
+        home = self.root / "cargo home"
+        with mock.patch.dict(os.environ, {"CARGO_HOME": str(home)}):
+            self.assertFalse(analyze._audit_ready(self.root))
+            write(self.root / "Cargo.lock", "")
+            self.assertFalse(analyze._audit_ready(self.root))
+            (home / "advisory-db").mkdir(parents=True)
+            self.assertTrue(analyze._audit_ready(self.root))
+
+    def test_cargo_machete(self):
+        out = ("Analyzing dependencies of crates in this directory...\ncargo-machete found the following unused dependencies in this directory:\n"
+               f"fx -- {self.root / 'Cargo.toml'}:\n\tlog\n\tserde\n")
+        found = analyze.parse_cargo_machete(out, self.root, self.tmp)
+        self.assertEqual([(f.category, f.tool, f.rule, f.path, f.line) for f in found], [
+            ("unused", "cargo-machete", "unused-dependency", "Cargo.toml", 6), ("unused", "cargo-machete", "unused-dependency", "Cargo.toml", 5)])
+
+    def test_cargo_deny(self):
+        def diag(severity, code, message):
+            return json.dumps({"type": "diagnostic", "fields": {"code": code, "message": message, "severity": severity, "labels": []}})
+        out = "\n".join([diag("error", "vulnerability", "time 0.1.43 is vulnerable"), diag("warning", "unmaintained", "ansi_term is unmaintained"),
+                         diag("note", "license-not-encountered", "skip"), json.dumps({"type": "summary", "fields": {}}), "plain text"])
+        found = analyze.parse_cargo_deny(out, self.root, self.tmp)
+        self.assertEqual([(f.category, f.rule, f.message) for f in found], [
+            ("dependency", "vulnerability", "time 0.1.43 is vulnerable"), ("dependency", "unmaintained", "ansi_term is unmaintained")])
+
+    def test_missing_tools_are_skipped_with_a_hint(self):
+        empty = self.root / "empty"
+        empty.mkdir()
+        wanted = [t for t in analyze.TOOLS if t.name in ("cargo-audit", "cargo-machete", "cargo-deny")]
+        write(self.root / "Cargo.lock", "")
+        report = analyze.run_tools(wanted, self.root, {"rust"}, path=str(empty))
+        self.assertEqual(report.errors, [])
+        self.assertEqual(report.ran, [])
+        self.assertEqual({n for n, _ in report.skipped}, {"cargo-audit", "cargo-machete", "cargo-deny"})
+        self.assertIn("deny.toml", dict(report.skipped)["cargo-deny"])
+        self.assertIn("cargo install cargo-machete", dict(report.skipped)["cargo-machete"])
+
+    def test_cargo_deny_runs_only_with_a_deny_toml(self):
+        deny = next(t for t in analyze.TOOLS if t.name == "cargo-deny")
+        self.assertFalse(deny.applies(self.root))
+        write(self.root / "deny.toml", "")
+        self.assertTrue(deny.applies(self.root))
+        self.assertTrue(deny.stderr)
+
+    def test_stderr_tools_parse_stderr(self):
+        script = self.root / "fake.py"
+        write(script, "import sys\nsys.stderr.write('{\"type\": \"diagnostic\", \"fields\": {\"severity\": \"error\", \"code\": \"banned\", \"message\": \"m\"}}\\n')\nsys.exit(1)\n")
+        tool = analyze.Tool("cargo-deny", "rust", lambda exe, root, tmp: [sys.executable, str(script)], analyze.parse_cargo_deny, findings_exit=(1,), stderr=True)
+        found, error = analyze._run_one(tool, sys.executable, self.root, dict(os.environ), 60)
+        self.assertEqual((error, [f.rule for f in found]), (None, ["banned"]))
+
+
 class ClippyCategories(unittest.TestCase):
     def test_unsafe_lints_are_security(self):
         self.assertEqual(analyze._clippy_category("clippy::missing_safety_doc", "warning"), "security")
@@ -859,6 +927,16 @@ class RealTools(unittest.TestCase):
         rules = {f.rule for f in report.findings}
         self.assertIn("cognitive-complexity", rules)
         self.assertTrue(any(r.startswith("S") for r in rules))
+
+    @unittest.skipUnless(shutil.which("osv-scanner"), "osv-scanner not installed")
+    def test_real_osv_scanner_reads_cargo_lock(self):
+        root = tree(self)
+        write(root / "Cargo.toml", '[package]\nname = "fx"\nversion = "0.1.0"\n')
+        write(root / "Cargo.lock", 'version = 3\n\n[[package]]\nname = "time"\nversion = "0.1.43"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\n')
+        report = analyze.run_tools([t for t in analyze.TOOLS if t.name == "osv-scanner"], root, {"rust"})
+        self.assertEqual(report.errors, [])
+        self.assertIn("RUSTSEC-2020-0071", {f.rule for f in report.findings})
+        self.assertEqual({f.path for f in report.findings}, {"Cargo.lock"})
 
     @unittest.skipUnless(shutil.which("vulture"), "vulture not installed")
     def test_real_vulture(self):

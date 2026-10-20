@@ -80,6 +80,7 @@ class Tool:
     env: Callable[[Path, Path], dict] | None = None
     fallback: Callable[[str, Path, Path], list[str]] | None = None
     fallback_note: str = ""
+    stderr: bool = False
 
 
 class Partial(ValueError):
@@ -461,6 +462,60 @@ def parse_clippy(out: str, root: Path, tmp: Path) -> list[Finding]:
     return found
 
 
+def _cargo_home() -> Path:
+    return Path(os.environ.get("CARGO_HOME") or Path.home() / ".cargo")
+
+
+def _audit_ready(root: Path) -> bool:
+    return (_cargo_manifest(root).parent / "Cargo.lock").is_file() and (_cargo_home() / "advisory-db").is_dir()
+
+
+def parse_cargo_audit(out: str, root: Path, tmp: Path) -> list[Finding]:
+    report = _json(out, dict)
+    items = list((report.get("vulnerabilities") or {}).get("list") or [])
+    for group in (report.get("warnings") or {}).values():
+        items += group if isinstance(group, list) else []
+    lock = rel(str(_cargo_manifest(root).parent / "Cargo.lock"), root)
+    return [Finding("dependency", "cargo-audit", (i.get("advisory") or {}).get("id") or i.get("kind", "advisory"), lock, 0,
+                    f"{(i.get('package') or {}).get('name', '?')}@{(i.get('package') or {}).get('version', '?')}: "
+                    f"{(i.get('advisory') or {}).get('title') or i.get('kind', '')}")
+            for i in items]
+
+
+def _toml_line(path: Path, name: str) -> int:
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return 0
+    pattern = re.compile(rf"^\s*{re.escape(name)}\s*[=.]|^\s*\[(?:\w+[-.])*{re.escape(name)}\]")
+    return next((n for n, ln in enumerate(lines, 1) if pattern.match(ln)), 0)
+
+
+def parse_cargo_machete(out: str, root: Path, tmp: Path) -> list[Finding]:
+    found, manifest = [], None
+    for line in out.splitlines():
+        if line.endswith(":") and " -- " in line:
+            manifest = Path(line.rsplit(" -- ", 1)[1][:-1])
+            manifest = manifest if manifest.is_absolute() else root / manifest
+        elif manifest is not None and line[:1] in ("\t", " ") and line.strip():
+            name = line.strip()
+            found.append(Finding("unused", "cargo-machete", "unused-dependency", rel(str(manifest), root), _toml_line(manifest, name),
+                                 f"dependency {name} is declared but never used"))
+    return found
+
+
+def parse_cargo_deny(out: str, root: Path, tmp: Path) -> list[Finding]:
+    found = []
+    for line in out.splitlines():
+        if not line.startswith("{"):
+            continue
+        entry = json.loads(line)
+        fields = entry.get("fields") or {}
+        if entry.get("type") == "diagnostic" and fields.get("severity") in ("error", "warning"):
+            found.append(Finding("dependency", "cargo-deny", fields.get("code") or "diagnostic", "Cargo.lock", 0, fields.get("message", "")))
+    return found
+
+
 def parse_go_vet(out: str, root: Path, tmp: Path) -> list[Finding]:
     found, decoder, pos = [], json.JSONDecoder(), 0
     while pos < len(out) and out[pos:].strip():
@@ -627,6 +682,14 @@ TOOLS = [
     Tool("dotnet", "dotnet", lambda exe, root, tmp: [exe, "build", "--nologo", "--no-incremental", "-clp:NoSummary", *_dotnet_target(root)],
          parse_dotnet, lambda root: bool(_dotnet_target(root)), "install the .NET SDK", reason="no solution or project at the root", findings_exit=(1,)),
     clippy_tool(),
+    Tool("cargo-audit", "rust", lambda exe, root, tmp: [exe, "audit", "--json", "--no-fetch", "--file", str(_cargo_manifest(root).parent / "Cargo.lock")],
+         parse_cargo_audit, _audit_ready, "cargo install cargo-audit, then run it once online to fetch the advisory db",
+         reason="no Cargo.lock, or no advisory db in ~/.cargo/advisory-db (run cargo audit once online)", binary="cargo-audit", findings_exit=(1,)),
+    Tool("cargo-machete", "rust", lambda exe, root, tmp: [exe, str(_cargo_manifest(root).parent)], parse_cargo_machete,
+         hint="cargo install cargo-machete", binary="cargo-machete", findings_exit=(1,)),
+    Tool("cargo-deny", "rust", lambda exe, root, tmp: [exe, "--manifest-path", str(_cargo_manifest(root)), "--format", "json", "check", "--disable-fetch"],
+         parse_cargo_deny, lambda root: (_cargo_manifest(root).parent / "deny.toml").is_file(), "cargo install cargo-deny", reason="no deny.toml",
+         binary="cargo-deny", findings_exit=(1,), stderr=True),
     Tool("pmd", "java", lambda exe, root, tmp: [exe, "check", "-d", ".", "-R", "rulesets/java/quickstart.xml", "-f", "json", "--no-cache", "--no-progress"],
          parse_pmd, hint="install PMD 7 from its GitHub releases", findings_exit=(4,)),
     Tool("go-vet", "go", lambda exe, root, tmp: [exe, "-C", str(marker_dir(root, GO_MOD) or root), "vet", "-json", "./..."], parse_go_vet, hint="install Go", binary="go"),
@@ -695,6 +758,7 @@ def _run_one(t: Tool, exe: str, root: Path, env: dict, timeout: int) -> tuple[li
             return [], f"timed out after {timeout}s"
         except OSError as e:
             return [], f"cannot run: {e}"
+        out = err if t.stderr else out
         if code not in t.ok and t.recover and "Traceback" in err:
             return t.recover(exe, root, env, timeout)
         try:
