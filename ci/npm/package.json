@@ -3,7 +3,7 @@
   "private": true,
   "license": "Apache-2.0",
   "dependencies": {
-    "@openai/codex": "0.162.1",
+    "@openai/codex": "0.163.0",
     "agnix": "0.57.0",
     "knip": "6.41.0"
   }
