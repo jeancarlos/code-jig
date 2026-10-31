@@ -185,7 +185,7 @@ def _profile_check(home: Path, t, policy, ov: Overlay) -> Check:
     name = f"tier {t.name} profile"
     if not f.is_file():
         return ("warn", name, f"{f} is missing; Codex silently uses the base config; run code-jig install")
-    if f.read_bytes() != render_profile(t, policy, ov.auto_compact_token_limit).encode("utf-8"):
+    if f.read_bytes() != render_profile(t, policy, ov.auto_compact_token_limit, ov.memories).encode("utf-8"):
         return ("warn", name, f"{f} is stale or edited; run code-jig install")
     return ("ok", name, f"{t.model} at {t.effort}")
 

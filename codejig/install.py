@@ -368,8 +368,8 @@ def install_skills(sources: dict[str, Path], dest: Path) -> list[str]:
     return lines + _prune_skills(sources, dest)
 
 
-def render_profile(tier: tiers.Tier, policy: str, compact: int | None = None) -> str:
-    return stamp(tiers.profile_body(tier, policy, compact), "hash")
+def render_profile(tier: tiers.Tier, policy: str, compact: int | None = None, memories: bool | None = None) -> str:
+    return stamp(tiers.profile_body(tier, policy, compact, memories), "hash")
 
 
 ROLE_TIERS = {"explorer": "bulk", "reviewer": "review", "judge": "deep"}
@@ -393,7 +393,7 @@ def plan(core: Path, ov: Overlay, home: Path, claude_code_settings: Path | None 
     policy = tiers.extra_policy(ov.root)
     outputs = [(home / "AGENTS.md", render_agents(core, ov.root))]
     ts = tiers.load(core, ov.root)
-    outputs += [(home / f"{t.name}.config.toml", render_profile(t, policy, ov.auto_compact_token_limit)) for t in ts]
+    outputs += [(home / f"{t.name}.config.toml", render_profile(t, policy, ov.auto_compact_token_limit, ov.memories)) for t in ts]
     outputs += [(home / "agents" / name, text) for name, text in role_files(core, ts).items()]
     outputs += [(home / "rules" / name, text) for name, text in rule_files(ov.root).items()]
     lib = paths.state_dir() / "lib"

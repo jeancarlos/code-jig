@@ -21,14 +21,16 @@ class Overlay:
     git_gate: bool = False
     prose_gate: bool = False
     push_cleanup: bool | None = None
+    memories: bool | None = None
 
 
 def _flags(path: Path, data: dict, compact) -> dict:
     if compact is not None and (isinstance(compact, bool) or not isinstance(compact, int) or compact <= 0):
         raise ValueError(f"{path}: auto_compact_token_limit must be a positive integer")
     flags = {k: data.get(k, False) for k in ("git_gate", "prose_gate")}
-    flags["push_cleanup"] = data.get("push_cleanup")
-    bad = [k for k, v in flags.items() if not isinstance(v, bool) and not (k == "push_cleanup" and v is None)]
+    optional = ("push_cleanup", "memories")
+    flags |= {k: data.get(k) for k in optional}
+    bad = [k for k, v in flags.items() if not isinstance(v, bool) and not (k in optional and v is None)]
     if bad:
         raise ValueError(f"{path}: {', '.join(bad)} must be true or false")
     return flags

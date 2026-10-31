@@ -77,6 +77,14 @@ class Profile(unittest.TestCase):
     def test_no_compact_limit_by_default(self):
         self.assertNotIn("model_auto_compact_token_limit", tomllib.loads(render_profile(Tier("default", "m", "medium"), "")))
 
+    def test_memories_is_a_feature_flag(self):
+        data = tomllib.loads(render_profile(Tier("default", "m", "medium"), "- rule", None, False))
+        self.assertIs(data["features"]["memories"], False)
+        self.assertEqual(data["auto_review"], {"extra_policy": "- rule"})
+
+    def test_no_memories_flag_by_default(self):
+        self.assertNotIn("features", tomllib.loads(render_profile(Tier("default", "m", "medium"), "")))
+
     def test_no_policy_file(self):
         ov = tree(self)
         self.assertEqual(tiers.extra_policy(ov), "")

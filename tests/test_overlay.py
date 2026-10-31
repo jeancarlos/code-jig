@@ -40,6 +40,17 @@ class LoadOverlay(unittest.TestCase):
         write(self.root / "overlay.toml", 'core_version = "v0.1.0"\ncore_writable = true\nauto_compact_token_limit = 150000\n')
         self.assertEqual(load(self.root).auto_compact_token_limit, 150000)
 
+    def test_memories_read_and_unset_by_default(self):
+        write(self.root / "overlay.toml", 'core_version = "v0.1.0"\ncore_writable = true\n')
+        self.assertIsNone(load(self.root).memories)
+        write(self.root / "overlay.toml", 'core_version = "v0.1.0"\ncore_writable = true\nmemories = false\n')
+        self.assertIs(load(self.root).memories, False)
+
+    def test_memories_must_be_a_boolean(self):
+        write(self.root / "overlay.toml", 'core_version = "v0.1.0"\ncore_writable = true\nmemories = "off"\n')
+        with self.assertRaisesRegex(ValueError, "memories must be true or false"):
+            load(self.root)
+
     def test_compact_limit_must_be_a_positive_integer(self):
         for bad in ("0", "-5", '"150000"', "true", "1.5"):
             write(self.root / "overlay.toml", f'core_version = "v0.1.0"\ncore_writable = true\nauto_compact_token_limit = {bad}\n')

@@ -2,3 +2,4 @@ core_version = "v0.13.1"
 core_writable = true
 # git_gate = true
 # push_cleanup = true   # default when git_gate = true; false keeps the plain push refusal
+# memories = false   # turn Codex memories off in every tier profile; unset keeps your Codex setting
